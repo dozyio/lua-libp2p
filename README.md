@@ -2,14 +2,15 @@
 
 Minimal, interoperable libp2p building blocks for Lua.
 
-## Milestone 0 scope
+## Current scope (M0-M2)
 
-This repo currently contains the project skeleton for milestone 0:
+This repo currently includes:
 
 - Base module layout (`transport`, `security`, `muxer`, `protocol`, `crypto`, `peerstore`)
 - Shared error and logging helpers
+- Ed25519 identity + PeerId + multiformat helpers
+- TCP transport with `/ip4/.../tcp/...` multiaddr parsing, dial/listen, and connection lifecycle controls
 - Lightweight integration test harness
-- Dummy loopback protocol test
 
 ## Project layout
 
@@ -20,6 +21,7 @@ This repo currently contains the project skeleton for milestone 0:
 - `lua_libp2p/protocol`: protocol implementations
 - `lua_libp2p/crypto`: key and signature helpers
 - `lua_libp2p/multiformats`: varint, multibase, multihash, cid helpers
+- `lua_libp2p/multiaddr.lua`: multiaddr parsing/formatting/utilities
 - `lua_libp2p/peerstore`: peer metadata storage
 - `tests`: test harness and integration tests
 
@@ -60,3 +62,6 @@ Or via Make:
 ```bash
 make test
 ```
+
+Note: multiaddr conformance tests include a go/js-derived vector set plus an explicit
+go strictness delta list (tracked in `tests/helpers/multiaddr_go_deltas.lua`).

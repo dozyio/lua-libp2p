@@ -17,6 +17,8 @@ Status: Complete
 - Done when: generated PeerId matches expected vectors and signatures verify.
 
 ## Milestone 2: TCP Transport
+Status: Complete
+
 - Implement listener and dialer abstraction.
 - Add connection lifecycle (open, close, timeouts, backpressure basics).
 - Normalize multiaddr <-> socket address parsing for `/ip4/.../tcp/...`.
