@@ -30,11 +30,16 @@ local function bind_listeners(self, addrs)
     targets = { "/ip4/127.0.0.1/tcp/0" }
   end
 
-  for _, listener in ipairs(self._listeners) do
-    listener:close()
+  local next_listeners = {}
+  local next_addrs = {}
+
+  local function close_all(listeners)
+    for _, listener in ipairs(listeners) do
+      if listener and type(listener.close) == "function" then
+        listener:close()
+      end
+    end
   end
-  self._listeners = {}
-  self.listen_addrs = {}
 
   for _, addr in ipairs(targets) do
     local listener, listen_err = tcp.listen({
@@ -43,15 +48,28 @@ local function bind_listeners(self, addrs)
       io_timeout = self._io_timeout,
     })
     if not listener then
+      close_all(next_listeners)
       return nil, listen_err
     end
-    self._listeners[#self._listeners + 1] = listener
+    next_listeners[#next_listeners + 1] = listener
 
     local resolved, resolved_err = listener:multiaddr()
     if not resolved then
+      close_all(next_listeners)
       return nil, resolved_err
     end
-    self.listen_addrs[#self.listen_addrs + 1] = resolved
+    next_addrs[#next_addrs + 1] = resolved
+  end
+
+  close_all(self._listeners)
+  self._listeners = {}
+  for i, listener in ipairs(next_listeners) do
+    self._listeners[i] = listener
+  end
+
+  self.listen_addrs = {}
+  for i, resolved in ipairs(next_addrs) do
+    self.listen_addrs[i] = resolved
   end
 
   return true
@@ -235,6 +253,7 @@ function Host:new(config)
     security_transports = list_copy(cfg.security_transports or cfg.securityTransports or {}),
     muxers = list_copy(cfg.muxers or {}),
     _handlers = {},
+    _handler_tasks = {},
     _listeners = {},
     _connections = {},
     _connections_by_peer = {},
@@ -283,6 +302,49 @@ function Host:handle(protocol_id, handler)
     return nil, error_mod.new("input", "handler must be a function")
   end
   self._handlers[protocol_id] = handler
+  return true
+end
+
+function Host:_spawn_handler_task(handler, ctx)
+  local task = {
+    protocol = ctx.protocol,
+    connection = ctx.connection,
+    state = ctx.state,
+  }
+  task.co = coroutine.create(function()
+    return handler(ctx.stream, ctx)
+  end)
+  self._handler_tasks[#self._handler_tasks + 1] = task
+  return task
+end
+
+function Host:_run_handler_tasks()
+  for i = #self._handler_tasks, 1, -1 do
+    local task = self._handler_tasks[i]
+    local ok, result, err = coroutine.resume(task.co)
+    if not ok then
+      return nil, error_mod.new("protocol", "handler task panicked", {
+        protocol = task.protocol,
+        cause = result,
+      })
+    end
+
+    if coroutine.status(task.co) == "dead" then
+      table.remove(self._handler_tasks, i)
+      if result == nil and err then
+        if is_nonfatal_stream_error(err) then
+          if task.connection and type(task.connection.close) == "function" then
+            task.connection:close()
+          end
+          goto continue_tasks
+        end
+        return nil, err
+      end
+    end
+
+    ::continue_tasks::
+  end
+
   return true
 end
 
@@ -373,6 +435,7 @@ function Host:add_service(name)
     return self:handle(perf.ID, function(stream)
       return perf.handle(stream, {
         write_block_size = perf_opts.write_block_size or perf_opts.writeBlockSize,
+        yield_every_bytes = perf_opts.yield_every_bytes or perf_opts.yieldEveryBytes,
       })
     end)
   end
@@ -583,22 +646,21 @@ function Host:poll_once(timeout)
       return nil, stream_err
     end
     if stream and handler then
-      local ok, handler_err = handler(stream, {
+      self:_spawn_handler_task(handler, {
+        stream = stream,
         host = self,
         connection = conn,
         state = entry.state,
         protocol = protocol_id,
       })
-      if ok == nil and handler_err then
-        return nil, handler_err
-      end
-      return {
-        protocol = protocol_id,
-        connection = conn,
-      }
     end
 
     ::continue_connections::
+  end
+
+  local ok, task_err = self:_run_handler_tasks()
+  if not ok then
+    return nil, task_err
   end
 
   return true
@@ -647,7 +709,7 @@ function Host:start(opts)
       if max_iterations and iterations >= max_iterations then
         break
       end
-      if poll_interval > 0 then
+      if poll_interval > 0 and #self._handler_tasks == 0 then
         sleep_seconds(poll_interval)
       end
     end
@@ -668,6 +730,7 @@ function Host:close()
   end
   self._connections = {}
   self._connections_by_peer = {}
+  self._handler_tasks = {}
 
   for _, listener in ipairs(self._listeners) do
     listener:close()

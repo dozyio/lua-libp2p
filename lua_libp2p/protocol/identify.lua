@@ -7,6 +7,7 @@ local M = {}
 
 M.ID = "/ipfs/id/1.0.0"
 M.PUSH_ID = "/ipfs/id/push/1.0.0"
+M.MAX_MESSAGE_SIZE = 8 * 1024
 
 local function read_exact(conn, n)
   if n == 0 then
@@ -333,6 +334,12 @@ function M.read(conn)
   local length, len_err = read_varint(conn)
   if not length then
     return nil, len_err
+  end
+  if length > M.MAX_MESSAGE_SIZE then
+    return nil, error_mod.new("decode", "identify message too large", {
+      max = M.MAX_MESSAGE_SIZE,
+      got = length,
+    })
   end
 
   local payload, payload_err = read_exact(conn, length)

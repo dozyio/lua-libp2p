@@ -1,5 +1,6 @@
 local error_mod = require("lua_libp2p.error")
 local mss = require("lua_libp2p.protocol.mss")
+local varint = require("lua_libp2p.multiformats.varint")
 
 local function new_scripted_conn(incoming)
   local conn = {
@@ -57,6 +58,17 @@ local function run()
   end
   if f2 ~= "na" then
     return nil, "unexpected second frame"
+  end
+
+  local oversized_payload = string.rep("a", mss.MAX_PROTOCOL_LENGTH) .. "\n"
+  local oversized_frame = assert(varint.encode_u64(#oversized_payload)) .. oversized_payload
+  local oversized_conn = new_scripted_conn(oversized_frame)
+  local oversized_read, oversized_err = mss.read_frame(oversized_conn)
+  if oversized_read ~= nil then
+    return nil, "expected oversized multistream frame to fail"
+  end
+  if not oversized_err or oversized_err.kind ~= "decode" then
+    return nil, "expected decode error for oversized multistream frame"
   end
 
   local p1 = "/toy/1.0.0"

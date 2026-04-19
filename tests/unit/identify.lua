@@ -117,6 +117,17 @@ local function run()
     return nil, "identify framed read/write mismatch"
   end
 
+  local oversized_identify_payload = string.rep("\0", identify.MAX_MESSAGE_SIZE + 1)
+  local oversized_identify_frame = assert(varint.encode_u64(#oversized_identify_payload)) .. oversized_identify_payload
+  local oversized_reader = new_scripted_conn(oversized_identify_frame)
+  local oversized_msg, oversized_err = identify.read(oversized_reader)
+  if oversized_msg ~= nil then
+    return nil, "expected oversized identify message to fail"
+  end
+  if not oversized_err or oversized_err.kind ~= "decode" then
+    return nil, "expected decode error for oversized identify message"
+  end
+
   local unknown_tag = assert(varint.encode_u64(99 * 8 + 0))
   local unknown_val = assert(varint.encode_u64(1))
   local with_unknown = payload .. unknown_tag .. unknown_val

@@ -2,23 +2,26 @@
 
 Minimal, interoperable libp2p building blocks for Lua.
 
-## Current scope (M0-M2)
+## Current scope
 
 This repo currently includes:
 
 - Base module layout (`transport`, `security`, `muxer`, `protocol`, `crypto`, `peerstore`)
 - Shared error and logging helpers
 - Ed25519 identity + PeerId + multiformat helpers
+- Multiaddr parsing/formatting + binary codec subset (`/ip4`, `/ip6`, `/dns*`, `/tcp`, `/udp`, `/quic-v1`, `/p2p`)
+- Multibase/multiformat primitives (base58btc, base32, varint, multihash, CIDv1)
+- Signed envelope + peer record encode/sign/verify primitives
 - TCP transport with `/ip4/.../tcp/...` multiaddr parsing, dial/listen, and connection lifecycle controls
 - multistream-select framing and protocol negotiation (`/multistream/1.0.0`)
+- noise-libp2p XX handshake + secure channel framing primitives (`/noise`)
 - plaintext secure-channel compatibility handshake (`/plaintext/2.0.0`) for testing only
 - identify protocol message codec (protobuf framing, binary multiaddr fields, optional `signedPeerRecord`), basic request/response, push helpers, and multi-message merge utility (`/ipfs/id/1.0.0`, `/ipfs/id/push/1.0.0`)
 - ping protocol echo + RTT helper (`/ipfs/ping/1.0.0`)
 - perf protocol upload/download helper and handler (`/perf/1.0.0`)
 - yamux stream multiplexer foundation (`/yamux/1.0.0`) with frame codec and multi-stream session basics
 - transport-agnostic connection/stream abstraction with pluggable muxer session support
-- connection upgrader pipeline (security + muxer negotiation) for plaintext+yamux
-- noise-libp2p XX handshake + secure channel framing primitives (`/noise`)
+- connection upgrader pipeline (security + muxer negotiation) for plaintext+yamux and noise+yamux
 - host/node API with lifecycle (`start`/`stop`) and stream operations (`dial`, `new_stream`, `handle`)
 - Lightweight integration test harness
 
@@ -42,7 +45,7 @@ This repo currently includes:
 
 - Lua 5.4.x (recommended)
 - LuaRocks for dependency management
-- Runtime dependencies (planned for upcoming milestones):
+- Runtime dependencies:
   - `luasocket`
   - `lua-protobuf`
   - `luasodium` (ed25519)

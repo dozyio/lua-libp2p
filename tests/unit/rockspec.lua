@@ -1,0 +1,39 @@
+local function run()
+  local env = {}
+  setmetatable(env, { __index = _G })
+
+  local chunk, load_err = loadfile("lua-libp2p-dev-1.0-1.rockspec", "t", env)
+  if not chunk then
+    return nil, load_err
+  end
+
+  local ok, exec_err = pcall(chunk)
+  if not ok then
+    return nil, exec_err
+  end
+
+  if type(env.build) ~= "table" or type(env.build.modules) ~= "table" then
+    return nil, "rockspec missing build.modules table"
+  end
+
+  local modules = env.build.modules
+  local required = {
+    "lua_libp2p.host",
+    "lua_libp2p.protocol.identify",
+    "lua_libp2p.protocol.ping",
+    "lua_libp2p.protocol.perf",
+  }
+
+  for _, module_name in ipairs(required) do
+    if type(modules[module_name]) ~= "string" or modules[module_name] == "" then
+      return nil, "rockspec is missing module export: " .. module_name
+    end
+  end
+
+  return true
+end
+
+return {
+  name = "rockspec exports host service modules",
+  run = run,
+}

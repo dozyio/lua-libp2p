@@ -5,6 +5,7 @@ local M = {}
 
 M.PROTOCOL_ID = "/multistream/1.0.0"
 M.NA = "na"
+M.MAX_PROTOCOL_LENGTH = 1024
 
 local function ensure_newline(value)
   if value:sub(-1) == "\n" then
@@ -99,6 +100,12 @@ function M.read_frame(conn)
   local length, len_err = read_varint(conn)
   if not length then
     return nil, len_err
+  end
+  if length > M.MAX_PROTOCOL_LENGTH then
+    return nil, error_mod.new("decode", "multistream frame too large", {
+      max = M.MAX_PROTOCOL_LENGTH,
+      got = length,
+    })
   end
 
   local payload, payload_err = read_exact(conn, length)

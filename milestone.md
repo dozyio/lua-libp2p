@@ -73,22 +73,32 @@ Status: Complete
 Note: Ping interop with go-libp2p (vole) is validated; responder/requester are implemented and the example host handles repeated ping payloads on a stream (`ping.handle`).
 
 ## Milestone 8: Peerstore (In-Memory)
+Status: Planned
+
 - Store peer keys, addresses, protocols, last seen, RTT, tags, and TTL.
 - Add a basic address selection strategy for dialing.
 - Add garbage collection/expiry rules for stale records.
 - Done when: identify and ping data persists per peer during runtime.
 
 ## Milestone 9: Interop + Hardening Pass
+Status: In Progress
+
 - Build integration matrix: Lua <-> Lua and Lua <-> go-libp2p for identify/ping.
 - Add robustness checks for malformed frames and protocol errors.
 - Tune timeouts, max frame sizes, and defensive parsing.
 - Done when: stable repeated connect/identify/ping under stress.
 
+Note: Hardening progress includes select-driven polling, nonfatal error handling (`timeout`, `closed`, `decode`, `protocol`, `unsupported`), yamux flow-control fixes for large transfers, and JS perf interop (`/perf/1.0.0`) under Noise+yamux.
+
 ## Milestone 10: Minimal Public API + Docs
+Status: In Progress
+
 - Expose tiny host API (`new_host`, `start`, `dial`, `ping`, `handle`).
 - Document supported protocols and explicit non-goals.
 - Provide one runnable example (connect + identify + ping).
 - Done when: user can copy example and interop in under 5 minutes.
+
+Note: API ergonomics improved with host service registration (`services = { "identify", "ping", "perf" }`), peer/multiaddr convenience methods (`peer_id`, `get_multiaddrs`, `get_multiaddrs_raw`), and a stable example identity/port flow.
 
 ## Milestone 11: Connection Manager
 Status: Planned

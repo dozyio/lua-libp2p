@@ -16,6 +16,13 @@ local function now()
   return os.clock()
 end
 
+local function maybe_yield()
+  local co, is_main = coroutine.running()
+  if co and not is_main then
+    coroutine.yield("perf")
+  end
+end
+
 local function is_closed_error(err)
   if err == nil then
     return false
@@ -77,7 +84,10 @@ function M.decode_u64be(bytes)
   return hi * 4294967296 + lo
 end
 
-local function write_repeated(conn, total_bytes, block_size)
+local function write_repeated(conn, total_bytes, block_size, opts)
+  local options = opts or {}
+  local yield_every = options.yield_every_bytes
+  local since_yield = 0
   local zero_block = string.rep("\0", block_size)
   local remaining = total_bytes
   while remaining > 0 do
@@ -94,11 +104,21 @@ local function write_repeated(conn, total_bytes, block_size)
       return nil, err
     end
     remaining = remaining - to_write
+    if type(yield_every) == "number" and yield_every > 0 then
+      since_yield = since_yield + to_write
+      if since_yield >= yield_every then
+        since_yield = 0
+        maybe_yield()
+      end
+    end
   end
   return true
 end
 
-local function read_upload_until_eof(conn)
+local function read_upload_until_eof(conn, opts)
+  local options = opts or {}
+  local yield_every = options.yield_every_bytes
+  local since_yield = 0
   local total = 0
 
   while true do
@@ -106,10 +126,24 @@ local function read_upload_until_eof(conn)
       local immediate = conn:read_now()
       if immediate and #immediate > 0 then
         total = total + #immediate
+        if type(yield_every) == "number" and yield_every > 0 then
+          since_yield = since_yield + #immediate
+          if since_yield >= yield_every then
+            since_yield = 0
+            maybe_yield()
+          end
+        end
       else
         local chunk, err = conn:read(1)
         if chunk then
           total = total + #chunk
+          if type(yield_every) == "number" and yield_every > 0 then
+            since_yield = since_yield + #chunk
+            if since_yield >= yield_every then
+              since_yield = 0
+              maybe_yield()
+            end
+          end
         elseif is_closed_error(err) then
           local partial = closed_partial(err)
           if partial and #partial > 0 then
@@ -124,6 +158,13 @@ local function read_upload_until_eof(conn)
       local chunk, err = conn:read(1)
       if chunk then
         total = total + #chunk
+        if type(yield_every) == "number" and yield_every > 0 then
+          since_yield = since_yield + #chunk
+          if since_yield >= yield_every then
+            since_yield = 0
+            maybe_yield()
+          end
+        end
       elseif is_closed_error(err) then
         local partial = closed_partial(err)
         if partial and #partial > 0 then
@@ -140,6 +181,7 @@ end
 function M.handle(conn, opts)
   local options = opts or {}
   local write_block_size = options.write_block_size or M.DEFAULT_WRITE_BLOCK_SIZE
+  local yield_every = options.yield_every_bytes or (write_block_size * 64)
   if type(write_block_size) ~= "number" or write_block_size <= 0 then
     return nil, error_mod.new("input", "perf write_block_size must be positive")
   end
@@ -160,12 +202,16 @@ function M.handle(conn, opts)
     return nil, decode_err
   end
 
-  local uploaded_bytes, upload_err = read_upload_until_eof(conn)
+  local uploaded_bytes, upload_err = read_upload_until_eof(conn, {
+    yield_every_bytes = yield_every,
+  })
   if uploaded_bytes == nil then
     return nil, upload_err
   end
 
-  local ok, write_err = write_repeated(conn, bytes_to_send, write_block_size)
+  local ok, write_err = write_repeated(conn, bytes_to_send, write_block_size, {
+    yield_every_bytes = yield_every,
+  })
   if not ok then
     return nil, write_err
   end

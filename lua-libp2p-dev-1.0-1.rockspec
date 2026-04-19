@@ -46,6 +46,7 @@ build = {
     ["lua_libp2p.protocol.dummy"] = "lua_libp2p/protocol/dummy.lua",
     ["lua_libp2p.protocol.identify"] = "lua_libp2p/protocol/identify.lua",
     ["lua_libp2p.protocol.mss"] = "lua_libp2p/protocol/mss.lua",
+    ["lua_libp2p.protocol.perf"] = "lua_libp2p/protocol/perf.lua",
     ["lua_libp2p.protocol.ping"] = "lua_libp2p/protocol/ping.lua",
     ["lua_libp2p.protocol.plaintext"] = "lua_libp2p/protocol/plaintext.lua",
     ["lua_libp2p.crypto"] = "lua_libp2p/crypto/init.lua",
