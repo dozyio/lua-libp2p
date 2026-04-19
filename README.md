@@ -14,10 +14,12 @@ This repo currently includes:
 - plaintext secure-channel compatibility handshake (`/plaintext/2.0.0`) for testing only
 - identify protocol message codec (protobuf framing, binary multiaddr fields, optional `signedPeerRecord`), basic request/response, push helpers, and multi-message merge utility (`/ipfs/id/1.0.0`, `/ipfs/id/push/1.0.0`)
 - ping protocol echo + RTT helper (`/ipfs/ping/1.0.0`)
+- perf protocol upload/download helper and handler (`/perf/1.0.0`)
 - yamux stream multiplexer foundation (`/yamux/1.0.0`) with frame codec and multi-stream session basics
 - transport-agnostic connection/stream abstraction with pluggable muxer session support
 - connection upgrader pipeline (security + muxer negotiation) for plaintext+yamux
-- host/node API with lifecycle (`start`/`stop`) and stream operations (`listen`, `dial`, `new_stream`, `handle`)
+- noise-libp2p XX handshake + secure channel framing primitives (`/noise`)
+- host/node API with lifecycle (`start`/`stop`) and stream operations (`dial`, `new_stream`, `handle`)
 - Lightweight integration test harness
 
 ## Project layout
@@ -32,7 +34,7 @@ This repo currently includes:
 - `lua_libp2p/multiaddr.lua`: multiaddr parsing/formatting/utilities
 - `lua_libp2p/network`: connection/stream abstraction layer
 - `lua_libp2p/record`: signed envelopes and peer routing records
-- `lua_libp2p/host.lua`: host/node setup (listen, dial, new_stream, handle, close)
+- `lua_libp2p/host.lua`: host/node setup (`start`, `dial`, `new_stream`, `handle`, `close`)
 - `lua_libp2p/peerstore`: peer metadata storage
 - `tests`: test harness and integration tests
 
@@ -79,6 +81,13 @@ Yamux interop check against go-yamux:
 ```bash
 make interop-yamux-go
 make interop-yamux-go-reverse
+
+# Noise interop checks against go-libp2p Noise
+make interop-noise-go
+make interop-noise-go-reverse
+
+# JS perf interop check against lua host
+make interop-perf-js
 ```
 
 Note: multiaddr conformance tests include a go/js-derived vector set plus an explicit

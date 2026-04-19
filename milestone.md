@@ -33,17 +33,19 @@ Status: Complete
 - Done when: peers negotiate a toy protocol over one TCP connection.
 
 ## Milestone 4: Noise Security
-Status: In Progress
+Status: Complete
 
 - Implement `/noise` transport handshake (XX pattern, libp2p payload).
 - Bind static key to libp2p identity key via signature payload.
 - Expose secure channel read and write post-handshake.
 - Done when: Lua peer completes secure handshake with a go-libp2p test peer.
 
+Note: Bidirectional Noise interop against go-libp2p test peers now passes (`make interop-noise-go` and `make interop-noise-go-reverse`).
+
 ## Milestone 5: Yamux Multiplexing
 Status: Complete
 
-Note: Yamux implementation and interop are complete and validated over TCP. Full secure-channel integration remains pending completion of Milestone 4 (Noise).
+Note: Yamux implementation and interop are complete and validated over TCP and Noise-secured connections.
 
 - Implement `/yamux/1.0.0` frame encode/decode and stream IDs.
 - Support stream open, data, close, reset, and window updates (minimal flow control).
@@ -51,20 +53,24 @@ Note: Yamux implementation and interop are complete and validated over TCP. Full
 - Done when: multiple logical streams run in parallel over one connection.
 
 ## Milestone 6: Identify Protocol
-Status: In Progress
+Status: Complete
 
 - Implement `/ipfs/id/1.0.0` message encode/decode.
 - Exchange supported protocols, listen addresses, observed address, and public key/PeerId fields.
 - Update peerstore from received identify info.
 - Done when: Lua node identifies with go-libp2p and stores peer metadata.
 
+Note: `/ipfs/id/1.0.0` serving and parsing interop with go-libp2p (vole) is now validated, with populated protocol version, agent version, listen addresses, and protocol list.
+
 ## Milestone 7: Ping Protocol
-Status: In Progress
+Status: Complete
 
 - Implement `/ipfs/ping/1.0.0` handler (echo payload).
 - Implement client ping API and RTT measurement.
 - Add simple health/keepalive hook.
 - Done when: Lua <-> go-libp2p ping works reliably.
+
+Note: Ping interop with go-libp2p (vole) is validated; responder/requester are implemented and the example host handles repeated ping payloads on a stream (`ping.handle`).
 
 ## Milestone 8: Peerstore (In-Memory)
 - Store peer keys, addresses, protocols, last seen, RTT, tags, and TTL.
@@ -79,10 +85,19 @@ Status: In Progress
 - Done when: stable repeated connect/identify/ping under stress.
 
 ## Milestone 10: Minimal Public API + Docs
-- Expose tiny host API (`new_host`, `listen`, `dial`, `ping`, `handle`).
+- Expose tiny host API (`new_host`, `start`, `dial`, `ping`, `handle`).
 - Document supported protocols and explicit non-goals.
 - Provide one runnable example (connect + identify + ping).
 - Done when: user can copy example and interop in under 5 minutes.
+
+## Milestone 11: Connection Manager
+Status: Planned
+
+- Track active connections with per-peer and global limits.
+- Add connection scoring inputs (tags, latency, direction, recency).
+- Prune low-value connections under pressure while protecting critical peers.
+- Expose hooks/APIs for tagging and temporary pinning.
+- Done when: node stays within configured connection limits and can recover from connection pressure deterministically.
 
 ## Out-of-Order Progress Notes
 - Implemented `/plaintext/2.0.0` handshake for debugging/interoperability testing.

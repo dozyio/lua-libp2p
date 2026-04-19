@@ -219,23 +219,39 @@ function Stream:write(payload)
   if type(payload) ~= "string" then
     return nil, error_mod.new("input", "yamux stream payload must be bytes")
   end
-  if #payload > self.send_window then
-    return nil, error_mod.new("flow", "yamux send window exceeded", {
-      size = #payload,
-      window = self.send_window,
+
+  local offset = 1
+  while offset <= #payload do
+    while self.send_window <= 0 do
+      local _, proc_err = self.session:process_one()
+      if proc_err then
+        return nil, proc_err
+      end
+      if self.reset then
+        return nil, error_mod.new("closed", "yamux stream reset during write")
+      end
+    end
+
+    local remaining = #payload - offset + 1
+    local to_send = self.send_window
+    if to_send > remaining then
+      to_send = remaining
+    end
+
+    local chunk = payload:sub(offset, offset + to_send - 1)
+    local ok, err = M.write_frame(self.session.conn, {
+      type = M.TYPE.DATA,
+      flags = 0,
+      stream_id = self.id,
+      payload = chunk,
     })
+    if not ok then
+      return nil, err
+    end
+    self.send_window = self.send_window - to_send
+    offset = offset + to_send
   end
 
-  local ok, err = M.write_frame(self.session.conn, {
-    type = M.TYPE.DATA,
-    flags = 0,
-    stream_id = self.id,
-    payload = payload,
-  })
-  if not ok then
-    return nil, err
-  end
-  self.send_window = self.send_window - #payload
   return true
 end
 

@@ -39,6 +39,7 @@ build = {
     ["lua_libp2p.transport"] = "lua_libp2p/transport/init.lua",
     ["lua_libp2p.transport.tcp"] = "lua_libp2p/transport/tcp.lua",
     ["lua_libp2p.security"] = "lua_libp2p/security/init.lua",
+    ["lua_libp2p.security.noise"] = "lua_libp2p/security/noise.lua",
     ["lua_libp2p.muxer"] = "lua_libp2p/muxer/init.lua",
     ["lua_libp2p.muxer.yamux"] = "lua_libp2p/muxer/yamux.lua",
     ["lua_libp2p.protocol"] = "lua_libp2p/protocol/init.lua",

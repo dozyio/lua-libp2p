@@ -4,7 +4,7 @@
 Ship a tiny, coherent API with clear docs and a fast-start example.
 
 ## Tasks
-1. Define public host API (`new_host`, `listen`, `dial`, `ping`, `handle`).
+1. Define public host API (`new_host`, `start`, `dial`, `ping`, `handle`).
 2. Hide internal modules behind stable interfaces.
 3. Write quickstart docs with one end-to-end example.
 4. Document supported protocols and explicit non-goals.

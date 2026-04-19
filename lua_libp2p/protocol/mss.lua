@@ -107,7 +107,10 @@ function M.read_frame(conn)
   end
 
   if payload:sub(-1) ~= "\n" then
-    return nil, error_mod.new("decode", "frame missing newline terminator")
+    if payload:find("\n", 1, true) then
+      return nil, error_mod.new("decode", "frame missing newline terminator")
+    end
+    return payload
   end
 
   return strip_newline(payload)
@@ -181,26 +184,32 @@ function Router:register(protocol_id, handler)
 end
 
 function Router:negotiate(conn)
-  local remote_header, header_err = M.read_frame(conn)
-  if not remote_header then
-    return nil, nil, header_err
-  end
-  if remote_header ~= M.PROTOCOL_ID then
-    return nil, nil, error_mod.new("protocol", "unexpected multistream header", { received = remote_header })
+  local first, first_err = M.read_frame(conn)
+  if not first then
+    return nil, nil, first_err
   end
 
-  local ok, err = M.write_frame(conn, M.PROTOCOL_ID)
-  if not ok then
-    return nil, nil, err
+  local requested
+  if first == M.PROTOCOL_ID then
+    local ok, err = M.write_frame(conn, M.PROTOCOL_ID)
+    if not ok then
+      return nil, nil, err
+    end
+  else
+    requested = first
   end
 
   while true do
-    local requested, request_err = M.read_frame(conn)
-    if not requested then
-      return nil, nil, request_err
+    if requested == nil then
+      local request_err
+      requested, request_err = M.read_frame(conn)
+      if not requested then
+        return nil, nil, request_err
+      end
     end
 
     local handler = self._handlers[requested]
+    local ok, err
     if handler then
       ok, err = M.write_frame(conn, requested)
       if not ok then
@@ -213,6 +222,8 @@ function Router:negotiate(conn)
     if not ok then
       return nil, nil, err
     end
+
+    requested = nil
   end
 end
 

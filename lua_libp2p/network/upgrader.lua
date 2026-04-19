@@ -1,17 +1,53 @@
 local error_mod = require("lua_libp2p.error")
 local connection = require("lua_libp2p.network.connection")
 local mss = require("lua_libp2p.protocol.mss")
+local noise = require("lua_libp2p.security.noise")
 local plaintext = require("lua_libp2p.protocol.plaintext")
 local yamux = require("lua_libp2p.muxer.yamux")
 
 local M = {}
 
 local function default_security_protocols()
-  return { plaintext.PROTOCOL_ID }
+  return { noise.PROTOCOL_ID }
 end
 
 local function default_muxer_protocols()
   return { yamux.PROTOCOL_ID }
+end
+
+local function select_early_muxer(selected_security, muxer_protocols, sec_state, is_outbound)
+  if selected_security ~= noise.PROTOCOL_ID then
+    return nil
+  end
+  if type(sec_state) ~= "table" or type(sec_state.noise_extensions) ~= "table" then
+    return nil
+  end
+
+  local remote = sec_state.noise_extensions.stream_muxers
+  if type(remote) ~= "table" or #remote == 0 then
+    return nil
+  end
+
+  if is_outbound then
+    for _, local_id in ipairs(muxer_protocols) do
+      for _, remote_id in ipairs(remote) do
+        if local_id == remote_id then
+          return local_id
+        end
+      end
+    end
+    return nil
+  end
+
+  for _, remote_id in ipairs(remote) do
+    for _, local_id in ipairs(muxer_protocols) do
+      if local_id == remote_id then
+        return remote_id
+      end
+    end
+  end
+
+  return nil
 end
 
 local function pick_protocol_list(value, fallback)
@@ -76,6 +112,41 @@ local function run_security_handshake(raw_conn, is_outbound, selected_security, 
     }
   end
 
+  if selected_security == noise.PROTOCOL_ID then
+    local secure_conn, hs_state, hs_err
+    if is_outbound then
+      secure_conn, hs_state, hs_err = noise.handshake_xx_outbound(raw_conn, {
+        identity_keypair = options.local_keypair,
+        expected_remote_peer_id = options.expected_remote_peer_id,
+        extensions = {
+          stream_muxers = options.muxer_protocols,
+        },
+      })
+    else
+      secure_conn, hs_state, hs_err = noise.handshake_xx_inbound(raw_conn, {
+        identity_keypair = options.local_keypair,
+        expected_remote_peer_id = options.expected_remote_peer_id,
+        extensions = {
+          stream_muxers = options.muxer_protocols,
+        },
+      })
+    end
+    if not secure_conn then
+      return nil, nil, hs_err
+    end
+
+    local remote_peer = hs_state and hs_state.remote_peer
+
+    return secure_conn, {
+      security = selected_security,
+      remote_peer_id = remote_peer and remote_peer.id or nil,
+      remote_peer_id_bytes = remote_peer and remote_peer.bytes or nil,
+      remote_public_key = remote_peer and remote_peer.public_key,
+      remote_key_type = "ed25519",
+      noise_extensions = hs_state and hs_state.remote_extensions or nil,
+    }
+  end
+
   return nil, nil, error_mod.new("unsupported", "security protocol not supported", {
     protocol = selected_security,
   })
@@ -104,9 +175,13 @@ function M.upgrade_outbound(raw_conn, opts)
     return nil, nil, handshake_err
   end
 
-  local selected_muxer, mux_err = mss.select(secure_conn, muxer_protocols)
+  local selected_muxer = select_early_muxer(selected_security, muxer_protocols, sec_state, true)
   if not selected_muxer then
-    return nil, nil, mux_err
+    local mux_err
+    selected_muxer, mux_err = mss.select(secure_conn, muxer_protocols)
+    if not selected_muxer then
+      return nil, nil, mux_err
+    end
   end
   if selected_muxer ~= yamux.PROTOCOL_ID then
     return nil, nil, error_mod.new("unsupported", "muxer protocol not supported", { protocol = selected_muxer })
@@ -154,9 +229,13 @@ function M.upgrade_inbound(raw_conn, opts)
     return nil, nil, handshake_err
   end
 
-  local selected_muxer, mux_err = negotiate_inbound(secure_conn, muxer_protocols)
+  local selected_muxer = select_early_muxer(selected_security, muxer_protocols, sec_state, false)
   if not selected_muxer then
-    return nil, nil, mux_err
+    local mux_err
+    selected_muxer, mux_err = negotiate_inbound(secure_conn, muxer_protocols)
+    if not selected_muxer then
+      return nil, nil, mux_err
+    end
   end
   if selected_muxer ~= yamux.PROTOCOL_ID then
     return nil, nil, error_mod.new("unsupported", "muxer protocol not supported", { protocol = selected_muxer })

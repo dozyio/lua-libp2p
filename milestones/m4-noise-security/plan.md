@@ -1,5 +1,7 @@
 # Milestone 4 Plan: Noise Security
 
+Status: Complete
+
 ## Goal
 Establish authenticated encrypted channels using libp2p `/noise`.
 
@@ -18,3 +20,5 @@ Establish authenticated encrypted channels using libp2p `/noise`.
 ## Exit Criteria
 - Lua node completes `/noise` handshake with go-libp2p.
 - Identity binding verification passes for both inbound and outbound.
+
+Result: Exit criteria satisfied via bidirectional interop checks (`make interop-noise-go`, `make interop-noise-go-reverse`).

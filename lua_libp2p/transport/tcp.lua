@@ -77,6 +77,10 @@ function Connection:set_timeout(seconds)
   return true
 end
 
+function Connection:socket()
+  return self._socket
+end
+
 function Connection:write(payload)
   if self._closed then
     return nil, error_mod.new("closed", "write on closed connection")
@@ -188,6 +192,10 @@ function Listener:accept(timeout)
 
   client:settimeout(self._io_timeout)
   return Connection:new(client)
+end
+
+function Listener:socket()
+  return self._server
 end
 
 function Listener:multiaddr()

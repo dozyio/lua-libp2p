@@ -51,6 +51,7 @@ local function run()
 
   local outbound_in = table.concat({
     assert(mss.encode_frame(mss.PROTOCOL_ID)),
+    assert(mss.encode_frame(mss.NA)),
     assert(mss.encode_frame(plaintext.PROTOCOL_ID)),
     frame_exchange(remote_exchange),
     assert(mss.encode_frame(mss.PROTOCOL_ID)),
@@ -61,6 +62,7 @@ local function run()
   local out_conn, out_state, out_err = upgrader.upgrade_outbound(outbound_raw, {
     local_keypair = local_key,
     expected_remote_peer_id = remote_exchange.id,
+    security_protocols = { "/noise", plaintext.PROTOCOL_ID },
   })
   if not out_conn then
     return nil, out_err
@@ -83,6 +85,7 @@ local function run()
   local inbound_raw = new_scripted_conn(inbound_in)
   local in_conn, in_state, in_err = upgrader.upgrade_inbound(inbound_raw, {
     local_keypair = local_key,
+    security_protocols = { "/noise", plaintext.PROTOCOL_ID },
   })
   if not in_conn then
     return nil, in_err
@@ -104,6 +107,7 @@ local function run()
 
   local expected_outbound_prefix = table.concat({
     assert(mss.encode_frame(mss.PROTOCOL_ID)),
+    assert(mss.encode_frame("/noise")),
     assert(mss.encode_frame(plaintext.PROTOCOL_ID)),
   })
   if outbound_raw:writes():sub(1, #expected_outbound_prefix) ~= expected_outbound_prefix then

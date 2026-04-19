@@ -1,6 +1,11 @@
 local ed25519 = require("lua_libp2p.crypto.ed25519")
 local error_mod = require("lua_libp2p.error")
 local multiaddr = require("lua_libp2p.multiaddr")
+local peerid = require("lua_libp2p.peerid")
+local identify = require("lua_libp2p.protocol.identify")
+local key_pb = require("lua_libp2p.crypto.key_pb")
+local perf = require("lua_libp2p.protocol.perf")
+local ping = require("lua_libp2p.protocol.ping")
 local upgrader = require("lua_libp2p.network.upgrader")
 local tcp = require("lua_libp2p.transport.tcp")
 
@@ -8,12 +13,48 @@ local ok_socket, socket = pcall(require, "socket")
 
 local M = {}
 
+local DEFAULT_IDENTIFY_PROTOCOL_VERSION = "/lua-libp2p/0.1.0"
+local DEFAULT_IDENTIFY_AGENT_VERSION = "lua-libp2p/0.1.0"
+
 local function list_copy(values)
   local out = {}
   for i, v in ipairs(values or {}) do
     out[i] = v
   end
   return out
+end
+
+local function bind_listeners(self, addrs)
+  local targets = addrs and list_copy(addrs) or self.listen_addrs
+  if #targets == 0 then
+    targets = { "/ip4/127.0.0.1/tcp/0" }
+  end
+
+  for _, listener in ipairs(self._listeners) do
+    listener:close()
+  end
+  self._listeners = {}
+  self.listen_addrs = {}
+
+  for _, addr in ipairs(targets) do
+    local listener, listen_err = tcp.listen({
+      multiaddr = addr,
+      accept_timeout = self._accept_timeout,
+      io_timeout = self._io_timeout,
+    })
+    if not listener then
+      return nil, listen_err
+    end
+    self._listeners[#self._listeners + 1] = listener
+
+    local resolved, resolved_err = listener:multiaddr()
+    if not resolved then
+      return nil, resolved_err
+    end
+    self.listen_addrs[#self.listen_addrs + 1] = resolved
+  end
+
+  return true
 end
 
 local Host = {}
@@ -25,17 +66,126 @@ local function sleep_seconds(seconds)
   end
 end
 
+local function is_nonfatal_stream_error(err)
+  if not (err and error_mod.is_error(err)) then
+    return false
+  end
+  return err.kind == "timeout"
+    or err.kind == "closed"
+    or err.kind == "decode"
+    or err.kind == "protocol"
+    or err.kind == "unsupported"
+end
+
+local function unwrap_socket(value, seen)
+  if type(value) ~= "table" then
+    return nil
+  end
+  local visited = seen or {}
+  if visited[value] then
+    return nil
+  end
+  visited[value] = true
+
+  if type(value.socket) == "function" then
+    local ok, sock = pcall(value.socket, value)
+    if ok and sock then
+      return sock
+    end
+  end
+
+  if value._socket then
+    return value._socket
+  end
+  if value._server then
+    return value._server
+  end
+
+  if value._raw then
+    local sock = unwrap_socket(value._raw, visited)
+    if sock then
+      return sock
+    end
+  end
+  if value._raw_conn then
+    local sock = unwrap_socket(value._raw_conn, visited)
+    if sock then
+      return sock
+    end
+  end
+
+  return nil
+end
+
+local function build_ready_map(host_obj, timeout)
+  if not (ok_socket and type(socket.select) == "function") then
+    return nil
+  end
+
+  local read_set = {}
+  local by_socket = {}
+
+  for _, listener in ipairs(host_obj._listeners) do
+    local sock = unwrap_socket(listener)
+    if sock then
+      read_set[#read_set + 1] = sock
+      by_socket[sock] = { kind = "listener", value = listener }
+    end
+  end
+
+  for _, entry in ipairs(host_obj._connections) do
+    local sock = unwrap_socket(entry.conn)
+    if sock then
+      read_set[#read_set + 1] = sock
+      by_socket[sock] = { kind = "connection", value = entry }
+    end
+  end
+
+  if #read_set == 0 then
+    return {}
+  end
+
+  local wait_timeout = timeout
+  if wait_timeout == nil then
+    wait_timeout = host_obj._accept_timeout or 0
+  end
+
+  local readable, _, sel_err = socket.select(read_set, nil, wait_timeout)
+  if not readable then
+    return nil, error_mod.new("io", "socket select failed", { cause = sel_err })
+  end
+
+  local ready = {}
+  for _, sock in ipairs(readable) do
+    local item = by_socket[sock]
+    if item then
+      ready[item.value] = true
+    end
+  end
+  return ready
+end
+
 local function extract_peer_id_from_multiaddr(addr)
   local parsed = multiaddr.parse(addr)
   if not parsed then
     return nil
   end
-  for _, c in ipairs(parsed.components) do
+  for i = #parsed.components, 1, -1 do
+    local c = parsed.components[i]
     if c.protocol == "p2p" and c.value then
       return c.value
     end
   end
   return nil
+end
+
+local function has_terminal_peer_id(addr)
+  local parsed = multiaddr.parse(addr)
+  if not parsed or type(parsed.components) ~= "table" or #parsed.components == 0 then
+    return false
+  end
+  local last = parsed.components[#parsed.components]
+  return last.protocol == "p2p" and type(last.value) == "string" and last.value ~= ""
 end
 
 local function resolve_target(target)
@@ -72,8 +222,14 @@ function Host:new(config)
     keypair = generated
   end
 
+  local local_peer, local_peer_err = peerid.from_ed25519_public_key(keypair.public_key)
+  if not local_peer then
+    return nil, local_peer_err
+  end
+
   local self_obj = setmetatable({
     identity = keypair,
+    _peer_id = local_peer,
     listen_addrs = list_copy(cfg.listen_addrs or cfg.listenAddrs or {}),
     transports = list_copy(cfg.transports or { "tcp" }),
     security_transports = list_copy(cfg.security_transports or cfg.securityTransports or {}),
@@ -86,13 +242,30 @@ function Host:new(config)
     _connect_timeout = cfg.connect_timeout or cfg.connectTimeout or 2,
     _io_timeout = cfg.io_timeout or cfg.ioTimeout or 2,
     _accept_timeout = cfg.accept_timeout or cfg.acceptTimeout or 0,
+    _service_options = {
+      identify = cfg.identify or {},
+      perf = cfg.perf or {},
+    },
   }, self)
 
   if #self_obj.security_transports == 0 then
-    self_obj.security_transports = { "/plaintext/2.0.0" }
+    self_obj.security_transports = { "/noise" }
   end
   if #self_obj.muxers == 0 then
     self_obj.muxers = { "/yamux/1.0.0" }
+  end
+
+  local services = cfg.services or cfg.service
+  if services ~= nil then
+    if type(services) ~= "table" then
+      return nil, error_mod.new("input", "services must be a list")
+    end
+    for _, service_name in ipairs(services) do
+      local ok, err = self_obj:add_service(service_name)
+      if not ok then
+        return nil, err
+      end
+    end
   end
 
   return self_obj
@@ -113,6 +286,100 @@ function Host:handle(protocol_id, handler)
   return true
 end
 
+local function list_protocol_handlers(handlers)
+  local out = {}
+  for protocol_id in pairs(handlers) do
+    out[#out + 1] = protocol_id
+  end
+  table.sort(out)
+  return out
+end
+
+function Host:_handle_identify(stream, ctx)
+  local local_pub, pub_err = key_pb.encode_public_key(key_pb.KEY_TYPE.Ed25519, self.identity.public_key)
+  if not local_pub then
+    return nil, pub_err
+  end
+
+  local identify_opts = self._service_options.identify or {}
+  local observed = nil
+  if identify_opts.include_observed ~= false
+    and ctx
+    and ctx.connection
+    and ctx.connection.raw
+    and ctx.connection:raw().remote_multiaddr
+  then
+    observed = ctx.connection:raw():remote_multiaddr()
+  end
+
+  local msg = {
+    protocolVersion = identify_opts.protocol_version
+      or identify_opts.protocolVersion
+      or identify_opts.protocol
+      or DEFAULT_IDENTIFY_PROTOCOL_VERSION,
+    agentVersion = DEFAULT_IDENTIFY_AGENT_VERSION,
+    publicKey = local_pub,
+    listenAddrs = self:get_multiaddrs_raw(),
+    observedAddr = observed,
+    protocols = list_protocol_handlers(self._handlers),
+  }
+
+  local wrote, write_err = identify.write(stream, msg)
+  if not wrote then
+    return nil, write_err
+  end
+
+  if type(stream.close_write) == "function" then
+    stream:close_write()
+  end
+
+  return true
+end
+
+function Host:add_service(name)
+  if type(name) ~= "string" or name == "" then
+    return nil, error_mod.new("input", "service name must be non-empty")
+  end
+
+  if name == "identify" then
+    local ok, err = self:handle(identify.ID, function(stream, ctx)
+      return self:_handle_identify(stream, ctx)
+    end)
+    if not ok then
+      return nil, err
+    end
+
+    local identify_opts = self._service_options.identify or {}
+    if identify_opts.include_push ~= false then
+      ok, err = self:handle(identify.PUSH_ID, function(stream, ctx)
+        return self:_handle_identify(stream, ctx)
+      end)
+      if not ok then
+        return nil, err
+      end
+    end
+
+    return true
+  end
+
+  if name == "ping" then
+    return self:handle(ping.ID, function(stream)
+      return ping.handle(stream)
+    end)
+  end
+
+  if name == "perf" then
+    local perf_opts = self._service_options.perf or {}
+    return self:handle(perf.ID, function(stream)
+      return perf.handle(stream, {
+        write_block_size = perf_opts.write_block_size or perf_opts.writeBlockSize,
+      })
+    end)
+  end
+
+  return nil, error_mod.new("input", "unsupported service", { service = name })
+end
+
 function Host:_build_router()
   local router = require("lua_libp2p.protocol.mss").new_router()
   for protocol_id, handler in pairs(self._handlers) do
@@ -124,41 +391,31 @@ function Host:_build_router()
   return router
 end
 
-function Host:listen(addrs)
-  local targets = addrs and list_copy(addrs) or self.listen_addrs
-  if #targets == 0 then
-    targets = { "/ip4/127.0.0.1/tcp/0" }
-  end
-
-  for _, listener in ipairs(self._listeners) do
-    listener:close()
-  end
-  self._listeners = {}
-  self.listen_addrs = {}
-
-  for _, addr in ipairs(targets) do
-    local listener, listen_err = tcp.listen({
-      multiaddr = addr,
-      accept_timeout = self._accept_timeout,
-      io_timeout = self._io_timeout,
-    })
-    if not listener then
-      return nil, listen_err
-    end
-    self._listeners[#self._listeners + 1] = listener
-
-    local resolved, resolved_err = listener:multiaddr()
-    if not resolved then
-      return nil, resolved_err
-    end
-    self.listen_addrs[#self.listen_addrs + 1] = resolved
-  end
-
-  return self.listen_addrs
-end
-
 function Host:get_listen_addrs()
   return list_copy(self.listen_addrs)
+end
+
+function Host:peer_id()
+  return self._peer_id
+end
+
+function Host:get_multiaddrs_raw()
+  return list_copy(self.listen_addrs)
+end
+
+function Host:get_multiaddrs()
+  local out = {}
+  local pid = self._peer_id and self._peer_id.id or nil
+  for _, addr in ipairs(self.listen_addrs) do
+    if has_terminal_peer_id(addr) then
+      out[#out + 1] = addr
+    elseif pid then
+      out[#out + 1] = addr .. "/p2p/" .. pid
+    else
+      out[#out + 1] = addr
+    end
+  end
+  return out
 end
 
 function Host:_register_connection(conn, state)
@@ -247,8 +504,25 @@ function Host:new_stream(peer_or_addr, protocols, opts)
 end
 
 function Host:poll_once(timeout)
+  local ready_map, ready_err = build_ready_map(self, timeout)
+  if not ready_map and ready_err then
+    return nil, ready_err
+  end
+
   for _, listener in ipairs(self._listeners) do
-    local raw_conn, accept_err = listener:accept(timeout or self._accept_timeout)
+    local should_accept = true
+    if ready_map then
+      should_accept = ready_map[listener] == true
+    end
+
+    local raw_conn, accept_err
+    if should_accept then
+      local accept_timeout = timeout or self._accept_timeout
+      if ready_map then
+        accept_timeout = 0
+      end
+      raw_conn, accept_err = listener:accept(accept_timeout)
+    end
     if raw_conn then
       local conn, state, up_err = upgrader.upgrade_inbound(raw_conn, {
         local_keypair = self.identity,
@@ -257,6 +531,9 @@ function Host:poll_once(timeout)
       })
       if not conn then
         raw_conn:close()
+        if is_nonfatal_stream_error(up_err) then
+          goto continue_listeners
+        end
         return nil, up_err
       end
       self:_register_connection(conn, state)
@@ -264,6 +541,8 @@ function Host:poll_once(timeout)
     elseif accept_err and error_mod.is_error(accept_err) and accept_err.kind ~= "timeout" then
       return nil, accept_err
     end
+
+    ::continue_listeners::
   end
 
   local router, router_err = self:_build_router()
@@ -271,15 +550,36 @@ function Host:poll_once(timeout)
     return nil, router_err
   end
 
-  for _, entry in ipairs(self._connections) do
+  for i = #self._connections, 1, -1 do
+    local entry = self._connections[i]
     local conn = entry.conn
-    local _, process_err = conn:process_one()
-    if process_err and error_mod.is_error(process_err) and process_err.kind ~= "timeout" and process_err.kind ~= "closed" then
-      return nil, process_err
+    local should_process = true
+    if ready_map then
+      should_process = ready_map[entry] == true
+    end
+
+    if should_process then
+      local _, process_err = conn:process_one()
+      if process_err then
+        if is_nonfatal_stream_error(process_err) then
+          if process_err.kind ~= "timeout" then
+            conn:close()
+            table.remove(self._connections, i)
+            if entry.state and entry.state.remote_peer_id then
+              self._connections_by_peer[entry.state.remote_peer_id] = nil
+            end
+          end
+          goto continue_connections
+        end
+        return nil, process_err
+      end
     end
 
     local stream, protocol_id, handler, stream_err = conn:accept_stream(router)
-    if stream_err and error_mod.is_error(stream_err) and stream_err.kind ~= "timeout" then
+    if stream_err then
+      if is_nonfatal_stream_error(stream_err) then
+        goto continue_connections
+      end
       return nil, stream_err
     end
     if stream and handler then
@@ -297,27 +597,43 @@ function Host:poll_once(timeout)
         connection = conn,
       }
     end
+
+    ::continue_connections::
   end
 
   return true
 end
 
 function Host:start(opts)
-  if self._running then
-    return true
-  end
-
   local options = opts or {}
   if #self._listeners == 0 then
-    local _, listen_err = self:listen(options.listen_addrs)
+    local ok, bind_err = bind_listeners(self, options.listen_addrs)
+    if not ok then
+      return nil, bind_err
+    end
     if not self._listeners[1] then
-      return nil, listen_err
+      return nil, error_mod.new("state", "no listeners bound")
+    end
+  elseif options.listen_addrs ~= nil then
+    local ok, bind_err = bind_listeners(self, options.listen_addrs)
+    if not ok then
+      return nil, bind_err
+    end
+    if not self._listeners[1] then
+      return nil, error_mod.new("state", "no listeners bound")
     end
   end
 
-  self._running = true
+  if not self._running then
+    self._running = true
+  end
 
-  if options.blocking then
+  if type(options.on_started) == "function" then
+    options.on_started(self)
+  end
+
+  local blocking = options.blocking ~= false
+  if blocking then
     local iterations = 0
     local max_iterations = options.max_iterations
     local poll_interval = options.poll_interval or 0.01

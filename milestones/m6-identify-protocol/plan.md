@@ -1,5 +1,7 @@
 # Milestone 6 Plan: Identify Protocol
 
+Status: Complete
+
 ## Goal
 Exchange peer metadata and protocol support with `/ipfs/id/1.0.0`.
 
@@ -18,3 +20,5 @@ Exchange peer metadata and protocol support with `/ipfs/id/1.0.0`.
 ## Exit Criteria
 - Lua node can request and serve identify successfully.
 - Peerstore reflects received identify data.
+
+Result: Exit criteria satisfied for identify interop. Lua identify codec/responder/requester are implemented and validated with go-libp2p (vole), including populated identify fields.

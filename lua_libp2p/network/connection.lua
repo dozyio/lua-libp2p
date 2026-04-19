@@ -24,6 +24,13 @@ function Connection:muxer_session()
   return self._muxer
 end
 
+function Connection:socket()
+  if self._raw_conn and self._raw_conn.socket then
+    return self._raw_conn:socket()
+  end
+  return nil
+end
+
 function Connection:process_one()
   if not self._muxer then
     return nil
