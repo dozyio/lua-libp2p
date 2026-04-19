@@ -136,6 +136,20 @@ local function require_matrix_values(cfg)
   end
 end
 
+local function security_protocol_id(name)
+  if name == "noise" then
+    return "/noise"
+  end
+  fatal("unsupported SECURE_CHANNEL mapping: " .. tostring(name))
+end
+
+local function muxer_protocol_id(name)
+  if name == "yamux" then
+    return "/yamux/1.0.0"
+  end
+  fatal("unsupported MUXER mapping: " .. tostring(name))
+end
+
 local function wait_for_listener_multiaddr(redis_host, redis_port, key)
   local deadline = now() + 60
   while now() < deadline do
@@ -152,15 +166,13 @@ local function wait_for_listener_multiaddr(redis_host, redis_port, key)
 end
 
 local function run_listener(cfg)
-  local listener_ip = cfg.listener_ip
-  if listener_ip == "0.0.0.0" then
-    listener_ip = "0.0.0.0"
-  end
+  local security_protocol = security_protocol_id(cfg.secure_channel)
+  local muxer_protocol = muxer_protocol_id(cfg.muxer)
 
   local h, host_err = host_mod.new({
-    listen_addrs = { "/ip4/" .. listener_ip .. "/tcp/0" },
-    security_transports = { "/noise" },
-    muxers = { "/yamux/1.0.0" },
+    listen_addrs = { "/ip4/" .. cfg.listener_ip .. "/tcp/0" },
+    security_transports = { security_protocol },
+    muxers = { muxer_protocol },
     services = { "ping" },
     connect_timeout = 5,
     io_timeout = 5,
@@ -219,9 +231,12 @@ local function run_listener(cfg)
 end
 
 local function run_dialer(cfg)
+  local security_protocol = security_protocol_id(cfg.secure_channel)
+  local muxer_protocol = muxer_protocol_id(cfg.muxer)
+
   local h, host_err = host_mod.new({
-    security_transports = { "/noise" },
-    muxers = { "/yamux/1.0.0" },
+    security_transports = { security_protocol },
+    muxers = { muxer_protocol },
     connect_timeout = 5,
     io_timeout = 5,
   })
