@@ -171,11 +171,42 @@ function Stream:new(session, stream_id)
     send_window = session.initial_stream_window,
     recv_window = session.initial_stream_window,
     recvq = {},
+    recv_buf = "",
     local_closed = false,
     remote_closed = false,
     reset = false,
     acked = false,
   }, self)
+end
+
+function Stream:read(length)
+  if self.reset then
+    return nil, error_mod.new("closed", "yamux stream is reset")
+  end
+  if type(length) ~= "number" or length <= 0 then
+    return nil, error_mod.new("input", "yamux stream read length must be positive")
+  end
+
+  while #self.recv_buf < length do
+    if #self.recvq > 0 then
+      self.recv_buf = self.recv_buf .. table.remove(self.recvq, 1)
+    else
+      if self.remote_closed then
+        return nil, error_mod.new("closed", "yamux stream closed during read")
+      end
+      local _, err = self.session:process_one()
+      if err then
+        return nil, err
+      end
+      if self.reset then
+        return nil, error_mod.new("closed", "yamux stream reset during read")
+      end
+    end
+  end
+
+  local out = self.recv_buf:sub(1, length)
+  self.recv_buf = self.recv_buf:sub(length + 1)
+  return out
 end
 
 function Stream:write(payload)
@@ -244,11 +275,20 @@ function Stream:reset_now()
 end
 
 function Stream:read_now()
+  if #self.recv_buf > 0 then
+    local data = self.recv_buf
+    self.recv_buf = ""
+    return data
+  end
   if #self.recvq == 0 then
     return nil
   end
   local data = table.remove(self.recvq, 1)
   return data
+end
+
+function Stream:close()
+  return self:close_write()
 end
 
 local Session = {}
