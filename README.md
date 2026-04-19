@@ -10,6 +10,8 @@ This repo currently includes:
 - Shared error and logging helpers
 - Ed25519 identity + PeerId + multiformat helpers
 - TCP transport with `/ip4/.../tcp/...` multiaddr parsing, dial/listen, and connection lifecycle controls
+- multistream-select framing and protocol negotiation (`/multistream/1.0.0`)
+- plaintext secure-channel compatibility handshake (`/plaintext/2.0.0`) for testing only
 - Lightweight integration test harness
 
 ## Project layout

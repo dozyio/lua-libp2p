@@ -25,6 +25,8 @@ Status: Complete
 - Done when: two Lua peers can connect and exchange raw bytes.
 
 ## Milestone 3: multistream-select
+Status: Complete
+
 - Implement protocol negotiation framing for `/multistream/1.0.0`.
 - Support both inbound handler registration and outbound protocol selection.
 - Handle `na` and fallback correctly (minimal path only).

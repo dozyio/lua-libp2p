@@ -6,6 +6,8 @@ package.path = table.concat({
 
 local tests = {
   (require("tests.integration.dummy_loopback")),
+  (require("tests.integration.mss_tcp_framing")),
+  (require("tests.integration.plaintext_tcp")),
   (require("tests.integration.tcp_loopback")),
   (require("tests.unit.loopback_errors")),
   (require("tests.unit.multiaddr")),
@@ -13,6 +15,8 @@ local tests = {
   (require("tests.unit.multiaddr_go_deltas")),
   (require("tests.unit.tcp_multiaddr")),
   (require("tests.unit.key_pb")),
+  (require("tests.unit.mss")),
+  (require("tests.unit.plaintext")),
   (require("tests.unit.ed25519")),
   (require("tests.unit.peerid")),
   (require("tests.unit.spec_vectors_ed25519")),
