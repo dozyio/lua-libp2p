@@ -33,6 +33,8 @@ Status: Complete
 - Done when: peers negotiate a toy protocol over one TCP connection.
 
 ## Milestone 4: Noise Security
+Status: In Progress
+
 - Implement `/noise` transport handshake (XX pattern, libp2p payload).
 - Bind static key to libp2p identity key via signature payload.
 - Expose secure channel read and write post-handshake.
@@ -45,6 +47,8 @@ Status: Complete
 - Done when: multiple logical streams run in parallel over one connection.
 
 ## Milestone 6: Identify Protocol
+Status: In Progress
+
 - Implement `/ipfs/id/1.0.0` message encode/decode.
 - Exchange supported protocols, listen addresses, observed address, and public key/PeerId fields.
 - Update peerstore from received identify info.
@@ -73,3 +77,8 @@ Status: Complete
 - Document supported protocols and explicit non-goals.
 - Provide one runnable example (connect + identify + ping).
 - Done when: user can copy example and interop in under 5 minutes.
+
+## Out-of-Order Progress Notes
+- Implemented `/plaintext/2.0.0` handshake for debugging/interoperability testing.
+- Implemented identify codec/flow with `signedPeerRecord` field support and merge helpers.
+- Added signed envelope and peer routing record support (RFC0002/RFC0003 compatibility).

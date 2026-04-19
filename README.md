@@ -13,6 +13,7 @@ This repo currently includes:
 - multistream-select framing and protocol negotiation (`/multistream/1.0.0`)
 - plaintext secure-channel compatibility handshake (`/plaintext/2.0.0`) for testing only
 - identify protocol message codec (protobuf framing, binary multiaddr fields, optional `signedPeerRecord`), basic request/response, push helpers, and multi-message merge utility (`/ipfs/id/1.0.0`, `/ipfs/id/push/1.0.0`)
+- ping protocol echo + RTT helper (`/ipfs/ping/1.0.0`)
 - Lightweight integration test harness
 
 ## Project layout
