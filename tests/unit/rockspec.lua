@@ -2,7 +2,7 @@ local function run()
   local env = {}
   setmetatable(env, { __index = _G })
 
-  local chunk, load_err = loadfile("lua-libp2p-dev-1.0-1.rockspec", "t", env)
+  local chunk, load_err = loadfile("lua-libp2p-0.1.0-1.rockspec", "t", env)
   if not chunk then
     return nil, load_err
   end

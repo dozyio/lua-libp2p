@@ -20,4 +20,4 @@ COPY . .
 
 RUN luarocks --lua-version=5.4 make lua-libp2p-0.1.0-1.rockspec
 
-ENTRYPOINT ["lua5.4", "interop/transport/main.lua"]
+ENTRYPOINT ["lua5.4", "interop/perf/main.lua"]

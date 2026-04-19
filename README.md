@@ -55,7 +55,7 @@ This repo currently includes:
 
 ```bash
 brew install libsodium
-luarocks make lua-libp2p-dev-1.0-1.rockspec
+luarocks make lua-libp2p-0.1.0-1.rockspec
 ```
 
 ## Key serialization (M1)

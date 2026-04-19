@@ -1,11 +1,11 @@
-package = "lua-libp2p-dev"
-version = "1.0-1"
+package = "lua-libp2p"
+version = "0.1.0-1"
 source = {
   url = "git://github.com/dozyio/lua-libp2p",
 }
 description = {
   summary = "Minimal libp2p building blocks for Lua",
-  detailed = "Development rockspec for lua-libp2p and its runtime dependencies.",
+  detailed = "Rockspec for lua-libp2p and its runtime dependencies.",
   homepage = "https://github.com/dozyio/lua-libp2p",
   license = "MIT",
 }
