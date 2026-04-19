@@ -12,6 +12,7 @@ This repo currently includes:
 - TCP transport with `/ip4/.../tcp/...` multiaddr parsing, dial/listen, and connection lifecycle controls
 - multistream-select framing and protocol negotiation (`/multistream/1.0.0`)
 - plaintext secure-channel compatibility handshake (`/plaintext/2.0.0`) for testing only
+- identify protocol message codec (protobuf framing, binary multiaddr fields, optional `signedPeerRecord`), basic request/response, push helpers, and multi-message merge utility (`/ipfs/id/1.0.0`, `/ipfs/id/push/1.0.0`)
 - Lightweight integration test harness
 
 ## Project layout
@@ -24,6 +25,7 @@ This repo currently includes:
 - `lua_libp2p/crypto`: key and signature helpers
 - `lua_libp2p/multiformats`: varint, multibase, multihash, cid helpers
 - `lua_libp2p/multiaddr.lua`: multiaddr parsing/formatting/utilities
+- `lua_libp2p/record`: signed envelopes and peer routing records
 - `lua_libp2p/peerstore`: peer metadata storage
 - `tests`: test harness and integration tests
 

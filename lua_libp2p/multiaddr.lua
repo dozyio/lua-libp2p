@@ -1,5 +1,6 @@
 local error_mod = require("lua_libp2p.error")
 local peerid = require("lua_libp2p.peerid")
+local varint = require("lua_libp2p.multiformats.varint")
 
 local M = {}
 
@@ -127,6 +128,62 @@ local PROTOCOLS = {
   plaintextv2 = { has_value = false },
   ["p2p-circuit"] = { has_value = false },
   memory = { has_value = true, validate = validate_non_empty },
+}
+
+local PROTOCOL_CODES = {
+  ip4 = 4,
+  tcp = 6,
+  dns = 53,
+  dns4 = 54,
+  dns6 = 55,
+  dnsaddr = 56,
+  udp = 273,
+  ip6 = 41,
+  p2p = 421,
+  http = 480,
+  ["http-path"] = 481,
+  https = 443,
+  tls = 448,
+  sni = 449,
+  noise = 454,
+  ws = 477,
+  wss = 478,
+  plaintextv2 = 7367777,
+  ["webrtc-direct"] = 280,
+  webrtc = 281,
+  ["p2p-circuit"] = 290,
+  utp = 302,
+  udt = 301,
+  quic = 460,
+  ["quic-v1"] = 461,
+  webtransport = 465,
+  ["p2p-webrtc-direct"] = 276,
+  ["p2p-webrtc-star"] = 275,
+  ["p2p-websocket-star"] = 479,
+  ["p2p-stardust"] = 277,
+  unix = 400,
+  memory = 777,
+}
+
+local CODE_TO_PROTOCOL = {}
+for name, code in pairs(PROTOCOL_CODES) do
+  CODE_TO_PROTOCOL[code] = name
+end
+
+local ENCODING_KIND = {
+  ip4 = "ip4",
+  ip6 = "ip6",
+  tcp = "port",
+  udp = "port",
+  dns = "string",
+  dns4 = "string",
+  dns6 = "string",
+  dnsaddr = "string",
+  sni = "string",
+  p2p = "peerid",
+  unix = "string",
+  ["http-path"] = "string",
+  memory = "string",
 }
 
 local function split_path(path)
@@ -346,6 +403,202 @@ function M.to_tcp_endpoint(input)
     host = host_part.value,
     host_protocol = host_part.protocol,
     port = port,
+  }
+end
+
+local function ip4_to_bytes(ip4)
+  local a, b, c, d = ip4:match("^(%d+)%.(%d+)%.(%d+)%.(%d+)$")
+  return string.char(tonumber(a), tonumber(b), tonumber(c), tonumber(d))
+end
+
+local function ip4_from_bytes(bytes)
+  if #bytes ~= 4 then
+    return nil, error_mod.new("decode", "ip4 byte length must be 4")
+  end
+  return string.format("%d.%d.%d.%d", bytes:byte(1), bytes:byte(2), bytes:byte(3), bytes:byte(4))
+end
+
+local function port_to_bytes(text)
+  local n = tonumber(text)
+  return string.char(math.floor(n / 256), n % 256)
+end
+
+local function port_from_bytes(bytes)
+  if #bytes ~= 2 then
+    return nil, error_mod.new("decode", "port byte length must be 2")
+  end
+  local a, b = bytes:byte(1), bytes:byte(2)
+  return tostring(a * 256 + b)
+end
+
+local function encode_value(protocol, value)
+  local kind = ENCODING_KIND[protocol]
+  if kind == nil then
+    return ""
+  end
+  if kind == "ip4" then
+    return ip4_to_bytes(value)
+  end
+  if kind == "ip6" then
+    return nil, error_mod.new("unsupported", "ip6 binary encoding not implemented yet")
+  end
+  if kind == "port" then
+    return port_to_bytes(value)
+  end
+  if kind == "peerid" then
+    local pid, pid_err = peerid.parse(value)
+    if not pid then
+      return nil, pid_err
+    end
+    local len, len_err = varint.encode_u64(#pid.bytes)
+    if not len then
+      return nil, len_err
+    end
+    return len .. pid.bytes
+  end
+  if kind == "string" then
+    local len, len_err = varint.encode_u64(#value)
+    if not len then
+      return nil, len_err
+    end
+    return len .. value
+  end
+  return nil, error_mod.new("unsupported", "unsupported value encoding kind", { kind = kind })
+end
+
+local function decode_value(protocol, bytes, offset)
+  local kind = ENCODING_KIND[protocol]
+  if kind == nil then
+    return nil, offset
+  end
+  local i = offset
+
+  if kind == "ip4" then
+    local finish = i + 3
+    if finish > #bytes then
+      return nil, nil, error_mod.new("decode", "truncated ip4 value")
+    end
+    local value, err = ip4_from_bytes(bytes:sub(i, finish))
+    if not value then
+      return nil, nil, err
+    end
+    return value, finish + 1
+  end
+  if kind == "ip6" then
+    return nil, nil, error_mod.new("unsupported", "ip6 binary decoding not implemented yet")
+  end
+  if kind == "port" then
+    local finish = i + 1
+    if finish > #bytes then
+      return nil, nil, error_mod.new("decode", "truncated port value")
+    end
+    local value, err = port_from_bytes(bytes:sub(i, finish))
+    if not value then
+      return nil, nil, err
+    end
+    return value, finish + 1
+  end
+
+  local length, after_len_or_err = varint.decode_u64(bytes, i)
+  if not length then
+    return nil, nil, after_len_or_err
+  end
+  local finish = after_len_or_err + length - 1
+  if finish > #bytes then
+    return nil, nil, error_mod.new("decode", "truncated variable-size value")
+  end
+  local raw = bytes:sub(after_len_or_err, finish)
+
+  if kind == "peerid" then
+    return peerid.to_base58(raw), finish + 1
+  end
+  return raw, finish + 1
+end
+
+function M.to_bytes(input)
+  local addr = input
+  if type(addr) == "string" then
+    local parsed, parse_err = M.parse(addr)
+    if not parsed then
+      return nil, parse_err
+    end
+    addr = parsed
+  end
+
+  if type(addr) ~= "table" or type(addr.components) ~= "table" then
+    return nil, error_mod.new("input", "invalid multiaddr object")
+  end
+
+  local parts = {}
+  for _, component in ipairs(addr.components) do
+    local protocol = component.protocol
+    local code = PROTOCOL_CODES[protocol]
+    if not code then
+      return nil, error_mod.new("unsupported", "binary encoding unsupported protocol", { protocol = protocol })
+    end
+
+    local vcode, vcode_err = varint.encode_u64(code)
+    if not vcode then
+      return nil, vcode_err
+    end
+    parts[#parts + 1] = vcode
+
+    local spec = PROTOCOLS[protocol]
+    if spec and spec.has_value then
+      local value_bytes, value_err = encode_value(protocol, component.value)
+      if not value_bytes then
+        return nil, value_err
+      end
+      parts[#parts + 1] = value_bytes
+    end
+  end
+
+  return table.concat(parts)
+end
+
+function M.from_bytes(bytes)
+  if type(bytes) ~= "string" or bytes == "" then
+    return nil, error_mod.new("input", "multiaddr bytes must be non-empty")
+  end
+
+  local components = {}
+  local i = 1
+  while i <= #bytes do
+    local code, next_i_or_err = varint.decode_u64(bytes, i)
+    if not code then
+      return nil, next_i_or_err
+    end
+
+    local protocol = CODE_TO_PROTOCOL[code]
+    if not protocol then
+      return nil, error_mod.new("unsupported", "unsupported multiaddr protocol code", { code = code })
+    end
+
+    i = next_i_or_err
+    local spec = PROTOCOLS[protocol]
+    local value
+    if spec and spec.has_value then
+      local err
+      value, i, err = decode_value(protocol, bytes, i)
+      if not value then
+        return nil, err
+      end
+    end
+
+    components[#components + 1] = {
+      protocol = protocol,
+      value = value,
+    }
+  end
+
+  local text, format_err = M.format({ components = components })
+  if not text then
+    return nil, format_err
+  end
+
+  return {
+    text = text,
+    components = components,
   }
 end
 
