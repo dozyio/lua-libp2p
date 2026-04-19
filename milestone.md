@@ -41,6 +41,10 @@ Status: In Progress
 - Done when: Lua peer completes secure handshake with a go-libp2p test peer.
 
 ## Milestone 5: Yamux Multiplexing
+Status: Complete
+
+Note: Yamux implementation and interop are complete and validated over TCP. Full secure-channel integration remains pending completion of Milestone 4 (Noise).
+
 - Implement `/yamux/1.0.0` frame encode/decode and stream IDs.
 - Support stream open, data, close, reset, and window updates (minimal flow control).
 - Handle concurrent streams over one secure connection.
@@ -55,6 +59,8 @@ Status: In Progress
 - Done when: Lua node identifies with go-libp2p and stores peer metadata.
 
 ## Milestone 7: Ping Protocol
+Status: In Progress
+
 - Implement `/ipfs/ping/1.0.0` handler (echo payload).
 - Implement client ping API and RTT measurement.
 - Add simple health/keepalive hook.
