@@ -376,7 +376,7 @@ end
 
 local function run_one_iteration(h, listener_addr, upload_bytes, download_bytes)
   local started = now()
-  local stream, _, conn, _, stream_err = h:new_stream(listener_addr, { PERF_PROTOCOL_ID }, {
+  local stream, _, conn, stream_err = h:new_stream(listener_addr, { PERF_PROTOCOL_ID }, {
     timeout = 10,
     io_timeout = 10,
   })

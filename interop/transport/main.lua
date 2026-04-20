@@ -90,15 +90,69 @@ local function redis_get(host, port, key)
     return nil, err
   end
   local value = trim(out)
+  if value:match("^%(%s*error%)") or value:find("WRONGTYPE", 1, true) then
+    return nil
+  end
   if value == "" or value == "(nil)" then
     return nil
   end
   return value
 end
 
+local function redis_lindex(host, port, key)
+  local cmd = string.format(
+    "redis-cli --raw -h %s -p %d LINDEX %s 0 2>/dev/null",
+    shell_quote(host),
+    port,
+    shell_quote(key)
+  )
+  local out, err = run_command_capture(cmd)
+  if not out then
+    return nil, err
+  end
+
+  local value = trim(out)
+  if value:match("^%(%s*error%)") or value:find("WRONGTYPE", 1, true) then
+    return nil
+  end
+  if value ~= "" and value ~= "(nil)" then
+    return value
+  end
+  return nil
+end
+
 local function redis_set(host, port, key, value)
   local cmd = string.format(
     "redis-cli --raw -h %s -p %d SET %s %s 1>/dev/null 2>/dev/null",
+    shell_quote(host),
+    port,
+    shell_quote(key),
+    shell_quote(value)
+  )
+  local _, err = run_command_capture(cmd)
+  if err then
+    return nil, err
+  end
+  return true
+end
+
+local function redis_del(host, port, key)
+  local cmd = string.format(
+    "redis-cli --raw -h %s -p %d DEL %s 1>/dev/null 2>/dev/null",
+    shell_quote(host),
+    port,
+    shell_quote(key)
+  )
+  local _, err = run_command_capture(cmd)
+  if err then
+    return nil, err
+  end
+  return true
+end
+
+local function redis_rpush(host, port, key, value)
+  local cmd = string.format(
+    "redis-cli --raw -h %s -p %d RPUSH %s %s 1>/dev/null 2>/dev/null",
     shell_quote(host),
     port,
     shell_quote(key),
@@ -160,6 +214,15 @@ local function wait_for_listener_multiaddr(redis_host, redis_port, key)
     if value and value ~= "" then
       return value
     end
+
+    local listed, list_err = redis_lindex(redis_host, redis_port, key)
+    if list_err then
+      fatal("redis lindex failed: " .. tostring(list_err))
+    end
+    if listed and listed ~= "" then
+      return listed
+    end
+
     sleep_seconds(0.2)
   end
   fatal("timed out waiting for listener multiaddr in redis")
@@ -211,14 +274,20 @@ local function run_listener(cfg)
 
   local advertised_multiaddr = string.format("/ip4/%s/tcp/%s/p2p/%s", advertise_ip, port, peer_id)
 
-  local set_ok, set_err = redis_set(
+  local redis_key = cfg.test_key .. "_listener_multiaddr"
+  local del_ok, del_err = redis_del(cfg.redis_host, cfg.redis_port, redis_key)
+  if not del_ok then
+    fatal("failed to clear listener multiaddr key in redis: " .. tostring(del_err))
+  end
+
+  local push_ok, push_err = redis_rpush(
     cfg.redis_host,
     cfg.redis_port,
-    cfg.test_key .. "_listener_multiaddr",
+    redis_key,
     advertised_multiaddr
   )
-  if not set_ok then
-    fatal("failed to write listener multiaddr to redis: " .. tostring(set_err))
+  if not push_ok then
+    fatal("failed to publish listener multiaddr to redis: " .. tostring(push_err))
   end
 
   while true do
@@ -251,7 +320,7 @@ local function run_dialer(cfg)
   )
 
   local started = now()
-  local stream, _, conn, _, stream_err = h:new_stream(listener_addr, { ping.ID }, {
+  local stream, _, conn, stream_err = h:new_stream(listener_addr, { ping.ID }, {
     timeout = 5,
     io_timeout = 5,
   })
