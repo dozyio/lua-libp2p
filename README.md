@@ -58,7 +58,7 @@ brew install libsodium
 luarocks make lua-libp2p-0.1.0-1.rockspec
 ```
 
-## Key serialization (M1)
+## Key serialization
 
 - Public keys for PeerId are encoded as libp2p `PublicKey` protobuf bytes (`Type`, `Data`) using deterministic field order/minimal varints.
 - Private/public key protobuf helpers live in `lua_libp2p/crypto/key_pb.lua`.
