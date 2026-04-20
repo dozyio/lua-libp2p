@@ -11,7 +11,7 @@ local host_mod = require("lua_libp2p.host")
 local ok_socket, socket = pcall(require, "socket")
 
 local PERF_PROTOCOL_ID = "/perf/1.0.0"
-local BLOCK_SIZE = 64 * 1024
+local BLOCK_SIZE = 16 * 1024
 local SEND_CHUNK = string.rep(string.char(0xAB), BLOCK_SIZE)
 
 local function now()

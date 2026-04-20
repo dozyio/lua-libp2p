@@ -40,6 +40,12 @@ local function u16be(n)
   return string.char((n >> 8) & 0xFF, n & 0xFF)
 end
 
+local MAX_TRANSPORT_MESSAGE_SIZE = 0xFFFF
+local CHACHA20POLY1305_TAG_SIZE = 16
+-- The noise transport frame length includes ciphertext + AEAD tag.
+-- Max plaintext per frame is therefore 65535 - 16 = 65519 bytes.
+local MAX_PLAINTEXT_MESSAGE_SIZE = MAX_TRANSPORT_MESSAGE_SIZE - CHACHA20POLY1305_TAG_SIZE
+
 local function parse_u16be(bytes)
   local a, b = bytes:byte(1, 2)
   return a * 256 + b
@@ -354,7 +360,7 @@ function M.write_message(conn, message)
   if type(message) ~= "string" then
     return nil, error_mod.new("input", "noise message must be bytes")
   end
-  if #message > 0xFFFF then
+  if #message > MAX_TRANSPORT_MESSAGE_SIZE then
     return nil, error_mod.new("input", "noise message too large")
   end
   local ok, err = conn:write(u16be(#message) .. message)
@@ -532,9 +538,30 @@ function SecureConn:read(n)
 end
 
 function SecureConn:write(payload)
-  local ciphertext = cipher_encrypt(self._send_key, self._send_nonce, "", payload)
-  self._send_nonce = self._send_nonce + 1
-  return M.write_message(self._raw, ciphertext)
+  if type(payload) ~= "string" then
+    return nil, error_mod.new("input", "noise payload must be bytes")
+  end
+
+  local offset = 1
+  while offset <= #payload do
+    local chunk_end = offset + MAX_PLAINTEXT_MESSAGE_SIZE - 1
+    if chunk_end > #payload then
+      chunk_end = #payload
+    end
+
+    local chunk = payload:sub(offset, chunk_end)
+    local ciphertext = cipher_encrypt(self._send_key, self._send_nonce, "", chunk)
+    self._send_nonce = self._send_nonce + 1
+
+    local ok, err = M.write_message(self._raw, ciphertext)
+    if not ok then
+      return nil, err
+    end
+
+    offset = chunk_end + 1
+  end
+
+  return true
 end
 
 function SecureConn:close()
