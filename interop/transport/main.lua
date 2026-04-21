@@ -237,6 +237,7 @@ local function run_listener(cfg)
     security_transports = { security_protocol },
     muxers = { muxer_protocol },
     services = { "ping" },
+    blocking = false,
     connect_timeout = 5,
     io_timeout = 5,
     accept_timeout = 0.1,
@@ -245,7 +246,7 @@ local function run_listener(cfg)
     fatal(host_err)
   end
 
-  local ok, start_err = h:start({ blocking = false })
+  local ok, start_err = h:start()
   if not ok then
     fatal(start_err)
   end

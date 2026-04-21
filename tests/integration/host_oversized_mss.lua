@@ -14,15 +14,14 @@ end
 local function run()
   local h, host_err = host_mod.new({
     listen_addrs = { "/ip4/127.0.0.1/tcp/0" },
+    blocking = false,
+    accept_timeout = 0.05,
   })
   if not h then
     return nil, host_err
   end
 
-  local started, start_err = h:start({
-    blocking = false,
-    accept_timeout = 0.05,
-  })
+  local started, start_err = h:start()
   if not started then
     close_quiet(h)
     return nil, start_err

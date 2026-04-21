@@ -379,4 +379,30 @@ function M.verify_signed_peer_record(message, opts)
   return peer_record.verify_signed_envelope(message.signedPeerRecord, opts)
 end
 
+function M.enable_run_on_connection_open(host, opts)
+  local options = opts or {}
+  if options.run_on_connection_open == false then
+    return true
+  end
+  if type(host) ~= "table" then
+    return nil, error_mod.new("input", "identify run-on-connect requires host table")
+  end
+  if host._identify_on_connect_handler ~= nil then
+    return true
+  end
+  if type(host.on) ~= "function" then
+    return nil, error_mod.new("input", "identify run-on-connect requires host:on")
+  end
+  if type(host._schedule_identify_for_peer) ~= "function" then
+    return nil, error_mod.new("input", "identify run-on-connect requires host scheduler")
+  end
+
+  host._identify_on_connect_handler = function(payload)
+    local peer_id = payload and payload.peer_id
+    return host:_schedule_identify_for_peer(peer_id)
+  end
+
+  return host:on("peer_connected", host._identify_on_connect_handler)
+end
+
 return M

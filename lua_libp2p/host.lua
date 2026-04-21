@@ -1,5 +1,6 @@
 local ed25519 = require("lua_libp2p.crypto.ed25519")
 local error_mod = require("lua_libp2p.error")
+local log = require("lua_libp2p.log")
 local multiaddr = require("lua_libp2p.multiaddr")
 local peerid = require("lua_libp2p.peerid")
 local identify = require("lua_libp2p.protocol.identify")
@@ -15,6 +16,7 @@ local M = {}
 
 local DEFAULT_IDENTIFY_PROTOCOL_VERSION = "/lua-libp2p/0.1.0"
 local DEFAULT_IDENTIFY_AGENT_VERSION = "lua-libp2p/0.1.0"
+local DEFAULT_EVENT_QUEUE_MAX = 256
 
 local function list_copy(values)
   local out = {}
@@ -22,6 +24,40 @@ local function list_copy(values)
     out[i] = v
   end
   return out
+end
+
+local function emit_event(self, name, payload)
+  local event = {
+    name = name,
+    payload = payload,
+    ts = os.time(),
+  }
+
+  for _, sub in pairs(self._event_subscribers) do
+    if sub.event_name == nil or sub.event_name == name then
+      local queue = sub.queue
+      queue[#queue + 1] = event
+      local max_size = sub.max_queue or DEFAULT_EVENT_QUEUE_MAX
+      while #queue > max_size do
+        table.remove(queue, 1)
+      end
+    end
+  end
+
+  local handlers = self._event_handlers[name]
+  if type(handlers) == "table" then
+    for _, handler in ipairs(handlers) do
+      local ok, err = pcall(handler, payload, event)
+      if not ok then
+        return nil, error_mod.new("protocol", "host event handler panicked", {
+          event = name,
+          cause = err,
+        })
+      end
+    end
+  end
+
+  return true
 end
 
 local function bind_listeners(self, addrs)
@@ -257,6 +293,16 @@ function Host:new(config)
     _listeners = {},
     _connections = {},
     _connections_by_peer = {},
+    _event_handlers = {},
+    _event_queue_max = cfg.event_queue_max or cfg.eventQueueMax or DEFAULT_EVENT_QUEUE_MAX,
+    _event_subscribers = {},
+    _next_subscriber_id = 1,
+    _identify_on_connect_handler = nil,
+    _identify_inflight = {},
+    _start_blocking = cfg.blocking ~= false,
+    _start_max_iterations = cfg.max_iterations or cfg.maxIterations,
+    _start_poll_interval = cfg.poll_interval or cfg.pollInterval or 0.01,
+    _on_started = cfg.on_started or cfg.onStarted,
     _running = false,
     _connect_timeout = cfg.connect_timeout or cfg.connectTimeout or 2,
     _io_timeout = cfg.io_timeout or cfg.ioTimeout or 2,
@@ -272,6 +318,15 @@ function Host:new(config)
   end
   if #self_obj.muxers == 0 then
     self_obj.muxers = { "/yamux/1.0.0" }
+  end
+
+  if type(cfg.on) == "table" then
+    for event_name, handler in pairs(cfg.on) do
+      local ok, on_err = self_obj:on(event_name, handler)
+      if not ok then
+        return nil, on_err
+      end
+    end
   end
 
   local services = cfg.services or cfg.service
@@ -398,6 +453,97 @@ function Host:_handle_identify(stream, ctx)
   return true
 end
 
+function Host:_request_identify(peer_id, opts)
+  if type(peer_id) ~= "string" or peer_id == "" then
+    return nil, error_mod.new("input", "identify request requires peer id")
+  end
+
+  local stream, selected, conn, state_or_err = self:new_stream(peer_id, { identify.ID }, opts)
+  if not stream then
+    return nil, state_or_err
+  end
+  local state = state_or_err
+
+  local msg, read_err = identify.read(stream)
+  if type(stream.close) == "function" then
+    pcall(function()
+      stream:close()
+    end)
+  elseif type(stream.reset_now) == "function" then
+    pcall(function()
+      stream:reset_now()
+    end)
+  end
+  if not msg then
+    return nil, read_err
+  end
+
+  return {
+    message = msg,
+    protocol = selected,
+    connection = conn,
+    state = state,
+  }
+end
+
+function Host:_schedule_identify_for_peer(peer_id)
+  if type(peer_id) ~= "string" or peer_id == "" then
+    return true
+  end
+  if self._identify_inflight[peer_id] then
+    return true
+  end
+  self._identify_inflight[peer_id] = true
+  log.info("identify on connect scheduled", {
+    subsystem = "identify",
+    peer_id = peer_id,
+  })
+
+  self:_spawn_handler_task(function(_, ctx)
+    local pid = ctx and ctx.peer_id
+    local result, identify_err = self:_request_identify(pid)
+    self._identify_inflight[pid] = nil
+
+    if not result then
+      log.warn("identify on connect failed", {
+        subsystem = "identify",
+        peer_id = pid,
+        cause = tostring(identify_err),
+      })
+      local ok, emit_err = emit_event(self, "peer_identify_failed", {
+        peer_id = pid,
+        cause = identify_err,
+      })
+      if not ok then
+        return nil, emit_err
+      end
+      return true
+    end
+
+    log.info("identify on connect completed", {
+      subsystem = "identify",
+      peer_id = pid,
+    })
+
+    local ok, emit_err = emit_event(self, "peer_identified", {
+      peer_id = pid,
+      protocol = result.protocol,
+      message = result.message,
+      connection = result.connection,
+      state = result.state,
+    })
+    if not ok then
+      return nil, emit_err
+    end
+    return true
+  end, {
+    protocol = "identify_connect",
+    peer_id = peer_id,
+  })
+
+  return true
+end
+
 function Host:add_service(name)
   if type(name) ~= "string" or name == "" then
     return nil, error_mod.new("input", "service name must be non-empty")
@@ -412,6 +558,12 @@ function Host:add_service(name)
     end
 
     local identify_opts = self._service_options.identify or {}
+
+    local identify_hook_ok, identify_hook_err = identify.enable_run_on_connection_open(self, identify_opts)
+    if not identify_hook_ok then
+      return nil, identify_hook_err
+    end
+
     if identify_opts.include_push ~= false then
       ok, err = self:handle(identify.PUSH_ID, function(stream, ctx)
         return self:_handle_identify(stream, ctx)
@@ -493,7 +645,102 @@ function Host:_register_connection(conn, state)
     self._connections_by_peer[peer_id] = entry
   end
 
+  local ok, emit_err = emit_event(self, "peer_connected", {
+    connection = entry.conn,
+    state = entry.state,
+    peer_id = peer_id,
+  })
+  if not ok then
+    return nil, emit_err
+  end
+
   return entry
+end
+
+function Host:on(event_name, handler)
+  if type(event_name) ~= "string" or event_name == "" then
+    return nil, error_mod.new("input", "event name must be non-empty")
+  end
+  if type(handler) ~= "function" then
+    return nil, error_mod.new("input", "event handler must be a function")
+  end
+
+  local handlers = self._event_handlers[event_name]
+  if not handlers then
+    handlers = {}
+    self._event_handlers[event_name] = handlers
+  end
+  handlers[#handlers + 1] = handler
+  return true
+end
+
+function Host:off(event_name, handler)
+  local handlers = self._event_handlers[event_name]
+  if type(handlers) ~= "table" then
+    return false
+  end
+  for i = 1, #handlers do
+    if handlers[i] == handler then
+      table.remove(handlers, i)
+      return true
+    end
+  end
+  return false
+end
+
+function Host:subscribe(event_name_or_opts, opts)
+  local event_name = nil
+  local options = opts or {}
+
+  if type(event_name_or_opts) == "table" then
+    options = event_name_or_opts
+    event_name = options.event_name or options.event
+  elseif event_name_or_opts ~= nil then
+    event_name = event_name_or_opts
+  end
+
+  if event_name ~= nil and (type(event_name) ~= "string" or event_name == "") then
+    return nil, error_mod.new("input", "event name must be non-empty")
+  end
+
+  local sub = {
+    id = self._next_subscriber_id,
+    event_name = event_name,
+    queue = {},
+    max_queue = options.max_queue or options.maxQueue or self._event_queue_max or DEFAULT_EVENT_QUEUE_MAX,
+  }
+  self._next_subscriber_id = self._next_subscriber_id + 1
+  self._event_subscribers[sub.id] = sub
+  return sub
+end
+
+function Host:unsubscribe(subscriber)
+  local id = subscriber
+  if type(subscriber) == "table" then
+    id = subscriber.id
+  end
+  if type(id) ~= "number" then
+    return false
+  end
+  if self._event_subscribers[id] == nil then
+    return false
+  end
+  self._event_subscribers[id] = nil
+  return true
+end
+
+function Host:next_event(subscriber)
+  if type(subscriber) ~= "table" or type(subscriber.id) ~= "number" then
+    return nil, error_mod.new("input", "subscriber handle is required")
+  end
+  local current = self._event_subscribers[subscriber.id]
+  if current == nil then
+    return nil, error_mod.new("state", "subscriber is not registered")
+  end
+  if #current.queue == 0 then
+    return nil
+  end
+  return table.remove(current.queue, 1)
 end
 
 function Host:_find_connection(peer_id)
@@ -548,7 +795,11 @@ function Host:dial(peer_or_addr, opts)
     return nil, nil, up_err
   end
 
-  local entry = self:_register_connection(conn, state)
+  local entry, register_err = self:_register_connection(conn, state)
+  if not entry then
+    conn:close()
+    return nil, nil, register_err
+  end
   return entry.conn, entry.state
 end
 
@@ -599,7 +850,11 @@ function Host:poll_once(timeout)
         end
         return nil, up_err
       end
-      self:_register_connection(conn, state)
+      local entry, register_err = self:_register_connection(conn, state)
+      if not entry then
+        conn:close()
+        return nil, register_err
+      end
       break
     elseif accept_err and error_mod.is_error(accept_err) and accept_err.kind ~= "timeout" then
       return nil, accept_err
@@ -630,6 +885,15 @@ function Host:poll_once(timeout)
             table.remove(self._connections, i)
             if entry.state and entry.state.remote_peer_id then
               self._connections_by_peer[entry.state.remote_peer_id] = nil
+            end
+            local ok, emit_err = emit_event(self, "peer_disconnected", {
+              connection = conn,
+              state = entry.state,
+              peer_id = entry.state and entry.state.remote_peer_id,
+              cause = process_err,
+            })
+            if not ok then
+              return nil, emit_err
             end
           end
           goto continue_connections
@@ -666,18 +930,9 @@ function Host:poll_once(timeout)
   return true
 end
 
-function Host:start(opts)
-  local options = opts or {}
+function Host:start()
   if #self._listeners == 0 then
-    local ok, bind_err = bind_listeners(self, options.listen_addrs)
-    if not ok then
-      return nil, bind_err
-    end
-    if not self._listeners[1] then
-      return nil, error_mod.new("state", "no listeners bound")
-    end
-  elseif options.listen_addrs ~= nil then
-    local ok, bind_err = bind_listeners(self, options.listen_addrs)
+    local ok, bind_err = bind_listeners(self)
     if not ok then
       return nil, bind_err
     end
@@ -690,17 +945,17 @@ function Host:start(opts)
     self._running = true
   end
 
-  if type(options.on_started) == "function" then
-    options.on_started(self)
+  if type(self._on_started) == "function" then
+    self._on_started(self)
   end
 
-  local blocking = options.blocking ~= false
+  local blocking = self._start_blocking
   if blocking then
     local iterations = 0
-    local max_iterations = options.max_iterations
-    local poll_interval = options.poll_interval or 0.01
+    local max_iterations = self._start_max_iterations
+    local poll_interval = self._start_poll_interval
     while self._running do
-      local ok, err = self:poll_once(options.accept_timeout)
+      local ok, err = self:poll_once(self._accept_timeout)
       if not ok then
         self._running = false
         return nil, err
@@ -727,6 +982,15 @@ function Host:close()
   self._running = false
   for _, entry in ipairs(self._connections) do
     entry.conn:close()
+    local ok, emit_err = emit_event(self, "peer_disconnected", {
+      connection = entry.conn,
+      state = entry.state,
+      peer_id = entry.state and entry.state.remote_peer_id,
+      cause = error_mod.new("closed", "host closed"),
+    })
+    if not ok then
+      return nil, emit_err
+    end
   end
   self._connections = {}
   self._connections_by_peer = {}

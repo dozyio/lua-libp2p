@@ -17,6 +17,8 @@ local function run()
     security_transports = { "/plaintext/2.0.0" },
     muxers = { "/yamux/1.0.0" },
     services = { "identify" },
+    blocking = false,
+    accept_timeout = 0.01,
   })
   if not h then
     return nil, h_err
@@ -44,7 +46,7 @@ local function run()
     return nil, "perf service should register /perf/1.0.0 handler"
   end
 
-  local started, start_err = h:start({ blocking = false, accept_timeout = 0.01 })
+  local started, start_err = h:start()
   if not started then
     return nil, start_err
   end
@@ -99,7 +101,10 @@ local function run()
     return nil, "get_multiaddrs should preserve terminal p2p address"
   end
 
-  started, start_err = h:start({ max_iterations = 1, blocking = true, poll_interval = 0 })
+  h._start_blocking = true
+  h._start_max_iterations = 1
+  h._start_poll_interval = 0
+  started, start_err = h:start()
   if not started then
     return nil, start_err
   end

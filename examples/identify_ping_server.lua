@@ -43,16 +43,6 @@ if not identity then
 	os.exit(1)
 end
 
-local host, host_err = host_mod.new({
-	identity = identity,
-	listen_addrs = { listen_addr },
-	services = { "identify", "ping", "perf" },
-})
-if not host then
-	io.stderr:write("host init failed: " .. tostring(host_err) .. "\n")
-	os.exit(1)
-end
-
 local function on_started(h)
 	io.stdout:write("listening:\n")
 	for _, addr in ipairs(h:get_multiaddrs()) do
@@ -64,12 +54,21 @@ local function on_started(h)
 	io.stdout:flush()
 end
 
-local started, start_err = host:start({
+local host, host_err = host_mod.new({
+	identity = identity,
+	listen_addrs = { listen_addr },
+	services = { "identify", "ping", "perf" },
 	blocking = true,
 	poll_interval = 0.01,
 	accept_timeout = 0.05,
 	on_started = on_started,
 })
+if not host then
+	io.stderr:write("host init failed: " .. tostring(host_err) .. "\n")
+	os.exit(1)
+end
+
+local started, start_err = host:start()
 
 if not started then
 	io.stderr:write("host stopped with error: " .. tostring(start_err) .. "\n")

@@ -10,11 +10,15 @@ This repo currently includes:
 - Shared error and logging helpers
 - Ed25519 identity + PeerId + multiformat helpers
 - Multiaddr parsing/formatting + binary codec subset (`/ip4`, `/ip6`, `/dns*`, `/tcp`, `/udp`, `/quic-v1`, `/p2p`)
+- Peer discovery abstraction + bootstrap discovery source (dnsaddr-capable via resolver injection)
 - Multibase/multiformat primitives (base58btc, base32, varint, multihash, CIDv1)
 - Signed envelope + peer record encode/sign/verify primitives
+- Kademlia kbucket routing-table module (`lua_libp2p.kbucket`)
+- Kademlia DHT module with routing-table integration, FIND_NODE wire codec/handler path, default libp2p bootstrapper list, and discovery-driven bootstrap dial routine (`lua_libp2p.kad_dht`)
 - TCP transport with `/ip4/.../tcp/...` multiaddr parsing, dial/listen, and connection lifecycle controls
 - multistream-select framing and protocol negotiation (`/multistream/1.0.0`)
 - noise-libp2p XX handshake + secure channel framing primitives (`/noise`)
+- noise identity verification supports Ed25519 and RSA public keys
 - plaintext secure-channel compatibility handshake (`/plaintext/2.0.0`) for testing only
 - identify protocol message codec (protobuf framing, binary multiaddr fields, optional `signedPeerRecord`), basic request/response, push helpers, and multi-message merge utility (`/ipfs/id/1.0.0`, `/ipfs/id/push/1.0.0`)
 - ping protocol echo + RTT helper (`/ipfs/ping/1.0.0`)
@@ -23,6 +27,7 @@ This repo currently includes:
 - transport-agnostic connection/stream abstraction with pluggable muxer session support
 - connection upgrader pipeline (security + muxer negotiation) for plaintext+yamux and noise+yamux
 - host/node API with lifecycle (`start`/`stop`) and stream operations (`dial`, `new_stream`, `handle`)
+- Host behavior is configured at `new(...)`; `start()` takes no options
 - Lightweight integration test harness
 
 ## Project layout
@@ -35,10 +40,14 @@ This repo currently includes:
 - `lua_libp2p/crypto`: key and signature helpers
 - `lua_libp2p/multiformats`: varint, multibase, multihash, cid helpers
 - `lua_libp2p/multiaddr.lua`: multiaddr parsing/formatting/utilities
+- `lua_libp2p/dnsaddr.lua`: dnsaddr resolution abstraction utilities (resolver-injected)
+- `lua_libp2p/discovery`: pluggable peer discovery manager + bootstrap source
 - `lua_libp2p/network`: connection/stream abstraction layer
 - `lua_libp2p/record`: signed envelopes and peer routing records
 - `lua_libp2p/host.lua`: host/node setup (`start`, `dial`, `new_stream`, `handle`, `close`)
 - `lua_libp2p/peerstore`: peer metadata storage
+- `lua_libp2p/kbucket.lua`: Kademlia kbucket routing table module
+- `lua_libp2p/kad_dht`: Kademlia DHT module and wire helpers
 - `tests`: test harness and integration tests
 
 ## Runtime assumptions
@@ -48,7 +57,8 @@ This repo currently includes:
 - Runtime dependencies:
   - `luasocket`
   - `lua-protobuf`
-  - `luasodium` (ed25519)
+- `luasodium` (ed25519)
+- `openssl` command available on PATH (required for RSA noise identity verification)
 - Tests run with the Lua interpreter directly
 
 ## Install dependencies (LuaRocks)
@@ -95,3 +105,13 @@ make interop-perf-js
 
 Note: multiaddr conformance tests include a go/js-derived vector set plus an explicit
 go strictness delta list (tracked in `tests/helpers/multiaddr_go_deltas.lua`).
+
+## DHT bootstrap demo
+
+```bash
+# terminal 1
+lua examples/kad_dht_bootstrap_demo.lua server
+
+# terminal 2 (paste a /p2p listen addr printed by terminal 1)
+lua examples/kad_dht_bootstrap_demo.lua client /ip4/127.0.0.1/tcp/12345/p2p/12D3KooW...
+```

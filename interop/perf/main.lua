@@ -304,6 +304,7 @@ local function run_listener(cfg)
     listen_addrs = { "/ip4/" .. cfg.listener_ip .. "/tcp/0" },
     security_transports = { "/noise" },
     muxers = { "/yamux/1.0.0" },
+    blocking = false,
     connect_timeout = 5,
     io_timeout = 5,
     accept_timeout = 0.1,
@@ -326,7 +327,7 @@ local function run_listener(cfg)
     fatal(handle_err)
   end
 
-  local start_ok, start_err = h:start({ blocking = false })
+  local start_ok, start_err = h:start()
   if not start_ok then
     fatal(start_err)
   end

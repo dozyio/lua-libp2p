@@ -3,6 +3,7 @@ local error_mod = require("lua_libp2p.error")
 local key_pb = require("lua_libp2p.crypto.key_pb")
 local peerid = require("lua_libp2p.peerid")
 local varint = require("lua_libp2p.multiformats.varint")
+local mime = require("mime")
 
 local ok_sodium, sodium = pcall(require, "luasodium")
 if not ok_sodium then
@@ -14,6 +15,84 @@ local M = {}
 M.PROTOCOL_ID = "/noise"
 M.PROTOCOL_NAME = "Noise_XX_25519_ChaChaPoly_SHA256"
 M.SIG_PREFIX = "noise-libp2p-static-key:"
+
+local function shell_quote(text)
+  return "'" .. tostring(text):gsub("'", "'\\''") .. "'"
+end
+
+local function der_public_key_to_pem(der)
+  local b64 = mime.b64(der)
+  local lines = {}
+  for i = 1, #b64, 64 do
+    lines[#lines + 1] = b64:sub(i, i + 63)
+  end
+  return "-----BEGIN PUBLIC KEY-----\n"
+    .. table.concat(lines, "\n")
+    .. "\n-----END PUBLIC KEY-----\n"
+end
+
+local function write_temp_file(payload)
+  local path = os.tmpname()
+  local f, open_err = io.open(path, "wb")
+  if not f then
+    return nil, open_err
+  end
+  local ok, write_err = f:write(payload)
+  f:close()
+  if not ok then
+    return nil, write_err
+  end
+  return path
+end
+
+local function remove_file(path)
+  if path then
+    os.remove(path)
+  end
+end
+
+local function rsa_verify_pkcs1_sha256(public_key_der, message, signature)
+  local pub_pem = der_public_key_to_pem(public_key_der)
+  local pub_path, pub_err = write_temp_file(pub_pem)
+  if not pub_path then
+    return nil, error_mod.new("io", "failed to write temporary rsa public key", { cause = pub_err })
+  end
+
+  local msg_path, msg_err = write_temp_file(message)
+  if not msg_path then
+    remove_file(pub_path)
+    return nil, error_mod.new("io", "failed to write temporary signature message", { cause = msg_err })
+  end
+
+  local sig_path, sig_err = write_temp_file(signature)
+  if not sig_path then
+    remove_file(pub_path)
+    remove_file(msg_path)
+    return nil, error_mod.new("io", "failed to write temporary signature bytes", { cause = sig_err })
+  end
+
+  local cmd = "openssl dgst -sha256 -verify " .. shell_quote(pub_path)
+    .. " -signature " .. shell_quote(sig_path)
+    .. " " .. shell_quote(msg_path)
+    .. " >/dev/null 2>/dev/null"
+
+  local ok, why, code = os.execute(cmd)
+
+  remove_file(pub_path)
+  remove_file(msg_path)
+  remove_file(sig_path)
+
+  if ok == true or code == 0 then
+    return true
+  end
+  if why == "exit" and code == 1 then
+    return false
+  end
+  return nil, error_mod.new("io", "openssl verify command failed", {
+    reason = why,
+    code = code,
+  })
+end
 
 local function read_exact(conn, n)
   if n == 0 then
@@ -114,11 +193,29 @@ function M.make_identity_signature(identity_keypair, noise_static_public_key)
   return ed25519.sign(identity_keypair, M.SIG_PREFIX .. noise_static_public_key)
 end
 
-function M.verify_identity_signature(identity_public_key, noise_static_public_key, identity_signature)
+function M.verify_identity_signature(identity_public_key, noise_static_public_key, identity_signature, identity_key_type)
   if type(noise_static_public_key) ~= "string" or #noise_static_public_key ~= 32 then
     return nil, error_mod.new("input", "noise static public key must be 32 bytes")
   end
-  return ed25519.verify(identity_public_key, M.SIG_PREFIX .. noise_static_public_key, identity_signature)
+
+  local key_type = identity_key_type
+  if key_type == nil and type(identity_public_key) == "table" then
+    key_type = identity_public_key.type
+  end
+
+  local message = M.SIG_PREFIX .. noise_static_public_key
+  if key_type == key_pb.KEY_TYPE.RSA then
+    local public_key_bytes = identity_public_key
+    if type(identity_public_key) == "table" then
+      public_key_bytes = identity_public_key.public_key or identity_public_key.data
+    end
+    if type(public_key_bytes) ~= "string" or public_key_bytes == "" then
+      return nil, error_mod.new("input", "rsa identity public key bytes are required")
+    end
+    return rsa_verify_pkcs1_sha256(public_key_bytes, message, identity_signature)
+  end
+
+  return ed25519.verify(identity_public_key, message, identity_signature)
 end
 
 function M.encode_extensions(ext)
@@ -321,11 +418,19 @@ function M.verify_handshake_payload(payload, noise_static_public_key, expected_r
   if not identity_pub then
     return nil, pub_err
   end
-  if identity_pub.type ~= key_pb.KEY_TYPE.Ed25519 then
-    return nil, error_mod.new("unsupported", "only ed25519 identity keys are supported currently")
+  if identity_pub.type ~= key_pb.KEY_TYPE.Ed25519 and identity_pub.type ~= key_pb.KEY_TYPE.RSA then
+    return nil, error_mod.new("unsupported", "unsupported identity key type for noise verification", {
+      received_key_type = identity_pub.type,
+      received_key_type_name = identity_pub.type_name,
+      supported = { "ed25519", "rsa" },
+    })
   end
 
-  local sig_ok, sig_err = M.verify_identity_signature({ public_key = identity_pub.data }, noise_static_public_key, payload.identity_sig)
+  local sig_ok, sig_err = M.verify_identity_signature({
+    public_key = identity_pub.data,
+    data = identity_pub.data,
+    type = identity_pub.type,
+  }, noise_static_public_key, payload.identity_sig, identity_pub.type)
   if sig_err then
     return nil, sig_err
   end
