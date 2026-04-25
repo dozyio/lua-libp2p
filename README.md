@@ -55,11 +55,17 @@ This repo currently includes:
 - Lua 5.4.x (recommended)
 - LuaRocks for dependency management
 - Runtime dependencies:
-  - `luasocket`
-  - `lua-protobuf`
+- `luasocket`
+- `lua-protobuf`
 - `luasodium` (ed25519)
+- `luv` (libuv runtime backend)
 - `openssl` command available on PATH (required for RSA noise identity verification)
 - Tests run with the Lua interpreter directly
+
+Host runtime note:
+- `runtime = "poll"` (default) keeps the current poll/select scheduler.
+- `runtime = "luv"` enables a libuv-backed internal scheduler.
+- With `runtime = "luv"` and `blocking = false`, a uv loop must be running in the process.
 
 ## Install dependencies (LuaRocks)
 

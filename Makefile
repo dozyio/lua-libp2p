@@ -29,6 +29,9 @@ interop-yamux-go:
 	rm -f $$addr_file $$err_file; \
 	exit $$status
 
+interop-yamux-go-luv:
+	LUA_LIBP2P_INTEROP_RUNTIME=luv $(MAKE) interop-yamux-go
+
 interop-yamux-go-reverse:
 	addr_file=$$(mktemp); err_file=$$(mktemp); \
 	lua tests/interop/yamux_lua_server.lua > $$addr_file 2> $$err_file & pid=$$!; \
@@ -50,6 +53,9 @@ interop-yamux-go-reverse:
 	rm -f $$addr_file $$err_file; \
 	exit $$status
 
+interop-yamux-go-reverse-luv:
+	LUA_LIBP2P_INTEROP_RUNTIME=luv $(MAKE) interop-yamux-go-reverse
+
 interop-noise-go:
 	addr_file=$$(mktemp); err_file=$$(mktemp); \
 	( cd tests/interop/go_noise_echo && go run . ) > $$addr_file 2> $$err_file & pid=$$!; \
@@ -70,6 +76,9 @@ interop-noise-go:
 	if [ $$status -ne 0 ]; then cat $$err_file; fi; \
 	rm -f $$addr_file $$err_file; \
 	exit $$status
+
+interop-noise-go-luv:
+	LUA_LIBP2P_INTEROP_RUNTIME=luv $(MAKE) interop-noise-go
 
 interop-noise-go-reverse:
 	addr_file=$$(mktemp); err_file=$$(mktemp); \
@@ -93,10 +102,40 @@ interop-noise-go-reverse:
 	rm -f $$addr_file $$err_file; \
 	exit $$status
 
+interop-noise-go-reverse-luv:
+	LUA_LIBP2P_INTEROP_RUNTIME=luv $(MAKE) interop-noise-go-reverse
+
 interop-perf-js:
 	log_file=$$(mktemp); \
 	err_file=$$(mktemp); \
 	lua examples/identify_ping_server.lua > $$log_file 2> $$err_file & pid=$$!; \
+	for i in 1 2 3 4 5 6 7 8 9 10; do \
+		addr=$$(python3 -c "import re,sys; text=open(sys.argv[1], errors='ignore').read(); m=re.search(r'(/ip4/[^\\s]+/tcp/\\d+/p2p/\\S+)', text); print(m.group(1) if m else '')" $$log_file); \
+		if [ -n "$$addr" ]; then break; fi; \
+		sleep 0.2; \
+	done; \
+	if [ -z "$$addr" ]; then \
+		kill $$pid 2>/dev/null || true; \
+		cat $$log_file; \
+		cat $$err_file; \
+		rm -f $$log_file $$err_file; \
+		exit 1; \
+	fi; \
+	if ! [ -d tests/interop/js_perf/node_modules ]; then \
+		( cd tests/interop/js_perf && npm install ); \
+	fi; \
+	node tests/interop/js_perf/perf_client.mjs $$addr 65536 65536; \
+	status=$$?; \
+	kill $$pid 2>/dev/null || true; \
+	wait $$pid 2>/dev/null || true; \
+	if [ $$status -ne 0 ]; then cat $$log_file; fi; \
+	rm -f $$log_file $$err_file; \
+	exit $$status
+
+interop-perf-js-luv:
+	log_file=$$(mktemp); \
+	err_file=$$(mktemp); \
+	LUA_LIBP2P_RUNTIME=luv lua examples/identify_ping_server.lua > $$log_file 2> $$err_file & pid=$$!; \
 	for i in 1 2 3 4 5 6 7 8 9 10; do \
 		addr=$$(python3 -c "import re,sys; text=open(sys.argv[1], errors='ignore').read(); m=re.search(r'(/ip4/[^\\s]+/tcp/\\d+/p2p/\\S+)', text); print(m.group(1) if m else '')" $$log_file); \
 		if [ -n "$$addr" ]; then break; fi; \

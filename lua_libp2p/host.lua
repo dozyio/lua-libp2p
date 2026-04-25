@@ -1,6 +1,8 @@
 local ed25519 = require("lua_libp2p.crypto.ed25519")
 local error_mod = require("lua_libp2p.error")
 local log = require("lua_libp2p.log")
+local host_runtime_luv = require("lua_libp2p.host_runtime_luv")
+local host_runtime_poll = require("lua_libp2p.host_runtime_poll")
 local multiaddr = require("lua_libp2p.multiaddr")
 local peerid = require("lua_libp2p.peerid")
 local identify = require("lua_libp2p.protocol.identify")
@@ -8,9 +10,8 @@ local key_pb = require("lua_libp2p.crypto.key_pb")
 local perf = require("lua_libp2p.protocol.perf")
 local ping = require("lua_libp2p.protocol.ping")
 local upgrader = require("lua_libp2p.network.upgrader")
-local tcp = require("lua_libp2p.transport.tcp")
-
-local ok_socket, socket = pcall(require, "socket")
+local tcp_poll = require("lua_libp2p.transport.tcp")
+local tcp_luv = require("lua_libp2p.transport.tcp_luv")
 
 local M = {}
 
@@ -78,7 +79,7 @@ local function bind_listeners(self, addrs)
   end
 
   for _, addr in ipairs(targets) do
-    local listener, listen_err = tcp.listen({
+    local listener, listen_err = self._tcp_transport.listen({
       multiaddr = addr,
       accept_timeout = self._accept_timeout,
       io_timeout = self._io_timeout,
@@ -108,6 +109,13 @@ local function bind_listeners(self, addrs)
     self.listen_addrs[i] = resolved
   end
 
+  if self._running and self._runtime_impl and self._runtime_impl.sync_watchers then
+    local ok, sync_err = self._runtime_impl.sync_watchers(self)
+    if not ok then
+      return nil, sync_err
+    end
+  end
+
   return true
 end
 
@@ -115,6 +123,7 @@ local Host = {}
 Host.__index = Host
 
 local function sleep_seconds(seconds)
+  local ok_socket, socket = pcall(require, "socket")
   if ok_socket and type(socket.sleep) == "function" then
     socket.sleep(seconds)
   end
@@ -131,93 +140,39 @@ local function is_nonfatal_stream_error(err)
     or err.kind == "unsupported"
 end
 
-local function unwrap_socket(value, seen)
-  if type(value) ~= "table" then
-    return nil
+local function runtime_luv_start(host)
+  local ok, err = host_runtime_luv.start(host)
+  if not ok then
+    return nil, err
   end
-  local visited = seen or {}
-  if visited[value] then
-    return nil
-  end
-  visited[value] = true
-
-  if type(value.socket) == "function" then
-    local ok, sock = pcall(value.socket, value)
-    if ok and sock then
-      return sock
-    end
-  end
-
-  if value._socket then
-    return value._socket
-  end
-  if value._server then
-    return value._server
-  end
-
-  if value._raw then
-    local sock = unwrap_socket(value._raw, visited)
-    if sock then
-      return sock
-    end
-  end
-  if value._raw_conn then
-    local sock = unwrap_socket(value._raw_conn, visited)
-    if sock then
-      return sock
-    end
-  end
-
-  return nil
+  return true, nil, true
 end
 
-local function build_ready_map(host_obj, timeout)
-  if not (ok_socket and type(socket.select) == "function") then
-    return nil
-  end
-
-  local read_set = {}
-  local by_socket = {}
-
-  for _, listener in ipairs(host_obj._listeners) do
-    local sock = unwrap_socket(listener)
-    if sock then
-      read_set[#read_set + 1] = sock
-      by_socket[sock] = { kind = "listener", value = listener }
-    end
-  end
-
-  for _, entry in ipairs(host_obj._connections) do
-    local sock = unwrap_socket(entry.conn)
-    if sock then
-      read_set[#read_set + 1] = sock
-      by_socket[sock] = { kind = "connection", value = entry }
-    end
-  end
-
-  if #read_set == 0 then
-    return {}
-  end
-
-  local wait_timeout = timeout
-  if wait_timeout == nil then
-    wait_timeout = host_obj._accept_timeout or 0
-  end
-
-  local readable, _, sel_err = socket.select(read_set, nil, wait_timeout)
-  if not readable then
-    return nil, error_mod.new("io", "socket select failed", { cause = sel_err })
-  end
-
-  local ready = {}
-  for _, sock in ipairs(readable) do
-    local item = by_socket[sock]
-    if item then
-      ready[item.value] = true
-    end
-  end
-  return ready
+local function runtime_luv_stop(host)
+  return host_runtime_luv.stop(host)
 end
+
+local function runtime_luv_poll_once(host, timeout)
+  return host:_poll_once_luv(timeout)
+end
+
+local function runtime_luv_sync_watchers(host)
+  return host_runtime_luv.sync_watchers(host)
+end
+
+local RUNTIME_IMPLS = {
+  poll = {
+    start = host_runtime_poll.start,
+    stop = host_runtime_poll.stop,
+    poll_once = host_runtime_poll.poll_once,
+  },
+  luv = {
+    start = runtime_luv_start,
+    stop = runtime_luv_stop,
+    poll_once = runtime_luv_poll_once,
+    sync_watchers = runtime_luv_sync_watchers,
+  },
+}
 
 local function extract_peer_id_from_multiaddr(addr)
   local parsed = multiaddr.parse(addr)
@@ -266,6 +221,18 @@ end
 
 function Host:new(config)
   local cfg = config or {}
+  local runtime_name = cfg.runtime or cfg.runtime_backend or cfg.runtimeBackend or "poll"
+  local runtime_impl = RUNTIME_IMPLS[runtime_name]
+  if runtime_impl == nil then
+    return nil, error_mod.new("input", "unsupported host runtime", {
+      runtime = runtime_name,
+      supported = { "poll", "luv" },
+    })
+  end
+  local start_blocking = cfg.blocking
+  if start_blocking == nil then
+    start_blocking = runtime_name ~= "luv"
+  end
 
   local keypair = cfg.identity
   if not keypair then
@@ -299,7 +266,14 @@ function Host:new(config)
     _next_subscriber_id = 1,
     _identify_on_connect_handler = nil,
     _identify_inflight = {},
-    _start_blocking = cfg.blocking ~= false,
+    _runtime = runtime_name,
+    _runtime_impl = runtime_impl,
+    _tcp_transport = runtime_name == "luv" and tcp_luv or tcp_poll,
+    _luv_tick_timer = nil,
+    _luv_watchers = {},
+    _luv_ready = {},
+    _runtime_last_error = nil,
+    _start_blocking = start_blocking ~= false,
     _start_max_iterations = cfg.max_iterations or cfg.maxIterations,
     _start_poll_interval = cfg.poll_interval or cfg.pollInterval or 0.01,
     _on_started = cfg.on_started or cfg.onStarted,
@@ -654,6 +628,13 @@ function Host:_register_connection(conn, state)
     return nil, emit_err
   end
 
+  if self._running and self._runtime_impl and self._runtime_impl.sync_watchers then
+    local sync_ok, sync_err = self._runtime_impl.sync_watchers(self)
+    if not sync_ok then
+      return nil, sync_err
+    end
+  end
+
   return entry
 end
 
@@ -743,6 +724,28 @@ function Host:next_event(subscriber)
   return table.remove(current.queue, 1)
 end
 
+function Host:_set_runtime_error(runtime_name, err)
+  self._runtime_last_error = err
+  self._running = false
+  log.error("host runtime tick failed", {
+    subsystem = "host",
+    runtime = runtime_name,
+    cause = tostring(err),
+  })
+
+  local ok, emit_err = emit_event(self, "host_runtime_error", {
+    runtime = runtime_name,
+    cause = err,
+  })
+  if not ok then
+    log.error("host runtime error emit failed", {
+      subsystem = "host",
+      runtime = runtime_name,
+      cause = tostring(emit_err),
+    })
+  end
+end
+
 function Host:_find_connection(peer_id)
   if not peer_id then
     return nil
@@ -771,7 +774,7 @@ function Host:dial(peer_or_addr, opts)
     return nil, nil, endpoint_err
   end
 
-  local raw_conn, dial_err = tcp.dial({
+  local raw_conn, dial_err = self._tcp_transport.dial({
     host = endpoint.host,
     port = endpoint.port,
   }, {
@@ -817,11 +820,7 @@ function Host:new_stream(peer_or_addr, protocols, opts)
   return stream, selected, conn, state
 end
 
-function Host:poll_once(timeout)
-  local ready_map, ready_err = build_ready_map(self, timeout)
-  if not ready_map and ready_err then
-    return nil, ready_err
-  end
+function Host:_poll_once_with_ready_map(timeout, ready_map)
 
   for _, listener in ipairs(self._listeners) do
     local should_accept = true
@@ -886,6 +885,12 @@ function Host:poll_once(timeout)
             if entry.state and entry.state.remote_peer_id then
               self._connections_by_peer[entry.state.remote_peer_id] = nil
             end
+            if self._runtime_impl and self._runtime_impl.sync_watchers then
+              local sync_ok, sync_err = self._runtime_impl.sync_watchers(self)
+              if not sync_ok then
+                return nil, sync_err
+              end
+            end
             local ok, emit_err = emit_event(self, "peer_disconnected", {
               connection = conn,
               state = entry.state,
@@ -930,6 +935,27 @@ function Host:poll_once(timeout)
   return true
 end
 
+function Host:_poll_once_poll(timeout)
+  local ready_map, ready_err = host_runtime_poll.build_ready_map(self, timeout)
+  if not ready_map and ready_err then
+    return nil, ready_err
+  end
+  return self:_poll_once_with_ready_map(timeout, ready_map)
+end
+
+function Host:_poll_once_luv(timeout)
+  local ready_map = self._luv_ready
+  self._luv_ready = {}
+  return self:_poll_once_with_ready_map(timeout, ready_map)
+end
+
+function Host:poll_once(timeout)
+  if self._runtime_impl and self._runtime_impl.poll_once then
+    return self._runtime_impl.poll_once(self, timeout)
+  end
+  return self:_poll_once_poll(timeout)
+end
+
 function Host:start()
   if #self._listeners == 0 then
     local ok, bind_err = bind_listeners(self)
@@ -947,6 +973,16 @@ function Host:start()
 
   if type(self._on_started) == "function" then
     self._on_started(self)
+  end
+
+  if self._runtime_impl and self._runtime_impl.start then
+    local runtime_ok, runtime_err, handled = self._runtime_impl.start(self)
+    if not runtime_ok then
+      return nil, runtime_err
+    end
+    if handled then
+      return true
+    end
   end
 
   local blocking = self._start_blocking
@@ -980,6 +1016,9 @@ end
 
 function Host:close()
   self._running = false
+  if self._runtime_impl and self._runtime_impl.stop then
+    self._runtime_impl.stop(self)
+  end
   for _, entry in ipairs(self._connections) do
     entry.conn:close()
     local ok, emit_err = emit_event(self, "peer_disconnected", {

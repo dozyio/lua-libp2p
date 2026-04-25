@@ -10,6 +10,11 @@ local function run()
     return nil, key_err
   end
 
+  local bad_host, bad_err = host.new({ runtime = "invalid-runtime" })
+  if bad_host ~= nil or not bad_err then
+    return nil, "expected invalid runtime to return input error"
+  end
+
   local h, h_err = host.new({
     identity = keypair,
     listen_addrs = { "/ip4/127.0.0.1/tcp/0" },

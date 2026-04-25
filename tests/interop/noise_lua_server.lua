@@ -7,7 +7,16 @@ package.path = table.concat({
 local ed25519 = require("lua_libp2p.crypto.ed25519")
 local noise = require("lua_libp2p.security.noise")
 local peerid = require("lua_libp2p.peerid")
-local tcp = require("lua_libp2p.transport.tcp")
+local runtime = os.getenv("LUA_LIBP2P_INTEROP_RUNTIME") or "poll"
+local tcp
+if runtime == "luv" then
+  tcp = require("lua_libp2p.transport.tcp_luv")
+elseif runtime == "poll" then
+  tcp = require("lua_libp2p.transport.tcp")
+else
+  io.stderr:write("invalid LUA_LIBP2P_INTEROP_RUNTIME, expected 'luv' or 'poll'\n")
+  os.exit(2)
+end
 
 local listener, listen_err = tcp.listen({
   host = "127.0.0.1",
