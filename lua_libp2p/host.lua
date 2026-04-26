@@ -1,4 +1,4 @@
-local ed25519 = require("lua_libp2p.crypto.ed25519")
+local keys = require("lua_libp2p.crypto.keys")
 local error_mod = require("lua_libp2p.error")
 local log = require("lua_libp2p.log")
 local host_runtime_luv = require("lua_libp2p.host_runtime_luv")
@@ -304,14 +304,14 @@ function Host:new(config)
 
   local keypair = cfg.identity
   if not keypair then
-    local generated, gen_err = ed25519.generate_keypair()
+    local generated, gen_err = keys.generate_keypair(cfg.identity_type or cfg.identityType or "ed25519")
     if not generated then
       return nil, gen_err
     end
     keypair = generated
   end
 
-  local local_peer, local_peer_err = peerid.from_ed25519_public_key(keypair.public_key)
+  local local_peer, local_peer_err = keys.peer_id(keypair)
   if not local_peer then
     return nil, local_peer_err
   end

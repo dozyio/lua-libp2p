@@ -1,5 +1,5 @@
-local ed25519 = require("lua_libp2p.crypto.ed25519")
 local error_mod = require("lua_libp2p.error")
+local keys = require("lua_libp2p.crypto.keys")
 local key_pb = require("lua_libp2p.crypto.key_pb")
 local peerid = require("lua_libp2p.peerid")
 local varint = require("lua_libp2p.multiformats.varint")
@@ -204,8 +204,12 @@ function M.decode(payload)
 end
 
 function M.sign_ed25519(keypair, domain, payload_type, payload)
+  return M.sign(keypair, domain, payload_type, payload)
+end
+
+function M.sign(keypair, domain, payload_type, payload)
   if not keypair or type(keypair.public_key) ~= "string" or type(keypair.private_key) ~= "string" then
-    return nil, error_mod.new("input", "keypair must contain ed25519 public/private key bytes")
+    return nil, error_mod.new("input", "keypair must contain public/private key bytes")
   end
 
   local signing_input, input_err = M.signature_input(domain, payload_type or "", payload)
@@ -213,12 +217,12 @@ function M.sign_ed25519(keypair, domain, payload_type, payload)
     return nil, input_err
   end
 
-  local public_key_pb, pub_err = key_pb.encode_public_key(key_pb.KEY_TYPE.Ed25519, keypair.public_key)
+  local public_key_pb, pub_err = keys.public_key_proto(keypair)
   if not public_key_pb then
     return nil, pub_err
   end
 
-  local signature, sig_err = ed25519.sign(keypair, signing_input)
+  local signature, sig_err = keys.sign(keypair, signing_input)
   if not signature then
     return nil, sig_err
   end
@@ -240,10 +244,6 @@ function M.verify(envelope, domain, expected_peer_id)
   if not decoded_key then
     return nil, decode_err
   end
-  if decoded_key.type ~= key_pb.KEY_TYPE.Ed25519 then
-    return nil, error_mod.new("unsupported", "only ed25519 signed envelopes are supported currently")
-  end
-
   local pid, pid_err = peerid.from_public_key_proto(envelope.public_key, decoded_key.type_name)
   if not pid then
     return nil, pid_err
@@ -265,7 +265,7 @@ function M.verify(envelope, domain, expected_peer_id)
     return nil, input_err
   end
 
-  local ok, verify_err = ed25519.verify({ public_key = decoded_key.data }, signing_input, envelope.signature)
+  local ok, verify_err = keys.verify_signature({ data = decoded_key.data, type = decoded_key.type }, signing_input, envelope.signature, decoded_key.type)
   if verify_err then
     return nil, verify_err
   end

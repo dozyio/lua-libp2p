@@ -1,4 +1,5 @@
 local ed25519 = require("lua_libp2p.crypto.ed25519")
+local keys = require("lua_libp2p.crypto.keys")
 local signed_envelope = require("lua_libp2p.record.signed_envelope")
 
 local function run()
@@ -47,6 +48,24 @@ local function run()
   local _, tampered_err = signed_envelope.verify(tampered, domain)
   if not tampered_err then
     return nil, "expected verification failure on tampered payload"
+  end
+
+  for _, key_type in ipairs({ "rsa", "ecdsa", "secp256k1" }) do
+    local generated, gen_err = keys.generate_keypair(key_type)
+    if not generated then
+      return nil, gen_err
+    end
+    local env, sign_err = signed_envelope.sign(generated, domain, payload_type, payload)
+    if not env then
+      return nil, sign_err
+    end
+    local ok_env, verify_key_err = signed_envelope.verify(env, domain)
+    if not ok_env then
+      return nil, verify_key_err
+    end
+    if ok_env.public_key.type_name ~= key_type then
+      return nil, "expected " .. key_type .. " signed envelope verification"
+    end
   end
 
   return true

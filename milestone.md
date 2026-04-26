@@ -73,12 +73,14 @@ Status: Complete
 Note: Ping interop with go-libp2p (vole) is validated; responder/requester are implemented and the example host handles repeated ping payloads on a stream (`ping.handle`).
 
 ## Milestone 8: Peerstore (In-Memory)
-Status: Planned
+Status: Complete
 
 - Store peer keys, addresses, protocols, last seen, RTT, tags, and TTL.
 - Add a basic address selection strategy for dialing.
 - Add garbage collection/expiry rules for stale records.
 - Done when: identify and ping data persists per peer during runtime.
+
+Note: In-memory peerstore is implemented with address/protocol books, merge/patch helpers, TTL expiry, and host dial fallback. DHT query results store decoded peer addresses and protocols where available. Address selection is currently TCP-dialability filtered at dial/query time.
 
 ## Milestone 9: Interop + Hardening Pass
 Status: In Progress
@@ -88,7 +90,7 @@ Status: In Progress
 - Tune timeouts, max frame sizes, and defensive parsing.
 - Done when: stable repeated connect/identify/ping under stress.
 
-Note: Hardening progress includes select-driven polling, nonfatal error handling (`timeout`, `closed`, `decode`, `protocol`, `unsupported`), yamux flow-control fixes for large transfers, and JS perf interop (`/perf/1.0.0`) under Noise+yamux.
+Note: Hardening progress includes select-driven polling, nonfatal error handling (`timeout`, `closed`, `decode`, `protocol`, `unsupported`), yamux flow-control fixes for large transfers, a single-reader yamux pump path, 4 MiB KAD message-size default, summarized crawl errors, native RSA verification via `luaossl`, and JS perf interop (`/perf/1.0.0`) under Noise+yamux.
 
 ## Milestone 10: Minimal Public API + Docs
 Status: In Progress
@@ -98,7 +100,7 @@ Status: In Progress
 - Provide one runnable example (connect + identify + ping).
 - Done when: user can copy example and interop in under 5 minutes.
 
-Note: API ergonomics improved with host service registration (`services = { "identify", "ping", "perf" }`), peer/multiaddr convenience methods (`peer_id`, `get_multiaddrs`, `get_multiaddrs_raw`), and a stable example identity/port flow.
+Note: API ergonomics improved with host service registration (`services = { "identify", "ping", "perf" }`), peer/multiaddr convenience methods (`peer_id`, `get_multiaddrs`, `get_multiaddrs_raw`), runtime selection (`runtime = "auto" | "poll" | "luv"`), and public bootstrap/DHT crawl examples.
 
 ## Milestone 11: Connection Manager
 Status: Planned
@@ -109,7 +111,44 @@ Status: Planned
 - Expose hooks/APIs for tagging and temporary pinning.
 - Done when: node stays within configured connection limits and can recover from connection pressure deterministically.
 
+## Milestone 12: Native Luv Runtime + TCP
+Status: Complete
+
+- Add libuv-backed host runtime with non-blocking scheduler integration.
+- Implement native luv TCP listen/dial/read/write path.
+- Keep proxy transport as fallback/debug path.
+- Default to `runtime = "auto"`, selecting luv-native when `luv` is available.
+- Done when: Lua integration tests and Go/JS interop pass under native luv.
+
+Note: Native luv TCP is now the default when available. Proxy mode remains available via `LUA_LIBP2P_TCP_LUV_PROXY=1`. Runtime tests and interop targets cover native/proxy variants.
+
+## Milestone 13: Kademlia DHT Public Crawl
+Status: In Progress
+
+- Implement KAD protocol framing/codec and FIND_NODE handler/client path.
+- Resolve `/dnsaddr` bootstrap records recursively with cache/depth protection.
+- Bootstrap against public libp2p bootstrap peers.
+- Run concurrent random-walk refresh with `alpha = 10` and disjoint paths.
+- Store discovered peers in routing table and peerstore.
+- Apply configurable address filtering (`public`, `private`, `all`, or custom function).
+- Done when: public DHT crawl reliably completes, reports closest peers, and matches spec lookup termination semantics.
+
+Note: Public bootstrap and random-walk crawl are operational with summarized error reporting, default 4 MiB KAD message limit, public address filtering, TCP dialability filtering, and closest-peer reporting. Remaining work includes tighter spec-style query termination and better dial failure/backoff behavior.
+
+## Milestone 14: Stream Session Abstraction
+Status: In Progress
+
+- Decouple `network.connection` from yamux-specific construction.
+- Define stream-capable session contract (`open_stream`, `accept_stream_now`, optional `process_one`, optional `has_waiters`, optional `close`).
+- Move muxer construction behind a registry.
+- Prepare for transports with native stream multiplexing, e.g. QUIC/WebTransport.
+- Done when: TCP+Noise+Yamux and a fake/session-native connection both satisfy the same host/runtime contract.
+
+Note: `network.connection` now wraps generic sessions via `connection.from_session(...)`; yamux construction lives in `lua_libp2p.muxer` registry and the upgrader. Compatibility aliases were removed, so callers use `conn:session()`.
+
 ## Out-of-Order Progress Notes
 - Implemented `/plaintext/2.0.0` handshake for debugging/interoperability testing.
 - Implemented identify codec/flow with `signedPeerRecord` field support and merge helpers.
 - Added signed envelope and peer routing record support (RFC0002/RFC0003 compatibility).
+- Added multiformats CID/base32 support needed for DHT/provider work.
+- Added configurable DHT address filtering and public/private multiaddr classification helpers.

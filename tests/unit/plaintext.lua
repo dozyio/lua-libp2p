@@ -1,4 +1,5 @@
 local hex = require("tests.helpers.hex")
+local keys = require("lua_libp2p.crypto.keys")
 local plaintext = require("lua_libp2p.protocol.plaintext")
 local peerid = require("lua_libp2p.peerid")
 
@@ -76,6 +77,24 @@ local function run()
   local _, tampered_err = plaintext.verify_exchange(tampered)
   if not tampered_err then
     return nil, "expected tampered exchange verification failure"
+  end
+
+  for _, key_type in ipairs({ "rsa", "ecdsa", "secp256k1" }) do
+    local identity, identity_err = keys.generate_keypair(key_type)
+    if not identity then
+      return nil, identity_err
+    end
+    local ex, ex_err = plaintext.make_exchange_from_identity(identity)
+    if not ex then
+      return nil, ex_err
+    end
+    local verified_key, verify_key_err = plaintext.verify_exchange(ex)
+    if not verified_key then
+      return nil, verify_key_err
+    end
+    if verified_key.key_type ~= key_type then
+      return nil, "expected plaintext exchange key type " .. key_type
+    end
   end
 
   local writer = new_scripted_conn("")

@@ -3,16 +3,48 @@ local key_pb = require("lua_libp2p.crypto.key_pb")
 local base58btc = require("lua_libp2p.multiformats.base58btc")
 local multihash = require("lua_libp2p.multiformats.multihash")
 local cid = require("lua_libp2p.multiformats.cid")
+local mime = require("mime")
 
 local M = {}
 
 local LIBP2P_KEY_CODEC = 0x72
+
+local ok_pkey, ossl_pkey = pcall(require, "openssl.pkey")
+
+local function der_public_key_to_pem(der)
+  return "-----BEGIN PUBLIC KEY-----\n" .. mime.b64(der) .. "\n-----END PUBLIC KEY-----\n"
+end
 
 local function marshal_ed25519_public_key(raw_public_key)
   if type(raw_public_key) ~= "string" or #raw_public_key ~= 32 then
     return nil, error_mod.new("input", "ed25519 public key must be 32 bytes")
   end
   return key_pb.encode_public_key(key_pb.KEY_TYPE.Ed25519, raw_public_key)
+end
+
+local function marshal_ecdsa_public_key(public_key_der)
+  if type(public_key_der) ~= "string" or public_key_der == "" then
+    return nil, error_mod.new("input", "ecdsa public key must be DER bytes")
+  end
+  if not ok_pkey then
+    return nil, error_mod.new("unsupported", "luaossl is required for ecdsa public key validation")
+  end
+  local ok, parsed_or_err = pcall(ossl_pkey.new, der_public_key_to_pem(public_key_der))
+  if not ok or not parsed_or_err then
+    return nil, error_mod.new("input", "ecdsa public key must be DER-encoded SubjectPublicKeyInfo", { cause = parsed_or_err })
+  end
+  return key_pb.encode_public_key(key_pb.KEY_TYPE.ECDSA, public_key_der)
+end
+
+local function marshal_secp256k1_public_key(public_key)
+  if type(public_key) ~= "string" then
+    return nil, error_mod.new("input", "secp256k1 public key must be bytes")
+  end
+  local first = public_key:byte(1)
+  if not ((#public_key == 33 and (first == 0x02 or first == 0x03)) or (#public_key == 65 and first == 0x04)) then
+    return nil, error_mod.new("input", "secp256k1 public key must be compressed or uncompressed EC point bytes")
+  end
+  return key_pb.encode_public_key(key_pb.KEY_TYPE.Secp256k1, public_key)
 end
 
 local function build_peer_id_record(multihash_bytes, key_type, public_key, public_key_proto)
@@ -67,6 +99,26 @@ function M.from_ed25519_public_key(raw_public_key)
     return nil, marshal_err
   end
   return M.from_public_key_proto(public_key_proto, "ed25519")
+end
+
+function M.from_ecdsa_public_key(public_key_der)
+  local public_key_proto, marshal_err = marshal_ecdsa_public_key(public_key_der)
+  if not public_key_proto then
+    return nil, marshal_err
+  end
+  return M.from_public_key_proto(public_key_proto, "ecdsa")
+end
+
+function M.from_ecdsa_public_key_der(public_key_der)
+  return M.from_ecdsa_public_key(public_key_der)
+end
+
+function M.from_secp256k1_public_key(public_key)
+  local public_key_proto, marshal_err = marshal_secp256k1_public_key(public_key)
+  if not public_key_proto then
+    return nil, marshal_err
+  end
+  return M.from_public_key_proto(public_key_proto, "secp256k1")
 end
 
 function M.to_base58(peer_id_bytes)

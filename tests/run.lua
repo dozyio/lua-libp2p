@@ -45,7 +45,9 @@ local tests = {
   (require("tests.unit.mss")),
   (require("tests.unit.network_connection")),
   (require("tests.unit.noise")),
+  (require("tests.unit.noise_ecdsa")),
   (require("tests.unit.noise_rsa")),
+  (require("tests.unit.noise_secp256k1")),
   (require("tests.unit.noise_xx")),
   (require("tests.unit.peerstore")),
   (require("tests.unit.signed_envelope")),
@@ -59,8 +61,11 @@ local tests = {
   (require("tests.unit.yamux")),
   (require("tests.unit.ed25519")),
   (require("tests.unit.peerid")),
+  (require("tests.unit.peerid_ecdsa")),
+  (require("tests.unit.spec_vectors_ecdsa")),
   (require("tests.unit.spec_vectors_ed25519")),
   (require("tests.unit.spec_vectors_rsa")),
+  (require("tests.unit.spec_vectors_secp256k1")),
   (require("tests.unit.multiformats")),
 }
 

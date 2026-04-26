@@ -1,12 +1,8 @@
-local ed25519 = require("lua_libp2p.crypto.ed25519")
 local error_mod = require("lua_libp2p.error")
+local keys = require("lua_libp2p.crypto.keys")
 local key_pb = require("lua_libp2p.crypto.key_pb")
 local peerid = require("lua_libp2p.peerid")
 local varint = require("lua_libp2p.multiformats.varint")
-local mime = require("mime")
-
-local ok_ossl_pkey, ossl_pkey = pcall(require, "openssl.pkey")
-local ok_ossl_digest, ossl_digest = pcall(require, "openssl.digest")
 
 local ok_sodium, sodium = pcall(require, "luasodium")
 if not ok_sodium then
@@ -18,42 +14,6 @@ local M = {}
 M.PROTOCOL_ID = "/noise"
 M.PROTOCOL_NAME = "Noise_XX_25519_ChaChaPoly_SHA256"
 M.SIG_PREFIX = "noise-libp2p-static-key:"
-
-local function der_public_key_to_pem(der)
-  local b64 = mime.b64(der)
-  local lines = {}
-  for i = 1, #b64, 64 do
-    lines[#lines + 1] = b64:sub(i, i + 63)
-  end
-  return "-----BEGIN PUBLIC KEY-----\n"
-    .. table.concat(lines, "\n")
-    .. "\n-----END PUBLIC KEY-----\n"
-end
-
-local function rsa_verify_pkcs1_sha256(public_key_der, message, signature)
-  if not ok_ossl_pkey or not ok_ossl_digest then
-    return nil, error_mod.new("unsupported", "luaossl is required for rsa signature verification")
-  end
-
-  local pub_key, key_err = ossl_pkey.new(der_public_key_to_pem(public_key_der))
-  if not pub_key then
-    return nil, error_mod.new("input", "failed to parse rsa public key", { cause = key_err })
-  end
-
-  local digest_ctx, digest_err = ossl_digest.new("sha256")
-  if not digest_ctx then
-    return nil, error_mod.new("io", "failed to create sha256 digest context", { cause = digest_err })
-  end
-  digest_ctx:update(message)
-
-  local ok, verified = pcall(function()
-    return pub_key:verify(signature, digest_ctx)
-  end)
-  if not ok then
-    return nil, error_mod.new("io", "rsa signature verification failed", { cause = verified })
-  end
-  return verified == true
-end
 
 local function read_exact(conn, n)
   if n == 0 then
@@ -151,7 +111,7 @@ function M.make_identity_signature(identity_keypair, noise_static_public_key)
   if type(noise_static_public_key) ~= "string" or #noise_static_public_key ~= 32 then
     return nil, error_mod.new("input", "noise static public key must be 32 bytes")
   end
-  return ed25519.sign(identity_keypair, M.SIG_PREFIX .. noise_static_public_key)
+  return keys.sign(identity_keypair, M.SIG_PREFIX .. noise_static_public_key)
 end
 
 function M.verify_identity_signature(identity_public_key, noise_static_public_key, identity_signature, identity_key_type)
@@ -165,18 +125,7 @@ function M.verify_identity_signature(identity_public_key, noise_static_public_ke
   end
 
   local message = M.SIG_PREFIX .. noise_static_public_key
-  if key_type == key_pb.KEY_TYPE.RSA then
-    local public_key_bytes = identity_public_key
-    if type(identity_public_key) == "table" then
-      public_key_bytes = identity_public_key.public_key or identity_public_key.data
-    end
-    if type(public_key_bytes) ~= "string" or public_key_bytes == "" then
-      return nil, error_mod.new("input", "rsa identity public key bytes are required")
-    end
-    return rsa_verify_pkcs1_sha256(public_key_bytes, message, identity_signature)
-  end
-
-  return ed25519.verify(identity_public_key, message, identity_signature)
+  return keys.verify_signature(identity_public_key, message, identity_signature, key_type)
 end
 
 function M.encode_extensions(ext)
@@ -379,11 +328,11 @@ function M.verify_handshake_payload(payload, noise_static_public_key, expected_r
   if not identity_pub then
     return nil, pub_err
   end
-  if identity_pub.type ~= key_pb.KEY_TYPE.Ed25519 and identity_pub.type ~= key_pb.KEY_TYPE.RSA then
+  if identity_pub.type ~= key_pb.KEY_TYPE.Ed25519 and identity_pub.type ~= key_pb.KEY_TYPE.RSA and identity_pub.type ~= key_pb.KEY_TYPE.ECDSA and identity_pub.type ~= key_pb.KEY_TYPE.Secp256k1 then
     return nil, error_mod.new("unsupported", "unsupported identity key type for noise verification", {
       received_key_type = identity_pub.type,
       received_key_type_name = identity_pub.type_name,
-      supported = { "ed25519", "rsa" },
+      supported = { "ed25519", "rsa", "ecdsa", "secp256k1" },
     })
   end
 

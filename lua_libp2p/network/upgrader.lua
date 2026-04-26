@@ -88,7 +88,7 @@ local function run_security_handshake(raw_conn, is_outbound, selected_security, 
       return nil, nil, error_mod.new("input", "plaintext upgrader requires opts.local_keypair")
     end
 
-    local local_exchange, local_exchange_err = plaintext.make_exchange_from_ed25519_public_key(keypair.public_key)
+    local local_exchange, local_exchange_err = plaintext.make_exchange_from_identity(keypair)
     if not local_exchange then
       return nil, nil, local_exchange_err
     end
@@ -142,7 +142,7 @@ local function run_security_handshake(raw_conn, is_outbound, selected_security, 
       remote_peer_id = remote_peer and remote_peer.id or nil,
       remote_peer_id_bytes = remote_peer and remote_peer.bytes or nil,
       remote_public_key = remote_peer and remote_peer.public_key,
-      remote_key_type = "ed25519",
+      remote_key_type = remote_peer and remote_peer.type,
       noise_extensions = hs_state and hs_state.remote_extensions or nil,
     }
   end

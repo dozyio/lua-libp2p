@@ -66,6 +66,7 @@ build = {
     ["lua_libp2p.crypto"] = "lua_libp2p/crypto/init.lua",
     ["lua_libp2p.crypto.ed25519"] = "lua_libp2p/crypto/ed25519.lua",
     ["lua_libp2p.crypto.key_pb"] = "lua_libp2p/crypto/key_pb.lua",
+    ["lua_libp2p.crypto.keys"] = "lua_libp2p/crypto/keys.lua",
     ["lua_libp2p.peerstore"] = "lua_libp2p/peerstore/init.lua",
   },
 }

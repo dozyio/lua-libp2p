@@ -1,5 +1,6 @@
 local error_mod = require("lua_libp2p.error")
 local varint = require("lua_libp2p.multiformats.varint")
+local keys = require("lua_libp2p.crypto.keys")
 local key_pb = require("lua_libp2p.crypto.key_pb")
 local peerid = require("lua_libp2p.peerid")
 
@@ -99,6 +100,29 @@ function M.make_exchange_from_ed25519_public_key(raw_public_key)
     id = pid.bytes,
     pubkey = pubkey_proto,
   }
+end
+
+function M.make_exchange_from_public_key_proto(pubkey_proto)
+  local decoded, decode_err = key_pb.decode_public_key(pubkey_proto)
+  if not decoded then
+    return nil, decode_err
+  end
+  local pid, pid_err = peerid.from_public_key_proto(pubkey_proto, decoded.type_name)
+  if not pid then
+    return nil, pid_err
+  end
+  return {
+    id = pid.bytes,
+    pubkey = pubkey_proto,
+  }
+end
+
+function M.make_exchange_from_identity(identity)
+  local pubkey_proto, pubkey_err = keys.public_key_proto(identity)
+  if not pubkey_proto then
+    return nil, pubkey_err
+  end
+  return M.make_exchange_from_public_key_proto(pubkey_proto)
 end
 
 function M.encode_exchange(exchange)

@@ -1,4 +1,5 @@
 local ed25519 = require("lua_libp2p.crypto.ed25519")
+local keys = require("lua_libp2p.crypto.keys")
 local host = require("lua_libp2p.host")
 local identify = require("lua_libp2p.protocol.identify")
 local perf = require("lua_libp2p.protocol.perf")
@@ -26,6 +27,24 @@ local function run()
   local expected_default_runtime = has_luv and "luv" or "poll"
   if default_host._runtime ~= expected_default_runtime then
     return nil, "host should default to luv when available and poll otherwise"
+  end
+
+  for _, key_type in ipairs({ "rsa", "ecdsa", "secp256k1" }) do
+    local identity, identity_err = keys.generate_keypair(key_type)
+    if not identity then
+      return nil, identity_err
+    end
+    local typed_host, typed_host_err = host.new({
+      runtime = "poll",
+      identity = identity,
+      blocking = false,
+    })
+    if not typed_host then
+      return nil, typed_host_err
+    end
+    if typed_host:peer_id().type ~= key_type then
+      return nil, "expected host peer id type " .. key_type
+    end
   end
 
   local h, h_err = host.new({
