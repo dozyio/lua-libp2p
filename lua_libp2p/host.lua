@@ -1086,7 +1086,12 @@ function Host:_poll_once_with_ready_map(timeout, ready_map)
         goto continue_connections
       end
 
-      local _, process_err = conn:process_one()
+      local _, process_err
+      if type(conn.pump_once) == "function" then
+        _, process_err = conn:pump_once()
+      else
+        _, process_err = conn:process_one()
+      end
       if process_err then
         if is_nonfatal_stream_error(process_err) then
           if process_err.kind ~= "timeout" then

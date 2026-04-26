@@ -58,12 +58,34 @@ end
 
 function M.process_connection(host, entry, router, is_nonfatal_stream_error)
   local conn = entry.conn
+  if entry.pump_co == nil then
+    entry.pump_co = coroutine.create(function()
+      if type(conn.pump_once) == "function" then
+        return conn:pump_once()
+      end
+      return conn:process_one()
+    end)
+  end
+
+  local pump_ok, _, pump_err = coroutine.resume(entry.pump_co)
+  if not pump_ok then
+    entry.pump_co = nil
+    return nil, error_mod.new("protocol", "connection pump coroutine failed", { cause = pump_err })
+  end
+  if coroutine.status(entry.pump_co) == "dead" then
+    entry.pump_co = nil
+    if pump_err then
+      if not is_nonfatal_stream_error(pump_err) then
+        return nil, pump_err
+      end
+      return true
+    end
+  else
+    return true
+  end
+
   if entry.process_co == nil then
     entry.process_co = coroutine.create(function()
-      local _, process_err = conn:process_one()
-      if process_err then
-        return nil, nil, nil, process_err
-      end
       return conn:accept_stream(router)
     end)
   end

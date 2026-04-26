@@ -27,6 +27,24 @@ local function socket_fd(sock)
   return fd
 end
 
+local function pump_waiting_connections(host)
+  if not (host._tcp_transport and host._tcp_transport.BACKEND == "luv-native") then
+    return true
+  end
+  local ready = {}
+  local has_ready = false
+  for _, entry in ipairs(host._connections) do
+    if entry.conn and type(entry.conn.has_waiters) == "function" and entry.conn:has_waiters() then
+      ready[entry] = true
+      has_ready = true
+    end
+  end
+  if not has_ready then
+    return true
+  end
+  return host:_poll_once_with_ready_map(0, ready)
+end
+
 function M.is_available()
   return ok_luv
 end
@@ -125,17 +143,6 @@ function M.tick(host)
       host:_set_runtime_error("luv", err)
       return nil, err
     end
-    return true
-  end
-
-  if host._tcp_transport and host._tcp_transport.BACKEND == "luv-native" and #host._connections > 0 then
-    host._luv_ready = {}
-    ok, err = host:_poll_once_with_ready_map(0, nil)
-    if not ok then
-      host:_set_runtime_error("luv", err)
-      return nil, err
-    end
-    return true
   end
 
   if map_size(host._luv_ready) > 0 then
@@ -144,7 +151,12 @@ function M.tick(host)
       host:_set_runtime_error("luv", err)
       return nil, err
     end
-    return true
+  end
+
+  ok, err = pump_waiting_connections(host)
+  if not ok then
+    host:_set_runtime_error("luv", err)
+    return nil, err
   end
 
   if #host._handler_tasks > 0 then
@@ -152,6 +164,19 @@ function M.tick(host)
     if not task_ok then
       host:_set_runtime_error("luv", task_err)
       return nil, task_err
+    end
+    ok, err = pump_waiting_connections(host)
+    if not ok then
+      host:_set_runtime_error("luv", err)
+      return nil, err
+    end
+  end
+
+  if map_size(host._luv_ready) > 0 then
+    ok, err = host:poll_once(0)
+    if not ok then
+      host:_set_runtime_error("luv", err)
+      return nil, err
     end
   end
 

@@ -24,6 +24,10 @@ function Connection:muxer_session()
   return self._muxer
 end
 
+function Connection:has_waiters()
+  return self._muxer and type(self._muxer.has_waiters) == "function" and self._muxer:has_waiters() or false
+end
+
 function Connection:socket()
   if self._raw_conn and self._raw_conn.socket then
     return self._raw_conn:socket()
@@ -39,6 +43,10 @@ function Connection:watch_luv_readable(on_readable)
 end
 
 function Connection:process_one()
+  return self:pump_once()
+end
+
+function Connection:pump_once()
   if not self._muxer then
     return nil
   end
