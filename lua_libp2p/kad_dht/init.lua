@@ -105,6 +105,13 @@ function DHT:start()
     return true
   end
 
+  if self.host and type(self.host.add_service) == "function" then
+    local identify_ok, identify_err = self.host:add_service("identify")
+    if not identify_ok then
+      return nil, identify_err
+    end
+  end
+
   if self.host and type(self.host.handle) == "function" then
     local ok, err = self.host:handle(self.protocol_id, function(stream, ctx)
       return self:_handle_rpc(stream, ctx)
@@ -144,6 +151,36 @@ function DHT:add_peer(peer_id, opts)
     self._peer_health[peer_id].last_connected_at = self._peer_health[peer_id].last_connected_at or now
   end
   return added, err
+end
+
+function DHT:_peerstore_supports_kad(peer_id)
+  return self.host
+    and self.host.peerstore
+    and type(self.host.peerstore.supports_protocol) == "function"
+    and self.host.peerstore:supports_protocol(peer_id, self.protocol_id) == true
+end
+
+function DHT:_record_kad_peer(peer_id, addrs)
+  if type(peer_id) ~= "string" or peer_id == "" then
+    return nil
+  end
+  if self.host and self.host.peerstore then
+    self.host.peerstore:merge(peer_id, {
+      addrs = addrs or {},
+      protocols = { self.protocol_id },
+    })
+  end
+  return self:add_peer(peer_id)
+end
+
+local function rpc_target_peer_id(peer_or_addr)
+  if type(peer_or_addr) == "table" then
+    return peer_or_addr.peer_id
+  end
+  if type(peer_or_addr) == "string" and peer_or_addr:sub(1, 1) ~= "/" then
+    return peer_or_addr
+  end
+  return nil
 end
 
 function DHT:remove_peer(peer_id)
@@ -424,11 +461,7 @@ function DHT:find_node(peer_or_addr, target_key, opts)
     if self.host and self.host.peerstore and peer_id_text then
       self.host.peerstore:merge(peer_id_text, {
         addrs = addrs,
-        protocols = { self.protocol_id },
       })
-    end
-    if peer_id_text and #addrs > 0 then
-      self:add_peer(peer_id_text)
     end
     out[#out + 1] = {
       peer_id = peer_id_text,
@@ -451,11 +484,7 @@ function DHT:_decode_response_peers(response, purpose)
       if self.host and self.host.peerstore and peer_id_text then
         self.host.peerstore:merge(peer_id_text, {
           addrs = addrs,
-          protocols = { self.protocol_id },
         })
-      end
-      if peer_id_text and #addrs > 0 then
-        self:add_peer(peer_id_text)
       end
       out[#out + 1] = {
         peer_id = peer_id_text,
@@ -500,6 +529,10 @@ function DHT:_rpc(peer_or_addr, request, expected_type, opts)
       expected = expected_type,
       got = response.type,
     })
+  end
+  local target_peer_id = rpc_target_peer_id(peer_or_addr)
+  if target_peer_id then
+    self:_record_kad_peer(target_peer_id, type(peer_or_addr) == "table" and peer_or_addr.addrs or nil)
   end
   return response
 end
@@ -649,6 +682,7 @@ function DHT:_run_client_lookup(key, seed_peers, query_func, opts)
     failed = 0,
     errors = {},
     closest_peers = {},
+    queried_peers = {},
     termination = nil,
     active_peak = 0,
   }
@@ -662,6 +696,8 @@ function DHT:_run_client_lookup(key, seed_peers, query_func, opts)
     if ok then
       peer.state = "queried"
       result.responses = result.responses + 1
+      result.queried_peers[#result.queried_peers + 1] = peer
+      self:_record_kad_peer(peer.peer_id, peer.addrs)
       local response = response_or_err or {}
       if response.stop then
         stop = true
@@ -1002,7 +1038,7 @@ function DHT:bootstrap(opts)
           discovered_peer = extract_peer_id_from_multiaddr(addr)
         end
         if discovered_peer then
-          local require_protocol = options.require_protocol == true
+          local require_protocol = options.require_protocol ~= false
           if require_protocol then
             local check_target = discovered_peer or addr
             local supported, supported_err = self:_supports_kad_protocol(check_target, options.protocol_check_opts)
@@ -1020,6 +1056,13 @@ function DHT:bootstrap(opts)
               )
               goto continue_addrs
             end
+          end
+
+          if self.host and self.host.peerstore then
+            self.host.peerstore:merge(discovered_peer, {
+              addrs = { addr },
+              protocols = { self.protocol_id },
+            })
           end
 
           local added, add_err = self:add_peer(discovered_peer, {
@@ -1241,13 +1284,17 @@ function DHT:random_walk(opts)
     report.discovered = #(lookup.closest_peers or {})
     report.termination = lookup.termination
     report.active_peak = lookup.active_peak
-    for _, peer in ipairs(lookup.closest_peers or {}) do
+    for _, peer in ipairs(lookup.queried_peers or {}) do
       if initial_peer_ids[peer.peer_id] and self:find_peer(peer.peer_id) then
         goto continue
       end
       initial_peer_ids[peer.peer_id] = true
       if self:find_peer(peer.peer_id) then
         report.added = report.added + 1
+        goto continue
+      end
+      if not self:_peerstore_supports_kad(peer.peer_id) then
+        report.skipped = report.skipped + 1
         goto continue
       end
       local added, add_err = self:add_peer(peer.peer_id, { allow_replace = options.allow_replace })

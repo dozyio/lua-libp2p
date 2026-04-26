@@ -142,6 +142,23 @@ local function is_nonfatal_stream_error(err)
     or err.kind == "unsupported"
 end
 
+local function identify_listen_addrs(message)
+  local out = {}
+  for _, addr in ipairs((message and message.listenAddrs) or {}) do
+    if type(addr) == "string" and addr ~= "" then
+      if addr:sub(1, 1) == "/" then
+        out[#out + 1] = addr
+      else
+        local parsed = multiaddr.from_bytes(addr)
+        if parsed and parsed.text then
+          out[#out + 1] = parsed.text
+        end
+      end
+    end
+  end
+  return out
+end
+
 local function flatten_error_fields(err, prefix, fields, depth)
   local key = prefix or "error"
   local out = fields or {}
@@ -556,6 +573,13 @@ function Host:_request_identify(peer_id, opts)
   end
   if not msg then
     return nil, read_err
+  end
+
+  if self.peerstore then
+    self.peerstore:merge(peer_id, {
+      addrs = identify_listen_addrs(msg),
+      protocols = msg.protocols or {},
+    })
   end
 
   return {

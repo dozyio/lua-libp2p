@@ -1,0 +1,210 @@
+package.path = table.concat({
+  "./?.lua",
+  "./?/init.lua",
+  package.path,
+}, ";")
+
+local discovery = require("lua_libp2p.discovery")
+local discovery_bootstrap = require("lua_libp2p.discovery.bootstrap")
+local host_mod = require("lua_libp2p.host")
+local kad_dht = require("lua_libp2p.kad_dht")
+
+local M = {}
+
+M.DEFAULT_BOOTSTRAP = "/ip4/104.131.131.82/tcp/4001/p2p/QmaCpDMGvV2BGHeYERUEnRQAwe3N8SzbUtfsmvsqQLuvuJ"
+
+function M.parse_args(args)
+  local opts = {
+    bootstrappers = {},
+    alpha = 10,
+    disjoint_paths = 10,
+    count = 20,
+    limit = 5,
+    connect_timeout = 6,
+    io_timeout = 10,
+  }
+
+  local i = 1
+  while i <= #args do
+    local name = args[i]
+    local value = args[i + 1]
+    if name == "--bootstrap" then
+      if not value then
+        return nil, "--bootstrap requires a multiaddr"
+      end
+      opts.bootstrappers[#opts.bootstrappers + 1] = value
+      i = i + 2
+    elseif name == "--target" then
+      opts.target = value
+      i = i + 2
+    elseif name == "--key" then
+      opts.key = value
+      i = i + 2
+    elseif name == "--key-hex" then
+      opts.key_hex = value
+      i = i + 2
+    elseif name == "--count" then
+      opts.count = tonumber(value)
+      i = i + 2
+    elseif name == "--limit" then
+      opts.limit = tonumber(value)
+      i = i + 2
+    elseif name == "--alpha" then
+      opts.alpha = tonumber(value)
+      i = i + 2
+    elseif name == "--disjoint-paths" then
+      opts.disjoint_paths = tonumber(value)
+      i = i + 2
+    elseif name == "--connect-timeout" then
+      opts.connect_timeout = tonumber(value)
+      i = i + 2
+    elseif name == "--io-timeout" then
+      opts.io_timeout = tonumber(value)
+      i = i + 2
+    elseif name == "--private-addrs" then
+      opts.address_filter = "all"
+      i = i + 1
+    else
+      return nil, "unknown argument: " .. tostring(name)
+    end
+  end
+
+  if #opts.bootstrappers == 0 then
+    opts.bootstrappers[1] = M.DEFAULT_BOOTSTRAP
+  end
+
+  return opts
+end
+
+function M.hex_to_bytes(hex)
+  if type(hex) ~= "string" or hex == "" or (#hex % 2) ~= 0 or hex:match("[^0-9a-fA-F]") then
+    return nil, "hex key must be non-empty even-length hex"
+  end
+  local out = {}
+  for i = 1, #hex, 2 do
+    out[#out + 1] = string.char(tonumber(hex:sub(i, i + 1), 16))
+  end
+  return table.concat(out)
+end
+
+function M.key_from_opts(opts)
+  if opts.key_hex then
+    return M.hex_to_bytes(opts.key_hex)
+  end
+  if opts.key and opts.key ~= "" then
+    return opts.key
+  end
+  return nil, "provide --key <bytes-as-text> or --key-hex <hex>"
+end
+
+local function print_error_summary(errors)
+  local counts = {}
+  for _, err in ipairs(errors or {}) do
+    local key = tostring(err)
+    counts[key] = (counts[key] or 0) + 1
+  end
+  local rows = {}
+  for message, count in pairs(counts) do
+    rows[#rows + 1] = { message = message, count = count }
+  end
+  table.sort(rows, function(a, b)
+    if a.count == b.count then
+      return a.message < b.message
+    end
+    return a.count > b.count
+  end)
+  for _, row in ipairs(rows) do
+    io.stdout:write("    " .. tostring(row.count) .. "x " .. row.message .. "\n")
+  end
+end
+
+function M.print_lookup(label, lookup)
+  io.stdout:write(label .. " lookup:\n")
+  io.stdout:write("  queried: " .. tostring(lookup and lookup.queried or 0) .. "\n")
+  io.stdout:write("  responses: " .. tostring(lookup and lookup.responses or 0) .. "\n")
+  io.stdout:write("  failed: " .. tostring(lookup and lookup.failed or 0) .. "\n")
+  io.stdout:write("  active_peak: " .. tostring(lookup and lookup.active_peak or 0) .. "\n")
+  io.stdout:write("  termination: " .. tostring(lookup and lookup.termination or "unknown") .. "\n")
+  if lookup and lookup.errors and #lookup.errors > 0 then
+    io.stdout:write("  errors:\n")
+    print_error_summary(lookup.errors)
+  end
+end
+
+function M.new_client(opts)
+  local host, host_err = host_mod.new({
+    runtime = "luv",
+    listen_addrs = { "/ip4/127.0.0.1/tcp/0" },
+    services = { "identify" },
+    blocking = false,
+    connect_timeout = opts.connect_timeout,
+    io_timeout = opts.io_timeout,
+    accept_timeout = 0.05,
+  })
+  if not host then
+    return nil, host_err
+  end
+
+  local started, start_err = host:start()
+  if not started then
+    return nil, start_err
+  end
+
+  local bootstrap_source, source_err = discovery_bootstrap.new({
+    list = opts.bootstrappers,
+    dialable_only = true,
+    ignore_resolve_errors = true,
+  })
+  if not bootstrap_source then
+    host:stop()
+    return nil, source_err
+  end
+
+  local peer_discovery, discovery_err = discovery.new({ sources = { bootstrap_source } })
+  if not peer_discovery then
+    host:stop()
+    return nil, discovery_err
+  end
+
+  local dht, dht_err = kad_dht.new(host, {
+    peer_discovery = peer_discovery,
+    alpha = opts.alpha,
+    disjoint_paths = opts.disjoint_paths,
+    address_filter = opts.address_filter,
+  })
+  if not dht then
+    host:stop()
+    return nil, dht_err
+  end
+
+  local dht_started, dht_start_err = dht:start()
+  if not dht_started then
+    host:stop()
+    return nil, dht_start_err
+  end
+
+  local bootstrap_report, bootstrap_err = dht:bootstrap()
+  if not bootstrap_report then
+    host:stop()
+    return nil, bootstrap_err
+  end
+
+  io.stdout:write("bootstrap: attempted=" .. tostring(bootstrap_report.attempted)
+    .. " connected=" .. tostring(bootstrap_report.connected)
+    .. " added=" .. tostring(bootstrap_report.added)
+    .. " failed=" .. tostring(bootstrap_report.failed) .. "\n")
+
+  return {
+    host = host,
+    dht = dht,
+    opts = opts,
+  }
+end
+
+function M.stop(client)
+  if client and client.host then
+    client.host:stop()
+  end
+end
+
+return M
