@@ -70,8 +70,8 @@ local function run()
   if out_state.security ~= plaintext.PROTOCOL_ID or out_state.muxer ~= yamux.PROTOCOL_ID then
     return nil, "unexpected outbound upgrader negotiated stack"
   end
-  if out_conn:muxer_session() == nil then
-    return nil, "expected upgraded outbound connection to have yamux session"
+  if out_conn:session() == nil then
+    return nil, "expected upgraded outbound connection to have stream session"
   end
 
   local inbound_in = table.concat({
@@ -93,8 +93,8 @@ local function run()
   if in_state.security ~= plaintext.PROTOCOL_ID or in_state.muxer ~= yamux.PROTOCOL_ID then
     return nil, "unexpected inbound upgrader negotiated stack"
   end
-  if in_conn:muxer_session() == nil then
-    return nil, "expected upgraded inbound connection to have yamux session"
+  if in_conn:session() == nil then
+    return nil, "expected upgraded inbound connection to have stream session"
   end
 
   local expected_inbound_writes = table.concat({

@@ -10,17 +10,13 @@ function Connection:new(raw_conn, opts)
   local options = opts or {}
   return setmetatable({
     _raw_conn = raw_conn,
-    _session = options.session or options.muxer_session,
+    _session = options.session,
     _direct_consumed = false,
   }, self)
 end
 
 function Connection:raw()
   return self._raw_conn
-end
-
-function Connection:muxer_session()
-  return self._session
 end
 
 function Connection:session()
