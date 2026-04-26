@@ -539,7 +539,8 @@ function Session:process_one()
       end
       return true
     end
-    return nil, error_mod.new("state", "yamux read pump is already active")
+    self._has_waiters = true
+    return nil, error_mod.new("timeout", "yamux read pump is already active")
   end
 
   self._processing = true

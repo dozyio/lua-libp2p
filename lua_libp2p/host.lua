@@ -438,6 +438,7 @@ function Host:_run_handler_tasks()
           peer_id = task.peer_id,
           cause = tostring(identify_err),
           panic = tostring(result),
+          queue_size = map_count(self._identify_inflight),
         })
         local emit_ok, emit_err = emit_event(self, "peer_identify_failed", {
           peer_id = task.peer_id,
@@ -481,6 +482,14 @@ local function list_protocol_handlers(handlers)
   end
   table.sort(out)
   return out
+end
+
+local function map_count(values)
+  local n = 0
+  for _ in pairs(values or {}) do
+    n = n + 1
+  end
+  return n
 end
 
 function Host:_handle_identify(stream, ctx)
@@ -568,6 +577,7 @@ function Host:_schedule_identify_for_peer(peer_id)
   log.info("identify on connect scheduled", {
     subsystem = "identify",
     peer_id = peer_id,
+    queue_size = map_count(self._identify_inflight),
   })
 
   self:_spawn_handler_task(function(_, ctx)
@@ -587,6 +597,7 @@ function Host:_schedule_identify_for_peer(peer_id)
         subsystem = "identify",
         peer_id = pid,
         cause = tostring(identify_err),
+        queue_size = map_count(self._identify_inflight),
       })
       local ok, emit_err = emit_event(self, "peer_identify_failed", {
         peer_id = pid,
@@ -601,6 +612,7 @@ function Host:_schedule_identify_for_peer(peer_id)
     log.info("identify on connect completed", {
       subsystem = "identify",
       peer_id = pid,
+      queue_size = map_count(self._identify_inflight),
     })
 
     local ok, emit_err = emit_event(self, "peer_identified", {
