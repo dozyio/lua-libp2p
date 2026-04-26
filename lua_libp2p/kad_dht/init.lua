@@ -8,6 +8,7 @@ local peerid = require("lua_libp2p.peerid")
 local protocol = require("lua_libp2p.kad_dht.protocol")
 
 local M = {}
+local compare_distance
 
 M.PROTOCOL_ID = "/ipfs/kad/1.0.0"
 M.DEFAULT_K = 20
@@ -426,6 +427,9 @@ function DHT:find_node(peer_or_addr, target_key, opts)
         protocols = { self.protocol_id },
       })
     end
+    if peer_id_text and #addrs > 0 then
+      self:add_peer(peer_id_text)
+    end
     out[#out + 1] = {
       peer_id = peer_id_text,
       id = peer.id,
@@ -433,6 +437,411 @@ function DHT:find_node(peer_or_addr, target_key, opts)
     }
   end
   return out
+end
+
+function DHT:_decode_response_peers(response, purpose)
+  local function decode_list(list)
+    local out = {}
+    for _, peer in ipairs(list or {}) do
+      local peer_id_text = decode_peer_id_text(peer.id)
+      local addrs = self:_filter_addrs(decode_kad_multiaddrs(peer.addrs), {
+        peer_id = peer_id_text,
+        purpose = purpose,
+      })
+      if self.host and self.host.peerstore and peer_id_text then
+        self.host.peerstore:merge(peer_id_text, {
+          addrs = addrs,
+          protocols = { self.protocol_id },
+        })
+      end
+      if peer_id_text and #addrs > 0 then
+        self:add_peer(peer_id_text)
+      end
+      out[#out + 1] = {
+        peer_id = peer_id_text,
+        id = peer.id,
+        addrs = addrs,
+      }
+    end
+    return out
+  end
+  return decode_list(response.closer_peers), decode_list(response.provider_peers)
+end
+
+function DHT:_rpc(peer_or_addr, request, expected_type, opts)
+  if not self.host or type(self.host.new_stream) ~= "function" then
+    return nil, error_mod.new("state", "kad rpc requires host with new_stream")
+  end
+  local stream, _, _, stream_err = self.host:new_stream(peer_or_addr, { self.protocol_id }, opts)
+  if not stream then
+    return nil, stream_err
+  end
+  local wrote, write_err = protocol.write(stream, request, { max_message_size = self.max_message_size })
+  if not wrote then
+    if type(stream.reset_now) == "function" then
+      stream:reset_now()
+    elseif type(stream.close) == "function" then
+      stream:close()
+    end
+    return nil, write_err
+  end
+  if type(stream.close_write) == "function" then
+    local ok, close_err = stream:close_write()
+    if not ok then
+      return nil, close_err
+    end
+  end
+  local response, response_err = protocol.read(stream, { max_message_size = self.max_message_size })
+  if not response then
+    return nil, response_err
+  end
+  if response.type ~= expected_type then
+    return nil, error_mod.new("protocol", "unexpected kad-dht response type", {
+      expected = expected_type,
+      got = response.type,
+    })
+  end
+  return response
+end
+
+function DHT:get_value(peer_or_addr, key, opts)
+  if type(key) ~= "string" or key == "" then
+    return nil, error_mod.new("input", "GET_VALUE key must be non-empty bytes")
+  end
+  local response, err = self:_rpc(peer_or_addr, {
+    type = protocol.MESSAGE_TYPE.GET_VALUE,
+    key = key,
+  }, protocol.MESSAGE_TYPE.GET_VALUE, opts)
+  if not response then
+    return nil, err
+  end
+  local closer = self:_decode_response_peers(response, "get_value_result")
+  return {
+    record = response.record,
+    closer_peers = closer,
+    key = response.key,
+  }
+end
+
+function DHT:get_providers(peer_or_addr, key, opts)
+  if type(key) ~= "string" or key == "" then
+    return nil, error_mod.new("input", "GET_PROVIDERS key must be non-empty bytes")
+  end
+  local response, err = self:_rpc(peer_or_addr, {
+    type = protocol.MESSAGE_TYPE.GET_PROVIDERS,
+    key = key,
+  }, protocol.MESSAGE_TYPE.GET_PROVIDERS, opts)
+  if not response then
+    return nil, err
+  end
+  local closer, providers = self:_decode_response_peers(response, "get_providers_result")
+  return {
+    providers = providers,
+    provider_peers = providers,
+    closer_peers = closer,
+    key = response.key,
+  }
+end
+
+local function seed_candidates_from_routing_table(self, key, count)
+  local nearest = self:find_closest_peers(key, count or self.k) or {}
+  local out = {}
+  for _, entry in ipairs(nearest) do
+    local addrs = {}
+    if self.host and self.host.peerstore then
+      addrs = dialable_tcp_addrs(self:_filter_addrs(self.host.peerstore:get_addrs(entry.peer_id), {
+        peer_id = entry.peer_id,
+        purpose = "client_query_seed",
+      }))
+    end
+    if #addrs > 0 then
+      out[#out + 1] = { peer_id = entry.peer_id, addrs = addrs }
+    end
+  end
+  return out
+end
+
+local function supports_luv_concurrency(self)
+  local ok_luv, uv = pcall(require, "luv")
+  if not ok_luv then
+    return false
+  end
+  return self.host and self.host._runtime == "luv" and self.host._tcp_transport and self.host._tcp_transport.BACKEND == "luv-native", uv
+end
+
+function DHT:_sort_query_candidates(target_hash, candidates)
+  table.sort(candidates, function(a, b)
+    local da = self:_distance_to_target(a.peer_id or "", target_hash) or string.rep("\255", 32)
+    local db = self:_distance_to_target(b.peer_id or "", target_hash) or string.rep("\255", 32)
+    return compare_distance(da, db) < 0
+  end)
+end
+
+function DHT:_strict_lookup_complete(target_hash, states, k)
+  local peers = {}
+  local heard_or_waiting = 0
+  for peer_id, state in pairs(states) do
+    if state.state ~= "unreachable" then
+      peers[#peers + 1] = state
+      if state.state == "heard" or state.state == "waiting" then
+        heard_or_waiting = heard_or_waiting + 1
+      end
+    end
+  end
+  self:_sort_query_candidates(target_hash, peers)
+  if #peers == 0 then
+    return heard_or_waiting == 0, "starvation"
+  end
+  local limit = math.min(k or self.k, #peers)
+  for i = 1, limit do
+    if peers[i].state ~= "queried" then
+      return false
+    end
+  end
+  if #peers < (k or self.k) then
+    return heard_or_waiting == 0, "closest_available_queried"
+  end
+  return true, "closest_queried"
+end
+
+function DHT:_run_client_lookup(key, seed_peers, query_func, opts)
+  local options = opts or {}
+  local target_bytes, target_err = protocol.peer_bytes(key)
+  if not target_bytes then
+    target_bytes = key
+  end
+  local target_hash, hash_err = self.routing_table:_hash(target_bytes)
+  if not target_hash then
+    return nil, hash_err or target_err
+  end
+
+  local states = {}
+  local queue = {}
+  local function enqueue(peer)
+    if type(peer) ~= "table" or type(peer.peer_id) ~= "string" or peer.peer_id == self.local_peer_id then
+      return
+    end
+    if states[peer.peer_id] then
+      return
+    end
+    local addrs = dialable_tcp_addrs(peer.addrs or (peer.addr and { peer.addr }) or {})
+    if #addrs == 0 and self.host and self.host.peerstore then
+      addrs = dialable_tcp_addrs(self:_filter_addrs(self.host.peerstore:get_addrs(peer.peer_id), {
+        peer_id = peer.peer_id,
+        purpose = "client_query_enqueue",
+      }))
+    end
+    local has_connection = self.host and type(self.host._find_connection) == "function" and self.host:_find_connection(peer.peer_id) ~= nil
+    if #addrs == 0 and self.host and self.host.peerstore and not has_connection then
+      return
+    end
+    local entry = { peer_id = peer.peer_id, addrs = addrs, addr = peer.addr or addrs[1], state = "heard" }
+    states[peer.peer_id] = entry
+    queue[#queue + 1] = entry
+  end
+  for _, peer in ipairs(seed_peers or {}) do
+    enqueue(peer)
+  end
+
+  local result = {
+    queried = 0,
+    responses = 0,
+    failed = 0,
+    errors = {},
+    closest_peers = {},
+    termination = nil,
+    active_peak = 0,
+  }
+  local alpha = options.alpha or self.alpha
+  local max_inflight = alpha * (options.disjoint_paths or self.disjoint_paths or 1)
+  local stop = false
+  local active = 0
+
+  local function complete(peer, ok, response_or_err)
+    active = active - 1
+    if ok then
+      peer.state = "queried"
+      result.responses = result.responses + 1
+      local response = response_or_err or {}
+      if response.stop then
+        stop = true
+      end
+      for _, closer in ipairs(response.closer_peers or {}) do
+        result.closest_peers[#result.closest_peers + 1] = closer
+        enqueue(closer)
+      end
+    else
+      peer.state = "unreachable"
+      result.failed = result.failed + 1
+      if response_or_err then
+        result.errors[#result.errors + 1] = response_or_err
+      end
+    end
+  end
+
+  local function spawn(peer)
+    peer.state = "waiting"
+    active = active + 1
+    if active > result.active_peak then
+      result.active_peak = active
+    end
+    result.queried = result.queried + 1
+    local co = coroutine.create(function()
+      local response, err = query_func(peer)
+      if not response then
+        return false, err
+      end
+      return true, response
+    end)
+    return { co = co, peer = peer }
+  end
+
+  local concurrent, uv = supports_luv_concurrency(self)
+  local workers = {}
+  local function step_lookup()
+    self:_sort_query_candidates(target_hash, queue)
+    while #queue > 0 and active < max_inflight and not stop do
+      local peer = table.remove(queue, 1)
+      if peer.state == "heard" then
+        workers[#workers + 1] = spawn(peer)
+      end
+    end
+
+    for i = #workers, 1, -1 do
+      local worker = workers[i]
+      local ok, success, response_or_err = coroutine.resume(worker.co)
+      if not ok then
+        success = false
+        response_or_err = error_mod.new("protocol", "kad client query coroutine failed", { cause = success })
+      end
+      if coroutine.status(worker.co) == "dead" then
+        complete(worker.peer, success == true, response_or_err)
+        table.remove(workers, i)
+      end
+    end
+
+    local done, reason = self:_strict_lookup_complete(target_hash, states, self.k)
+    if stop then
+      result.termination = "application"
+      return true
+    end
+    if done and active == 0 then
+      result.termination = reason
+      return true
+    end
+    if active == 0 and #queue == 0 then
+      result.termination = "starvation"
+      return true
+    end
+
+    return false
+  end
+
+  if concurrent then
+    local finished = false
+    local timer = assert(uv.new_timer())
+    timer:start(0, 10, function()
+      finished = step_lookup()
+      if finished then
+        timer:stop()
+        timer:close()
+      end
+    end)
+    while not finished do
+      uv.run("once")
+    end
+  else
+    while not step_lookup() do
+      if #workers == 0 and #queue == 0 then
+        break
+      end
+    end
+  end
+
+  return result
+end
+
+function DHT:find_value(key, opts)
+  local options = opts or {}
+  local found
+  local lookup, lookup_err = self:_run_client_lookup(key, options.peers or seed_candidates_from_routing_table(self, key, self.k), function(peer)
+    local result, err = self:get_value(peer.addr or (peer.addrs and peer.addrs[1]) or { peer_id = peer.peer_id, addrs = peer.addrs }, key, options)
+    if not result then
+      return nil, err
+    end
+    if result.record and result.record.value ~= nil then
+      found = result
+      return { closer_peers = result.closer_peers, stop = true }
+    end
+    return { closer_peers = result.closer_peers }
+  end, options)
+  if not lookup then
+    return nil, lookup_err
+  end
+  if found then
+    found.lookup = lookup
+    return found
+  end
+  return { record = nil, closer_peers = lookup.closest_peers, lookup = lookup, errors = lookup.errors }
+end
+
+function DHT:get_closest_peers(key, opts)
+  local options = opts or {}
+  local lookup, lookup_err = self:_run_client_lookup(key, options.peers or seed_candidates_from_routing_table(self, key, self.k), function(peer)
+    local target = peer.peer_id and { peer_id = peer.peer_id, addrs = peer.addrs } or (peer.addr or (peer.addrs and peer.addrs[1]))
+    local target_bytes, key_err = protocol.peer_bytes(key)
+    if not target_bytes then
+      return nil, key_err
+    end
+    local response, err = self:_rpc(target or { peer_id = peer.peer_id, addrs = peer.addrs }, {
+      type = protocol.MESSAGE_TYPE.FIND_NODE,
+      key = target_bytes,
+    }, protocol.MESSAGE_TYPE.FIND_NODE, options)
+    if not response then
+      return nil, err
+    end
+    local closest = self:_decode_response_peers(response, "get_closest_peers_result")
+    return { closer_peers = closest }
+  end, options)
+  if not lookup then
+    return nil, lookup_err
+  end
+
+  local seen = {}
+  local out = {}
+  for _, peer in ipairs(lookup.closest_peers or {}) do
+    if peer.peer_id and not seen[peer.peer_id] then
+      seen[peer.peer_id] = true
+      out[#out + 1] = peer
+      if #out >= (options.count or self.k) then
+        break
+      end
+    end
+  end
+  lookup.peers = out
+  return out, lookup
+end
+
+function DHT:find_providers(key, opts)
+  local options = opts or {}
+  local providers = {}
+  local lookup, lookup_err = self:_run_client_lookup(key, options.peers or seed_candidates_from_routing_table(self, key, self.k), function(peer)
+    local result, err = self:get_providers(peer.addr or (peer.addrs and peer.addrs[1]) or { peer_id = peer.peer_id, addrs = peer.addrs }, key, options)
+    if not result then
+      return nil, err
+    end
+    for _, provider in ipairs(result.providers or {}) do
+      providers[#providers + 1] = provider
+      if #providers >= (options.limit or 1) then
+        return { closer_peers = result.closer_peers, stop = true }
+      end
+    end
+    return { closer_peers = result.closer_peers }
+  end, options)
+  if not lookup then
+    return nil, lookup_err
+  end
+  return { providers = providers, provider_peers = providers, closer_peers = lookup.closest_peers, lookup = lookup, errors = lookup.errors }
 end
 
 function DHT:bootstrap_targets(opts)
@@ -707,7 +1116,7 @@ function DHT:refresh_once(opts)
   return report
 end
 
-local function compare_distance(left, right)
+function compare_distance(left, right)
   local size = #left
   if #right < size then
     size = #right
@@ -796,6 +1205,62 @@ function DHT:random_walk(opts)
       return nil, bootstrap_err
     end
     initial_peers = self.routing_table:all_peers()
+  end
+
+  if options.legacy_walker ~= true then
+    local seeds = {}
+    local initial_peer_ids = {}
+    for _, entry in ipairs(initial_peers) do
+      initial_peer_ids[entry.peer_id] = true
+      local addrs = {}
+      if self.host and self.host.peerstore then
+        addrs = dialable_tcp_addrs(self:_filter_addrs(self.host.peerstore:get_addrs(entry.peer_id), {
+          peer_id = entry.peer_id,
+          purpose = "random_walk_seed",
+        }))
+      end
+      if #addrs > 0 then
+        seeds[#seeds + 1] = { peer_id = entry.peer_id, addrs = addrs }
+      elseif not (self.host and self.host.peerstore) then
+        seeds[#seeds + 1] = { peer_id = entry.peer_id }
+      end
+    end
+    local closest, lookup = self:get_closest_peers(target_key, {
+      peers = seeds,
+      alpha = alpha,
+      disjoint_paths = disjoint_paths,
+      count = self.k,
+    })
+    if not closest then
+      return nil, lookup
+    end
+    report.queried = lookup.queried or 0
+    report.responses = lookup.responses or 0
+    report.failed = lookup.failed or 0
+    report.errors = lookup.errors or {}
+    report.discovered = #(lookup.closest_peers or {})
+    report.termination = lookup.termination
+    report.active_peak = lookup.active_peak
+    for _, peer in ipairs(lookup.closest_peers or {}) do
+      if initial_peer_ids[peer.peer_id] and self:find_peer(peer.peer_id) then
+        goto continue
+      end
+      initial_peer_ids[peer.peer_id] = true
+      if self:find_peer(peer.peer_id) then
+        report.added = report.added + 1
+        goto continue
+      end
+      local added, add_err = self:add_peer(peer.peer_id, { allow_replace = options.allow_replace })
+      if added then
+        report.added = report.added + 1
+      elseif add_err and is_capacity_error(add_err) then
+        report.skipped = report.skipped + 1
+      elseif add_err and not options.ignore_add_errors then
+        report.errors[#report.errors + 1] = add_err
+      end
+      ::continue::
+    end
+    return report
   end
 
   local paths = {}

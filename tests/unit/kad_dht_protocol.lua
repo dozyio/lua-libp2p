@@ -60,6 +60,44 @@ local function run()
     return nil, "decoded closer peers mismatch"
   end
 
+  local value_encoded, value_enc_err = kad_protocol.encode_message({
+    type = kad_protocol.MESSAGE_TYPE.GET_VALUE,
+    key = "key-a",
+    record = {
+      key = "key-a",
+      value = "value-a",
+      time_received = "2026-04-26T00:00:00Z",
+    },
+  })
+  if not value_encoded then
+    return nil, value_enc_err
+  end
+  local value_decoded, value_dec_err = kad_protocol.decode_message(value_encoded)
+  if not value_decoded then
+    return nil, value_dec_err
+  end
+  if not value_decoded.record or value_decoded.record.value ~= "value-a" then
+    return nil, "decoded GET_VALUE record mismatch"
+  end
+
+  local providers_encoded, providers_enc_err = kad_protocol.encode_message({
+    type = kad_protocol.MESSAGE_TYPE.GET_PROVIDERS,
+    key = "cid-key",
+    provider_peers = {
+      { id = "provider-a", addrs = { "/ip4/127.0.0.1/tcp/4001" } },
+    },
+  })
+  if not providers_encoded then
+    return nil, providers_enc_err
+  end
+  local providers_decoded, providers_dec_err = kad_protocol.decode_message(providers_encoded)
+  if not providers_decoded then
+    return nil, providers_dec_err
+  end
+  if #providers_decoded.provider_peers ~= 1 or providers_decoded.provider_peers[1].id ~= "provider-a" then
+    return nil, "decoded GET_PROVIDERS provider mismatch"
+  end
+
   local writer = new_scripted_conn("")
   local wrote, write_err = kad_protocol.write(writer, {
     type = kad_protocol.MESSAGE_TYPE.FIND_NODE,

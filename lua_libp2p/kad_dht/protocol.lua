@@ -281,6 +281,71 @@ function M.decode_peer(payload)
   return out
 end
 
+function M.encode_record(record)
+  if type(record) ~= "table" then
+    return nil, error_mod.new("input", "record must be a table")
+  end
+  local parts = {}
+  local ok, err = append_len_field(parts, 1, record.key)
+  if not ok then
+    return nil, err
+  end
+  ok, err = append_len_field(parts, 2, record.value)
+  if not ok then
+    return nil, err
+  end
+  ok, err = append_len_field(parts, 5, record.time_received or record.timeReceived)
+  if not ok then
+    return nil, err
+  end
+  return table.concat(parts)
+end
+
+function M.decode_record(payload)
+  if type(payload) ~= "string" then
+    return nil, error_mod.new("input", "record payload must be bytes")
+  end
+  local out = {}
+  local i = 1
+  while i <= #payload do
+    local tag, next_i_or_err = varint.decode_u64(payload, i)
+    if not tag then
+      return nil, next_i_or_err
+    end
+    local field_no = math.floor(tag / 8)
+    local wire = tag % 8
+    i = next_i_or_err
+    if wire ~= 2 then
+      local next_i, skip_err = skip_unknown(payload, i, wire)
+      if not next_i then
+        return nil, skip_err
+      end
+      i = next_i
+      goto continue
+    end
+    local length, after_len_or_err = varint.decode_u64(payload, i)
+    if not length then
+      return nil, after_len_or_err
+    end
+    local finish = after_len_or_err + length - 1
+    if finish > #payload then
+      return nil, error_mod.new("decode", "truncated kad record field")
+    end
+    local value = payload:sub(after_len_or_err, finish)
+    i = finish + 1
+    if field_no == 1 then
+      out.key = value
+    elseif field_no == 2 then
+      out.value = value
+    elseif field_no == 5 then
+      out.time_received = value
+      out.timeReceived = value
+    end
+    ::continue::
+  end
+  return out
+end
+
 function M.encode_message(message)
   if type(message) ~= "table" then
     return nil, error_mod.new("input", "kad message must be a table")
@@ -295,6 +360,17 @@ function M.encode_message(message)
   ok, err = append_len_field(parts, 2, message.key)
   if not ok then
     return nil, err
+  end
+
+  if message.record ~= nil then
+    local encoded_record, rec_err = M.encode_record(message.record)
+    if not encoded_record then
+      return nil, rec_err
+    end
+    ok, err = append_len_field(parts, 3, encoded_record)
+    if not ok then
+      return nil, err
+    end
   end
 
   local closer = message.closer_peers or message.closerPeers
@@ -386,6 +462,12 @@ function M.decode_message(payload)
 
     if field_no == 2 then
       out.key = value
+    elseif field_no == 3 then
+      local record, record_err = M.decode_record(value)
+      if not record then
+        return nil, record_err
+      end
+      out.record = record
     elseif field_no == 8 then
       local peer, peer_err = M.decode_peer(value)
       if not peer then

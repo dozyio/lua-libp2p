@@ -399,11 +399,6 @@ function NativeConnection:read(length)
     end
     local _, step_err = run_once_or_loop_running()
     if step_err == "loop_running" then
-      if timer then
-        timer:stop()
-        timer:close()
-        timer = nil
-      end
       if yield_if_possible({ kind = "read", connection = self }) then
         self:_ensure_read_pump()
         goto continue_read_wait

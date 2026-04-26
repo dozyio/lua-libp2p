@@ -184,6 +184,80 @@ local function run()
     return nil, "find_node returned unexpected peer list"
   end
 
+  dht._rpc = function(_, _, request, expected_type)
+    if request.type == kad_protocol.MESSAGE_TYPE.GET_VALUE then
+      return {
+        type = expected_type,
+        key = request.key,
+        record = { key = request.key, value = "value-a" },
+      }
+    end
+    if request.type == kad_protocol.MESSAGE_TYPE.GET_PROVIDERS then
+      return {
+        type = expected_type,
+        key = request.key,
+        provider_peers = {
+          { id = "provider-a", addrs = { "/ip4/8.8.8.8/tcp/4001" } },
+        },
+      }
+    end
+    if request.type == kad_protocol.MESSAGE_TYPE.FIND_NODE then
+      return {
+        type = expected_type,
+        key = request.key,
+        closer_peers = {
+          { id = "closest-a", addrs = { "/ip4/8.8.4.4/tcp/4001" } },
+        },
+      }
+    end
+    return nil, "unexpected rpc"
+  end
+
+  local value_result, value_err = dht:get_value("peer-a", "key-a")
+  if not value_result then
+    return nil, value_err
+  end
+  if not value_result.record or value_result.record.value ~= "value-a" then
+    return nil, "get_value should return record value"
+  end
+
+  local providers_result, providers_err = dht:get_providers("peer-a", "cid-key")
+  if not providers_result then
+    return nil, providers_err
+  end
+  if #providers_result.providers ~= 1 or providers_result.providers[1].peer_id ~= "provider-a" then
+    return nil, "get_providers should return provider peers"
+  end
+
+  local found_value, find_value_err = dht:find_value("key-a", { peers = { { peer_id = "peer-a", addr = "peer-a" } } })
+  if not found_value then
+    return nil, find_value_err
+  end
+  if not found_value.record or found_value.record.value ~= "value-a" then
+    return nil, "find_value should return first found record"
+  end
+
+  local found_providers, find_providers_err = dht:find_providers("cid-key", { peers = { { peer_id = "peer-a", addr = "peer-a" } } })
+  if not found_providers then
+    return nil, find_providers_err
+  end
+  if #found_providers.providers ~= 1 or found_providers.providers[1].peer_id ~= "provider-a" then
+    return nil, "find_providers should return discovered providers"
+  end
+
+  local closest_peers, closest_lookup = dht:get_closest_peers("target", { peers = { { peer_id = "peer-a", addr = "peer-a" } }, count = 1 })
+  if not closest_peers then
+    return nil, closest_lookup
+  end
+  if #closest_peers ~= 1 or closest_peers[1].peer_id ~= "closest-a" then
+    return nil, "get_closest_peers should return closest discovered peers"
+  end
+  if closest_lookup.termination ~= "starvation" and closest_lookup.termination ~= "closest_queried" then
+    return nil, "get_closest_peers should include lookup termination"
+  end
+
+  dht._rpc = nil
+
   local req_payload = assert(kad_protocol.encode_message({
     type = kad_protocol.MESSAGE_TYPE.FIND_NODE,
     key = "target",

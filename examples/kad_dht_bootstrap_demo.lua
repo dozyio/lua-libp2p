@@ -496,6 +496,7 @@ local function run_client()
     end
 
     io.stdout:write("running one random-walk refresh (target=self peer id)...\n")
+    local walk_started_at = os.time()
     local walk, walk_err = dht:random_walk({
       alpha = 10,
       disjoint_paths = 10,
@@ -510,6 +511,9 @@ local function run_client()
       io.stdout:write("  added: " .. tostring(walk.added) .. "\n")
       io.stdout:write("  skipped: " .. tostring(walk.skipped or 0) .. "\n")
       io.stdout:write("  failed: " .. tostring(walk.failed) .. "\n")
+      io.stdout:write("  active_peak: " .. tostring(walk.active_peak or 0) .. "\n")
+      io.stdout:write("  termination: " .. tostring(walk.termination or "unknown") .. "\n")
+      io.stdout:write("  duration: " .. tostring(os.time() - walk_started_at) .. "s\n")
       if #walk.errors > 0 then
         io.stdout:write("  errors:\n")
         print_error_summary(walk.errors)
