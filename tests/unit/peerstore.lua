@@ -22,6 +22,18 @@ local function run()
   if not ps:supports_protocol("peer-a", "/ipfs/kad/1.0.0") then
     return nil, "expected stored protocol support"
   end
+  local tagged, tag_err = ps:tag("peer-a", "bootstrap", { value = 50, ttl = math.huge })
+  if not tagged then
+    return nil, tag_err
+  end
+  local tags = ps:get_tags("peer-a")
+  if not tags.bootstrap or tags.bootstrap.value ~= 50 or tags.bootstrap.expires_at ~= nil then
+    return nil, "expected bootstrap tag metadata"
+  end
+  local untagged = ps:untag("peer-a", "bootstrap")
+  if not untagged or ps:get_tags("peer-a").bootstrap ~= nil then
+    return nil, "expected bootstrap tag removal"
+  end
 
   local patched, patch_err = ps:patch("peer-a", {
     addrs = {

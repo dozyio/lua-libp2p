@@ -18,14 +18,20 @@ local function run()
 
   local modules = env.build.modules
   local required = {
+    "lua_libp2p.address_manager",
+    "lua_libp2p.bootstrap",
     "lua_libp2p.host",
     "lua_libp2p.kbucket",
     "lua_libp2p.kad_dht",
     "lua_libp2p.kad_dht.protocol",
     "lua_libp2p.peerstore",
+    "lua_libp2p.protocol.circuit_relay_v2",
     "lua_libp2p.protocol.identify",
     "lua_libp2p.protocol.ping",
     "lua_libp2p.protocol.perf",
+    "lua_libp2p.relay",
+    "lua_libp2p.relay.autorelay",
+    "lua_libp2p.relay.client",
   }
 
   for _, module_name in ipairs(required) do

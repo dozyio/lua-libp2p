@@ -81,6 +81,44 @@ local function run()
     return nil, "expected dns addr to pass public filter by default"
   end
 
+  local relay_peer = "12D3KooWCryG7Mon9orvQxcS1rYZjotPgpwoJNHHKcLLfE4Hf5mV"
+  local dst_peer = "12D3KooWQWZLu9qXWPTDnF9rTRrAiVGZrXCbHAvkqYrsG8cW4UHg"
+  local relay_addr = "/ip4/203.0.113.1/tcp/4001/p2p/" .. relay_peer
+  local reservation = relay_addr .. "/p2p-circuit"
+  local relayed = reservation .. "/p2p/" .. dst_peer
+  local relay_info, relay_info_err = multiaddr.relay_info(relayed)
+  if not relay_info then
+    return nil, relay_info_err
+  end
+  if relay_info.relay_peer_id ~= relay_peer then
+    return nil, "relay_info should extract relay peer id"
+  end
+  if relay_info.destination_peer_id ~= dst_peer then
+    return nil, "relay_info should extract destination peer id"
+  end
+  if relay_info.relay_addr ~= relay_addr then
+    return nil, "relay_info should extract relay dial addr"
+  end
+  if relay_info.circuit_addr ~= reservation then
+    return nil, "relay_info should extract circuit reservation addr"
+  end
+  if not multiaddr.is_relay_addr(relayed) then
+    return nil, "expected relayed addr to be detected"
+  end
+  if multiaddr.relay_reservation_addr(relay_addr) ~= reservation then
+    return nil, "relay_reservation_addr should append p2p-circuit"
+  end
+  if multiaddr.relay_reservation_addr(relayed) ~= reservation then
+    return nil, "relay_reservation_addr should strip destination peer"
+  end
+  local built, built_err = multiaddr.relay_destination_addr(relay_addr, dst_peer)
+  if not built then
+    return nil, built_err
+  end
+  if built ~= relayed then
+    return nil, "relay_destination_addr should build relayed destination addr"
+  end
+
   return true
 end
 

@@ -1,9 +1,15 @@
+local address_manager = require("lua_libp2p.address_manager")
+local bootstrap = require("lua_libp2p.bootstrap")
 local keys = require("lua_libp2p.crypto.keys")
+local discovery = require("lua_libp2p.discovery")
+local discovery_bootstrap = require("lua_libp2p.discovery.bootstrap")
+local dnsaddr = require("lua_libp2p.dnsaddr")
 local error_mod = require("lua_libp2p.error")
 local log = require("lua_libp2p.log")
 local host_runtime_luv = require("lua_libp2p.host_runtime_luv")
 local host_runtime_luv_native = require("lua_libp2p.host_runtime_luv_native")
 local host_runtime_poll = require("lua_libp2p.host_runtime_poll")
+local kad_dht = require("lua_libp2p.kad_dht")
 local multiaddr = require("lua_libp2p.multiaddr")
 local peerid = require("lua_libp2p.peerid")
 local peerstore = require("lua_libp2p.peerstore")
@@ -11,6 +17,8 @@ local identify = require("lua_libp2p.protocol.identify")
 local key_pb = require("lua_libp2p.crypto.key_pb")
 local perf = require("lua_libp2p.protocol.perf")
 local ping = require("lua_libp2p.protocol.ping")
+local relay_autorelay = require("lua_libp2p.relay.autorelay")
+local relay_proto = require("lua_libp2p.protocol.circuit_relay_v2")
 local upgrader = require("lua_libp2p.network.upgrader")
 local tcp_poll = require("lua_libp2p.transport.tcp")
 local tcp_luv = require("lua_libp2p.transport.tcp_luv")
@@ -20,6 +28,7 @@ local M = {}
 local DEFAULT_IDENTIFY_PROTOCOL_VERSION = "/lua-libp2p/0.1.0"
 local DEFAULT_IDENTIFY_AGENT_VERSION = "lua-libp2p/0.1.0"
 local DEFAULT_EVENT_QUEUE_MAX = 256
+local DEFAULT_BOOTSTRAPPERS = bootstrap.DEFAULT_BOOTSTRAPPERS
 
 local function list_copy(values)
   local out = {}
@@ -27,6 +36,18 @@ local function list_copy(values)
     out[i] = v
   end
   return out
+end
+
+local function list_equal(a, b)
+  if #a ~= #b then
+    return false
+  end
+  for i = 1, #a do
+    if a[i] ~= b[i] then
+      return false
+    end
+  end
+  return true
 end
 
 local function emit_event(self, name, payload)
@@ -81,6 +102,9 @@ local function bind_listeners(self, addrs)
   end
 
   for _, addr in ipairs(targets) do
+    if addr == "/p2p-circuit" then
+      goto continue_target
+    end
     local listener, listen_err = self._tcp_transport.listen({
       multiaddr = addr,
       accept_timeout = self._accept_timeout,
@@ -98,6 +122,7 @@ local function bind_listeners(self, addrs)
       return nil, resolved_err
     end
     next_addrs[#next_addrs + 1] = resolved
+    ::continue_target::
   end
 
   close_all(self._listeners)
@@ -109,6 +134,9 @@ local function bind_listeners(self, addrs)
   self.listen_addrs = {}
   for i, resolved in ipairs(next_addrs) do
     self.listen_addrs[i] = resolved
+  end
+  if self.address_manager then
+    self.address_manager:set_listen_addrs(self.listen_addrs)
   end
 
   if self._running and self._runtime_impl and self._runtime_impl.sync_watchers then
@@ -157,6 +185,36 @@ local function identify_listen_addrs(message)
     end
   end
   return out
+end
+
+local function list_set(values)
+  local out = {}
+  for _, value in ipairs(values or {}) do
+    if type(value) == "string" and value ~= "" then
+      out[value] = true
+    end
+  end
+  return out
+end
+
+local function protocol_delta(before, after)
+  local before_set = list_set(before)
+  local added = {}
+  for _, protocol_id in ipairs(after or {}) do
+    if not before_set[protocol_id] then
+      added[#added + 1] = protocol_id
+    end
+  end
+  return added
+end
+
+local function list_contains(values, needle)
+  for _, value in ipairs(values or {}) do
+    if value == needle then
+      return true
+    end
+  end
+  return false
 end
 
 local function flatten_error_fields(err, prefix, fields, depth)
@@ -279,6 +337,80 @@ local function first_dialable_tcp_addr(addrs)
   return nil
 end
 
+local function first_relay_addr(addrs)
+  for _, addr in ipairs(addrs or {}) do
+    if multiaddr.is_relay_addr(addr) then
+      return addr
+    end
+  end
+  return nil
+end
+
+local function contains_circuit_listen_addr(addrs)
+  for _, addr in ipairs(addrs or {}) do
+    if addr == "/p2p-circuit" then
+      return true
+    end
+  end
+  return false
+end
+
+local function list_has(values, needle)
+  for _, value in ipairs(values or {}) do
+    if value == needle then
+      return true
+    end
+  end
+  return false
+end
+
+local function build_peer_discovery(config)
+  if config == nil or config == false then
+    return nil
+  end
+  if type(config) == "table" and type(config.discover) == "function" then
+    return config
+  end
+  if type(config) ~= "table" then
+    return nil, nil, error_mod.new("input", "peer_discovery must be a config table or discovery object")
+  end
+
+  local sources = {}
+  local bootstrap_config = nil
+  if type(config.sources) == "table" then
+    for _, source in ipairs(config.sources) do
+      sources[#sources + 1] = source
+    end
+  end
+  if config.bootstrap ~= nil then
+    local bootstrap_opts = config.bootstrap
+    if type(bootstrap_opts) == "table" and bootstrap_opts[1] ~= nil and bootstrap_opts.list == nil then
+      bootstrap_opts = { list = bootstrap_opts }
+    end
+    bootstrap_opts = bootstrap_opts or {}
+    if bootstrap_opts.list == nil then
+      bootstrap_opts.list = DEFAULT_BOOTSTRAPPERS
+    end
+    if bootstrap_opts.dnsaddr_resolver == nil then
+      bootstrap_opts.dnsaddr_resolver = dnsaddr.default_resolver
+    end
+    bootstrap_config = bootstrap_opts
+    local source, source_err = discovery_bootstrap.new(bootstrap_opts)
+    if not source then
+      return nil, nil, source_err
+    end
+    sources[#sources + 1] = source
+  end
+  if #sources == 0 then
+    return nil, nil, error_mod.new("input", "peer_discovery config must include sources or bootstrap")
+  end
+  local discoverer, discoverer_err = discovery.new({ sources = sources })
+  if not discoverer then
+    return nil, nil, discoverer_err
+  end
+  return discoverer, bootstrap_config
+end
+
 local function resolve_target(target)
   if type(target) == "string" then
     if target:sub(1, 1) == "/" then
@@ -290,7 +422,7 @@ local function resolve_target(target)
   if type(target) == "table" then
     local addr = target.addr
     if not addr and type(target.addrs) == "table" then
-      addr = first_dialable_tcp_addr(target.addrs)
+      addr = first_dialable_tcp_addr(target.addrs) or first_relay_addr(target.addrs)
     end
     return {
       peer_id = target.peer_id,
@@ -337,18 +469,36 @@ function Host:new(config)
     identity = keypair,
     _peer_id = local_peer,
     peerstore = cfg.peerstore or peerstore.new(cfg.peerstore_options),
+    peer_discovery = nil,
+    _bootstrap_discovery = nil,
+    _bootstrap_discovery_due_at = nil,
+    _bootstrap_discovery_done = false,
+    _pending_bootstrap_dials = {},
+    address_manager = cfg.address_manager or address_manager.new({
+      listen_addrs = cfg.listen_addrs or {},
+      announce_addrs = cfg.announce_addrs or {},
+      no_announce_addrs = cfg.no_announce_addrs or {},
+      observed_addrs = cfg.observed_addrs or {},
+      relay_addrs = cfg.relay_addrs or {},
+      advertise_observed = cfg.advertise_observed,
+    }),
     listen_addrs = list_copy(cfg.listen_addrs or {}),
     transports = list_copy(cfg.transports or { "tcp" }),
     security_transports = list_copy(cfg.security_transports or {}),
     muxers = list_copy(cfg.muxers or {}),
     _handlers = {},
+    _services = {},
     _handler_tasks = {},
     _listeners = {},
     _connections = {},
     _connections_by_peer = {},
+    _connections_by_id = {},
+    _next_connection_id = 1,
     _pending_inbound = {},
+    _pending_relay_inbound = {},
     _event_handlers = {},
     _event_queue_max = cfg.event_queue_max or DEFAULT_EVENT_QUEUE_MAX,
+    _last_advertised_addrs = nil,
     _event_subscribers = {},
     _next_subscriber_id = 1,
     _identify_on_connect_handler = nil,
@@ -370,9 +520,27 @@ function Host:new(config)
     _accept_timeout = cfg.accept_timeout or 0,
     _service_options = {
       identify = cfg.identify or {},
+      autorelay = cfg.autorelay or {},
+      kad_dht = cfg.kad_dht or {},
       perf = cfg.perf or {},
     },
   }, self)
+
+  local peer_discovery, bootstrap_config, peer_discovery_err = build_peer_discovery(cfg.peer_discovery)
+  if peer_discovery_err then
+    return nil, peer_discovery_err
+  end
+  self_obj.peer_discovery = peer_discovery
+  if bootstrap_config then
+    self_obj._bootstrap_discovery = {
+      config = bootstrap_config,
+      dial_on_start = bootstrap_config.dial_on_start ~= false,
+      timeout = bootstrap_config.timeout or bootstrap_config.delay or 1,
+      tag_name = bootstrap_config.tag_name or "bootstrap",
+      tag_value = bootstrap_config.tag_value or 50,
+      tag_ttl = bootstrap_config.tag_ttl == nil and 120 or bootstrap_config.tag_ttl,
+    }
+  end
 
   if #self_obj.security_transports == 0 then
     self_obj.security_transports = { "/noise" }
@@ -391,6 +559,9 @@ function Host:new(config)
   end
 
   local services = cfg.services or cfg.service
+  if contains_circuit_listen_addr(self_obj.listen_addrs) and not list_has(services or {}, "autorelay") then
+    return nil, error_mod.new("input", "/p2p-circuit listen addr requires autorelay service")
+  end
   if services ~= nil then
     if type(services) ~= "table" then
       return nil, error_mod.new("input", "services must be a list")
@@ -576,10 +747,39 @@ function Host:_request_identify(peer_id, opts)
   end
 
   if self.peerstore then
+    local before_protocols = self.peerstore:get_protocols(peer_id)
     self.peerstore:merge(peer_id, {
       addrs = identify_listen_addrs(msg),
       protocols = msg.protocols or {},
     })
+    local after_protocols = self.peerstore:get_protocols(peer_id)
+    local added_protocols = protocol_delta(before_protocols, after_protocols)
+    if #added_protocols > 0 then
+      local ok, emit_err = emit_event(self, "peer_protocols_updated", {
+        peer_id = peer_id,
+        protocols = after_protocols,
+        added_protocols = added_protocols,
+        source = "identify",
+      })
+      if not ok then
+        return nil, emit_err
+      end
+    end
+  end
+
+  if self.address_manager and msg.observedAddr then
+    local observed = identify_listen_addrs({ listenAddrs = { msg.observedAddr } })[1]
+    if observed then
+      self.address_manager:add_observed_addr(observed)
+      local ok, emit_err = emit_event(self, "observed_addr", {
+        peer_id = peer_id,
+        addr = observed,
+        source = "identify",
+      })
+      if not ok then
+        return nil, emit_err
+      end
+    end
   end
 
   return {
@@ -598,7 +798,7 @@ function Host:_schedule_identify_for_peer(peer_id)
     return true
   end
   self._identify_inflight[peer_id] = true
-  log.info("identify on connect scheduled", {
+  log.debug("identify on connect scheduled", {
     subsystem = "identify",
     peer_id = peer_id,
     queue_size = map_count(self._identify_inflight),
@@ -633,7 +833,7 @@ function Host:_schedule_identify_for_peer(peer_id)
       return true
     end
 
-    log.info("identify on connect completed", {
+    log.debug("identify on connect completed", {
       subsystem = "identify",
       peer_id = pid,
       queue_size = map_count(self._identify_inflight),
@@ -662,6 +862,9 @@ function Host:add_service(name)
   if type(name) ~= "string" or name == "" then
     return nil, error_mod.new("input", "service name must be non-empty")
   end
+  if self._services[name] then
+    return true
+  end
 
   if name == "identify" then
     local ok, err = self:handle(identify.ID, function(stream, ctx)
@@ -687,26 +890,94 @@ function Host:add_service(name)
       end
     end
 
+    self._services[name] = true
     return true
   end
 
   if name == "ping" then
-    return self:handle(ping.ID, function(stream)
+    local ok, err = self:handle(ping.ID, function(stream)
       return ping.handle(stream)
     end)
+    if not ok then
+      return nil, err
+    end
+    self._services[name] = true
+    return true
   end
 
   if name == "perf" then
     local perf_opts = self._service_options.perf or {}
-    return self:handle(perf.ID, function(stream)
+    local ok, err = self:handle(perf.ID, function(stream)
       return perf.handle(stream, {
         write_block_size = perf_opts.write_block_size,
         yield_every_bytes = perf_opts.yield_every_bytes,
       })
     end)
+    if not ok then
+      return nil, err
+    end
+    self._services[name] = true
+    return true
+  end
+
+  if name == "autorelay" then
+    local autorelay_opts = self._service_options.autorelay or {}
+    local svc, svc_err = relay_autorelay.new(self, autorelay_opts)
+    if not svc then
+      return nil, svc_err
+    end
+    local started, start_err = svc:start()
+    if not started then
+      return nil, start_err
+    end
+    self.autorelay = svc
+    self._services[name] = true
+    return true
+  end
+
+  if name == "kad_dht" then
+    local dht_opts = self._service_options.kad_dht or {}
+    if dht_opts.mode == nil then
+      dht_opts.mode = "client"
+    end
+    if dht_opts.peer_discovery == nil then
+      dht_opts.peer_discovery = self.peer_discovery
+    end
+    local dht, dht_err = kad_dht.new(self, dht_opts)
+    if not dht then
+      return nil, dht_err
+    end
+    local started, start_err = dht:start()
+    if not started then
+      return nil, start_err
+    end
+    self.kad_dht = dht
+    self._services[name] = true
+    return true
   end
 
   return nil, error_mod.new("input", "unsupported service", { service = name })
+end
+
+function Host:_handle_relay_stop(stream, ctx)
+  local accepted, accept_err = relay_proto.accept_stop(stream, {
+    max_message_size = self._max_relay_message_size,
+  })
+  if not accepted then
+    return nil, accept_err
+  end
+  self._pending_relay_inbound[#self._pending_relay_inbound + 1] = {
+    raw_conn = stream,
+    relay = {
+      relay_peer_id = ctx and ctx.state and ctx.state.remote_peer_id or nil,
+      initiator_peer_id_bytes = accepted.initiator_peer_id_bytes,
+      initiator_addrs = accepted.initiator_addrs,
+      limit = accepted.limit,
+      limit_kind = accepted.limit_kind,
+      direction = "inbound",
+    },
+  }
+  return true
 end
 
 function Host:_build_router()
@@ -721,6 +992,9 @@ function Host:_build_router()
 end
 
 function Host:get_listen_addrs()
+  if self.address_manager then
+    self.address_manager:set_listen_addrs(self.listen_addrs)
+  end
   return list_copy(self.listen_addrs)
 end
 
@@ -729,13 +1003,38 @@ function Host:peer_id()
 end
 
 function Host:get_multiaddrs_raw()
+  if self.address_manager then
+    self.address_manager:set_listen_addrs(self.listen_addrs)
+    return self.address_manager:get_advertise_addrs()
+  end
   return list_copy(self.listen_addrs)
+end
+
+function Host:_emit_self_peer_update_if_changed()
+  local addrs = self:get_multiaddrs_raw()
+  local protocols = list_protocol_handlers(self._handlers)
+  if self._last_advertised_addrs and list_equal(self._last_advertised_addrs, addrs) then
+    return true
+  end
+  self._last_advertised_addrs = list_copy(addrs)
+  log.info("self peer addresses updated", {
+    subsystem = "host",
+    peer_id = self:peer_id().id,
+    addrs = #addrs,
+    multiaddrs = table.concat(addrs, ","),
+    protocols = table.concat(protocols, ","),
+  })
+  return emit_event(self, "self_peer_update", {
+    peer_id = self:peer_id().id,
+    addrs = list_copy(addrs),
+    protocols = protocols,
+  })
 end
 
 function Host:get_multiaddrs()
   local out = {}
   local pid = self._peer_id and self._peer_id.id or nil
-  for _, addr in ipairs(self.listen_addrs) do
+  for _, addr in ipairs(self:get_multiaddrs_raw()) do
     if has_terminal_peer_id(addr) then
       out[#out + 1] = addr
     elseif pid then
@@ -748,24 +1047,42 @@ function Host:get_multiaddrs()
 end
 
 function Host:_register_connection(conn, state)
+  local connection_id = self._next_connection_id
+  self._next_connection_id = self._next_connection_id + 1
   local entry = {
+    id = connection_id,
     conn = conn,
     state = state or {},
+    opened_at = os.time(),
   }
+  entry.state.connection_id = connection_id
   self._connections[#self._connections + 1] = entry
+  self._connections_by_id[connection_id] = entry
 
   local peer_id = entry.state.remote_peer_id
   if peer_id then
-    self._connections_by_peer[peer_id] = entry
+    self._connections_by_peer[peer_id] = self._connections_by_peer[peer_id] or {}
+    self._connections_by_peer[peer_id][connection_id] = entry
   end
 
   local ok, emit_err = emit_event(self, "peer_connected", {
     connection = entry.conn,
+    connection_id = connection_id,
     state = entry.state,
     peer_id = peer_id,
   })
   if not ok then
     return nil, emit_err
+  end
+
+  local opened_ok, opened_err = emit_event(self, "connection_opened", {
+    connection = entry.conn,
+    connection_id = connection_id,
+    state = entry.state,
+    peer_id = peer_id,
+  })
+  if not opened_ok then
+    return nil, opened_err
   end
 
   if self._running and self._runtime_impl and self._runtime_impl.sync_watchers then
@@ -776,6 +1093,58 @@ function Host:_register_connection(conn, state)
   end
 
   return entry
+end
+
+function Host:_unregister_connection(index, entry, cause)
+  if not entry then
+    return false
+  end
+  local actual_index = index
+  if self._connections[actual_index] ~= entry then
+    actual_index = nil
+    for i = #self._connections, 1, -1 do
+      if self._connections[i] == entry then
+        actual_index = i
+        break
+      end
+    end
+  end
+  if actual_index then
+    table.remove(self._connections, actual_index)
+  end
+  if entry.id ~= nil then
+    self._connections_by_id[entry.id] = nil
+  end
+  local peer_id = entry.state and entry.state.remote_peer_id
+  if peer_id and self._connections_by_peer[peer_id] then
+    if entry.id ~= nil then
+      self._connections_by_peer[peer_id][entry.id] = nil
+    end
+    if next(self._connections_by_peer[peer_id]) == nil then
+      self._connections_by_peer[peer_id] = nil
+    end
+  end
+  local peer_ok, peer_err = emit_event(self, "peer_disconnected", {
+    connection = entry.conn,
+    connection_id = entry.id,
+    state = entry.state,
+    peer_id = peer_id,
+    cause = cause,
+  })
+  if not peer_ok then
+    return nil, peer_err
+  end
+  local ok, emit_err = emit_event(self, "connection_closed", {
+    connection = entry.conn,
+    connection_id = entry.id,
+    state = entry.state,
+    peer_id = peer_id,
+    cause = cause,
+  })
+  if not ok then
+    return nil, emit_err
+  end
+  return true
 end
 
 function Host:on(event_name, handler)
@@ -795,6 +1164,13 @@ function Host:on(event_name, handler)
   return true
 end
 
+function Host:emit(event_name, payload)
+  if type(event_name) ~= "string" or event_name == "" then
+    return nil, error_mod.new("input", "event name must be non-empty")
+  end
+  return emit_event(self, event_name, payload)
+end
+
 function Host:off(event_name, handler)
   local handlers = self._event_handlers[event_name]
   if type(handlers) ~= "table" then
@@ -807,6 +1183,45 @@ function Host:off(event_name, handler)
     end
   end
   return false
+end
+
+function Host:on_protocol(protocol_id, handler)
+  if type(protocol_id) ~= "string" or protocol_id == "" then
+    return nil, error_mod.new("input", "protocol id must be non-empty")
+  end
+  if type(handler) ~= "function" then
+    return nil, error_mod.new("input", "protocol handler must be a function")
+  end
+
+  local function wrapped(payload, event)
+    if list_contains(payload and payload.protocols, protocol_id) or list_contains(payload and payload.added_protocols, protocol_id) then
+      return handler(payload.peer_id, payload, event)
+    end
+    return true
+  end
+
+  local ok, err = self:on("peer_protocols_updated", wrapped)
+  if not ok then
+    return nil, err
+  end
+
+  if self.peerstore and type(self.peerstore.all) == "function" then
+    for _, peer in ipairs(self.peerstore:all()) do
+      if list_contains(peer.protocols, protocol_id) then
+        local call_ok, call_err = pcall(handler, peer.peer_id, {
+          peer_id = peer.peer_id,
+          protocols = peer.protocols,
+          added_protocols = { protocol_id },
+          source = "peerstore",
+        }, nil)
+        if not call_ok then
+          return nil, error_mod.new("protocol", "protocol handler panicked", { cause = call_err })
+        end
+      end
+    end
+  end
+
+  return wrapped
 end
 
 function Host:subscribe(event_name_or_opts, opts)
@@ -890,13 +1305,66 @@ function Host:_find_connection(peer_id)
   if not peer_id then
     return nil
   end
-  return self._connections_by_peer[peer_id]
+  local by_peer = self._connections_by_peer[peer_id]
+  if not by_peer then
+    return nil
+  end
+  for _, entry in pairs(by_peer) do
+    return entry
+  end
+  return nil
+end
+
+function Host:_find_connection_by_id(connection_id)
+  return self._connections_by_id[connection_id]
+end
+
+function Host:_dial_relay_raw(addr, destination_peer_id, opts)
+  local info, info_err = multiaddr.relay_info(addr)
+  if not info then
+    return nil, nil, info_err
+  end
+  local target_peer_id = destination_peer_id or info.destination_peer_id
+  if type(target_peer_id) ~= "string" or target_peer_id == "" then
+    return nil, nil, error_mod.new("input", "relayed dial target must include destination peer id")
+  end
+
+  local stream, selected, relay_conn, relay_state_or_err = self:new_stream(info.relay_addr, { relay_proto.HOP_ID }, opts)
+  if not stream then
+    return nil, nil, relay_state_or_err
+  end
+
+  local connected, response_or_err = relay_proto.connect(stream, target_peer_id, opts)
+  if not connected then
+    if type(stream.close) == "function" then
+      pcall(function()
+        stream:close()
+      end)
+    end
+    return nil, nil, response_or_err
+  end
+  local response = response_or_err or {}
+
+  return stream, {
+    relay_peer_id = info.relay_peer_id,
+    relay_addr = info.relay_addr,
+    destination_peer_id = target_peer_id,
+    protocol = selected,
+    relay_connection = relay_conn,
+    relay_state = relay_state_or_err,
+    limit = response.limit,
+    limit_kind = relay_proto.classify_limit(response.limit),
+  }
 end
 
 function Host:dial(peer_or_addr, opts)
   local resolved = resolve_target(peer_or_addr)
   if not resolved then
     return nil, nil, error_mod.new("input", "dial target must be peer id, multiaddr, or target table")
+  end
+
+  if not resolved.peer_id and resolved.addr then
+    resolved.peer_id = extract_peer_id_from_multiaddr(resolved.addr)
   end
 
   local existing = self:_find_connection(resolved.peer_id)
@@ -907,24 +1375,29 @@ function Host:dial(peer_or_addr, opts)
   local addr = resolved.addr
   if not addr then
     local addrs = self.peerstore and self.peerstore:get_addrs(resolved.peer_id) or {}
-    addr = first_dialable_tcp_addr(addrs)
+    addr = first_dialable_tcp_addr(addrs) or first_relay_addr(addrs)
   end
   if not addr then
     return nil, nil, error_mod.new("input", "dial target must include an address when no connection exists")
   end
 
-  local endpoint, endpoint_err = multiaddr.to_tcp_endpoint(addr)
-  if not endpoint then
-    return nil, nil, endpoint_err
-  end
+  local raw_conn, dial_err, relay_state
+  if multiaddr.is_relay_addr(addr) then
+    raw_conn, relay_state, dial_err = self:_dial_relay_raw(addr, resolved.peer_id, opts)
+  else
+    local endpoint, endpoint_err = multiaddr.to_tcp_endpoint(addr)
+    if not endpoint then
+      return nil, nil, endpoint_err
+    end
 
-  local raw_conn, dial_err = self._tcp_transport.dial({
-    host = endpoint.host,
-    port = endpoint.port,
-  }, {
-    timeout = (opts and opts.timeout) or self._connect_timeout,
-    io_timeout = (opts and opts.io_timeout) or self._io_timeout,
-  })
+    raw_conn, dial_err = self._tcp_transport.dial({
+      host = endpoint.host,
+      port = endpoint.port,
+    }, {
+      timeout = (opts and opts.timeout) or self._connect_timeout,
+      io_timeout = (opts and opts.io_timeout) or self._io_timeout,
+    })
+  end
   if not raw_conn then
     return nil, nil, dial_err
   end
@@ -938,8 +1411,16 @@ function Host:dial(peer_or_addr, opts)
     muxer_protocols = self.muxers,
   })
   if not conn then
-    raw_conn:close()
+    if type(raw_conn.close) == "function" then
+      raw_conn:close()
+    end
     return nil, nil, up_err
+  end
+  if relay_state then
+    relay_state.limit = relay_state.limit or nil
+    relay_state.limit_kind = relay_proto.classify_limit(relay_state.limit)
+    relay_state.direction = "outbound"
+    state.relay = relay_state
   end
 
   local entry, register_err = self:_register_connection(conn, state)
@@ -965,6 +1446,56 @@ function Host:new_stream(peer_or_addr, protocols, opts)
 end
 
 function Host:_poll_once_with_ready_map(timeout, ready_map)
+
+  local function remove_pending_relay_inbound(index, pending)
+    if self._pending_relay_inbound[index] == pending then
+      table.remove(self._pending_relay_inbound, index)
+      return true
+    end
+    for j = #self._pending_relay_inbound, 1, -1 do
+      if self._pending_relay_inbound[j] == pending then
+        table.remove(self._pending_relay_inbound, j)
+        return true
+      end
+    end
+    return false
+  end
+
+  for i = #self._pending_relay_inbound, 1, -1 do
+    local pending = self._pending_relay_inbound[i]
+    if not pending then
+      goto continue_pending_relay_inbound
+    end
+    local raw_conn = pending.raw_conn
+    local conn, state, up_err = upgrader.upgrade_inbound(raw_conn, {
+      local_keypair = self.identity,
+      security_protocols = self.security_transports,
+      muxer_protocols = self.muxers,
+    })
+    if conn then
+      remove_pending_relay_inbound(i, pending)
+      state.relay = pending.relay
+      local entry, register_err = self:_register_connection(conn, state)
+      if not entry then
+        conn:close()
+        return nil, register_err
+      end
+    elseif up_err and error_mod.is_error(up_err) and up_err.kind == "timeout" then
+      -- keep pending; retry on next poll tick
+    elseif is_nonfatal_stream_error(up_err) then
+      remove_pending_relay_inbound(i, pending)
+      if raw_conn and type(raw_conn.close) == "function" then
+        raw_conn:close()
+      end
+    else
+      remove_pending_relay_inbound(i, pending)
+      if raw_conn and type(raw_conn.close) == "function" then
+        raw_conn:close()
+      end
+      return nil, up_err
+    end
+    ::continue_pending_relay_inbound::
+  end
 
   for i = #self._pending_inbound, 1, -1 do
     local pending_entry = self._pending_inbound[i]
@@ -1132,24 +1663,15 @@ function Host:_poll_once_with_ready_map(timeout, ready_map)
         if is_nonfatal_stream_error(process_err) then
           if process_err.kind ~= "timeout" then
             conn:close()
-            table.remove(self._connections, i)
-            if entry.state and entry.state.remote_peer_id then
-              self._connections_by_peer[entry.state.remote_peer_id] = nil
+            local unregistered, unregister_err = self:_unregister_connection(i, entry, process_err)
+            if not unregistered then
+              return nil, unregister_err
             end
             if self._runtime_impl and self._runtime_impl.sync_watchers then
               local sync_ok, sync_err = self._runtime_impl.sync_watchers(self)
               if not sync_ok then
                 return nil, sync_err
               end
-            end
-            local ok, emit_err = emit_event(self, "peer_disconnected", {
-              connection = conn,
-              state = entry.state,
-              peer_id = entry.state and entry.state.remote_peer_id,
-              cause = process_err,
-            })
-            if not ok then
-              return nil, emit_err
             end
           end
           goto continue_connections
@@ -1209,7 +1731,84 @@ function Host:_poll_once_luv(timeout)
   return self:_poll_once_with_ready_map(timeout, ready_map)
 end
 
+function Host:_run_bootstrap_discovery_if_due()
+  local cfg = self._bootstrap_discovery
+  if not cfg or self._bootstrap_discovery_done or cfg.dial_on_start == false then
+    return true
+  end
+  if self._bootstrap_discovery_due_at and os.time() < self._bootstrap_discovery_due_at then
+    return true
+  end
+  self._bootstrap_discovery_done = true
+  if not self.peer_discovery then
+    return true
+  end
+
+  local peers, discover_err = self.peer_discovery:discover({
+    dialable_only = true,
+    ignore_resolve_errors = true,
+    ignore_source_errors = true,
+  })
+  if not peers then
+    return nil, discover_err
+  end
+  for _, peer in ipairs(peers) do
+    if type(peer) == "table" and type(peer.peer_id) == "string" and peer.peer_id ~= "" then
+      if self.peerstore then
+        self.peerstore:merge(peer.peer_id, { addrs = peer.addrs or {} })
+        self.peerstore:tag(peer.peer_id, cfg.tag_name, {
+          value = cfg.tag_value,
+          ttl = cfg.tag_ttl,
+        })
+      end
+      self._pending_bootstrap_dials[#self._pending_bootstrap_dials + 1] = {
+        peer_id = peer.peer_id,
+        addrs = peer.addrs,
+      }
+    end
+  end
+  return true
+end
+
+function Host:_run_pending_bootstrap_dials(max_dials)
+  local limit = max_dials or 1
+  for _ = 1, limit do
+    local target = table.remove(self._pending_bootstrap_dials, 1)
+    if not target then
+      return true
+    end
+    local conn = self:_find_connection(target.peer_id)
+    if not conn then
+      local ok = pcall(function()
+        self:dial(target, {
+          timeout = self._connect_timeout,
+          io_timeout = self._io_timeout,
+        })
+      end)
+      if not ok then
+        -- Bootstrap dials are opportunistic; DHT bootstrap can still query seeds explicitly.
+      end
+    end
+  end
+  return true
+end
+
 function Host:poll_once(timeout)
+  local self_update_ok, self_update_err = self:_emit_self_peer_update_if_changed()
+  if not self_update_ok then
+    return nil, self_update_err
+  end
+  if self.autorelay and type(self.autorelay.tick) == "function" then
+    local relay_ok, relay_err = self.autorelay:tick()
+    if not relay_ok then
+      return nil, relay_err
+    end
+  end
+  local boot_ok, boot_err = self:_run_bootstrap_discovery_if_due()
+  if not boot_ok then
+    return nil, boot_err
+  end
+  self:_run_pending_bootstrap_dials(1)
   if self._runtime_impl and self._runtime_impl.poll_once then
     return self._runtime_impl.poll_once(self, timeout)
   end
@@ -1229,6 +1828,9 @@ function Host:start()
 
   if not self._running then
     self._running = true
+  end
+  if self._bootstrap_discovery and self._bootstrap_discovery.dial_on_start ~= false then
+    self._bootstrap_discovery_due_at = os.time() + (self._bootstrap_discovery.timeout or 1)
   end
 
   if type(self._on_started) == "function" then
@@ -1279,20 +1881,22 @@ function Host:close()
   if self._runtime_impl and self._runtime_impl.stop then
     self._runtime_impl.stop(self)
   end
-  for _, entry in ipairs(self._connections) do
+  local closing = {}
+  for i, entry in ipairs(self._connections) do
+    closing[i] = entry
+  end
+  for _, entry in ipairs(closing) do
     entry.conn:close()
-    local ok, emit_err = emit_event(self, "peer_disconnected", {
-      connection = entry.conn,
-      state = entry.state,
-      peer_id = entry.state and entry.state.remote_peer_id,
-      cause = error_mod.new("closed", "host closed"),
-    })
-    if not ok then
-      return nil, emit_err
+    if self._connections_by_id[entry.id] then
+      local ok, unregister_err = self:_unregister_connection(nil, entry, error_mod.new("closed", "host closed"))
+      if not ok then
+        return nil, unregister_err
+      end
     end
   end
   self._connections = {}
   self._connections_by_peer = {}
+  self._connections_by_id = {}
   self._handler_tasks = {}
 
   for _, raw_conn in ipairs(self._pending_inbound) do

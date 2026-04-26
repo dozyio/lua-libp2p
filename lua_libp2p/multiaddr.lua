@@ -381,6 +381,107 @@ function M.decapsulate(base, suffix)
   return M.format({ components = kept })
 end
 
+local function parse_input(input)
+  if type(input) == "string" then
+    return M.parse(input)
+  end
+  if type(input) == "table" and type(input.components) == "table" then
+    return input
+  end
+  return nil, error_mod.new("input", "invalid multiaddr object")
+end
+
+local function copy_components(components, first, last)
+  local out = {}
+  for i = first or 1, last or #components do
+    local c = components[i]
+    out[#out + 1] = { protocol = c.protocol, value = c.value }
+  end
+  return out
+end
+
+function M.relay_info(input)
+  local addr, parse_err = parse_input(input)
+  if not addr then
+    return nil, parse_err
+  end
+
+  local circuit_index = nil
+  for i, component in ipairs(addr.components) do
+    if component.protocol == "p2p-circuit" then
+      circuit_index = i
+      break
+    end
+  end
+  if not circuit_index then
+    return nil, error_mod.new("input", "multiaddr does not include /p2p-circuit")
+  end
+
+  local relay_peer_index = nil
+  for i = circuit_index - 1, 1, -1 do
+    if addr.components[i].protocol == "p2p" then
+      relay_peer_index = i
+      break
+    end
+  end
+  if not relay_peer_index then
+    return nil, error_mod.new("input", "relay multiaddr must include relay /p2p peer id before /p2p-circuit")
+  end
+
+  local destination_peer_id = nil
+  if addr.components[circuit_index + 1] and addr.components[circuit_index + 1].protocol == "p2p" then
+    destination_peer_id = addr.components[circuit_index + 1].value
+  end
+
+  local relay_addr, relay_addr_err = M.format({ components = copy_components(addr.components, 1, relay_peer_index) })
+  if not relay_addr then
+    return nil, relay_addr_err
+  end
+  local circuit_addr, circuit_addr_err = M.format({ components = copy_components(addr.components, 1, circuit_index) })
+  if not circuit_addr then
+    return nil, circuit_addr_err
+  end
+
+  return {
+    relay_peer_id = addr.components[relay_peer_index].value,
+    relay_addr = relay_addr,
+    circuit_addr = circuit_addr,
+    destination_peer_id = destination_peer_id,
+    circuit_index = circuit_index,
+  }
+end
+
+function M.is_relay_addr(input)
+  return M.relay_info(input) ~= nil
+end
+
+function M.relay_reservation_addr(relay_addr)
+  local info = M.relay_info(relay_addr)
+  if info then
+    return info.circuit_addr
+  end
+  return M.encapsulate(relay_addr, "/p2p-circuit")
+end
+
+function M.relay_destination_addr(relay_addr, destination_peer_id)
+  if type(destination_peer_id) ~= "string" or destination_peer_id == "" then
+    return nil, error_mod.new("input", "destination peer id must be non-empty")
+  end
+  local ok, reason = validate_peer_id(destination_peer_id)
+  if not ok then
+    return nil, error_mod.new("input", "invalid destination peer id", { reason = reason })
+  end
+  local reservation, reservation_err = M.relay_reservation_addr(relay_addr)
+  if not reservation then
+    return nil, reservation_err
+  end
+  local info = M.relay_info(reservation)
+  if info and info.destination_peer_id then
+    reservation = info.circuit_addr
+  end
+  return M.encapsulate(reservation, "/p2p/" .. destination_peer_id)
+end
+
 function M.to_tcp_endpoint(input)
   local addr = input
   if type(addr) == "string" then

@@ -29,6 +29,75 @@ local function run()
     return nil, "host should default to luv when available and poll otherwise"
   end
 
+  local bad_circuit_host, bad_circuit_err = host.new({
+    runtime = "poll",
+    identity = keypair,
+    listen_addrs = { "/p2p-circuit" },
+    blocking = false,
+  })
+  if bad_circuit_host ~= nil or not bad_circuit_err then
+    return nil, "expected /p2p-circuit listen addr without autorelay to fail"
+  end
+
+  local default_discovery_host, default_discovery_host_err = host.new({
+    runtime = "poll",
+    identity = keypair,
+    peer_discovery = { bootstrap = {} },
+    blocking = false,
+  })
+  if not default_discovery_host then
+    return nil, default_discovery_host_err
+  end
+  if not default_discovery_host._bootstrap_discovery
+      or type(default_discovery_host._bootstrap_discovery.config.list) ~= "table"
+      or #default_discovery_host._bootstrap_discovery.config.list == 0 then
+    return nil, "empty bootstrap config should use default bootstrappers"
+  end
+
+  local discovery_host, discovery_host_err = host.new({
+    runtime = "poll",
+    identity = keypair,
+    peer_discovery = {
+      bootstrap = {
+        list = { "/ip4/127.0.0.1/tcp/4001/p2p/12D3KooWCryG7Mon9orvQxcS1rYZjotPgpwoJNHHKcLLfE4Hf5mV" },
+      },
+    },
+    services = { "kad_dht" },
+    blocking = false,
+  })
+  if not discovery_host then
+    return nil, discovery_host_err
+  end
+  if not discovery_host.peer_discovery then
+    return nil, "host should build peer discovery from config"
+  end
+  if not discovery_host.kad_dht or discovery_host.kad_dht.peer_discovery ~= discovery_host.peer_discovery then
+    return nil, "kad_dht service should default to host peer_discovery"
+  end
+
+  local bootstrap_dialed = nil
+  function discovery_host:dial(target)
+    bootstrap_dialed = target
+    return {}, { remote_peer_id = target.peer_id }
+  end
+  discovery_host._bootstrap_discovery.timeout = 0
+  local discovery_started, discovery_start_err = discovery_host:start()
+  if not discovery_started then
+    return nil, discovery_start_err
+  end
+  local discovery_polled, discovery_poll_err = discovery_host:poll_once(0)
+  if not discovery_polled then
+    return nil, discovery_poll_err
+  end
+  if not bootstrap_dialed or bootstrap_dialed.peer_id ~= "12D3KooWCryG7Mon9orvQxcS1rYZjotPgpwoJNHHKcLLfE4Hf5mV" then
+    return nil, "host should dial bootstrap peers after startup delay"
+  end
+  local bootstrap_tags = discovery_host.peerstore:get_tags(bootstrap_dialed.peer_id)
+  if not bootstrap_tags.bootstrap or bootstrap_tags.bootstrap.value ~= 50 then
+    return nil, "host should tag bootstrap peers"
+  end
+  discovery_host:stop()
+
   for _, key_type in ipairs({ "rsa", "ecdsa", "secp256k1" }) do
     local identity, identity_err = keys.generate_keypair(key_type)
     if not identity then
@@ -84,6 +153,17 @@ local function run()
     return nil, "perf service should register /perf/1.0.0 handler"
   end
 
+  local dht_svc_ok, dht_svc_err = h:add_service("kad_dht")
+  if not dht_svc_ok then
+    return nil, dht_svc_err
+  end
+  if not h.kad_dht or h.kad_dht.mode ~= "client" then
+    return nil, "kad_dht host service should default to client mode"
+  end
+  if h._handlers[h.kad_dht.protocol_id] ~= nil then
+    return nil, "client-mode kad_dht service should not advertise/register handler"
+  end
+
   local started, start_err = h:start()
   if not started then
     return nil, start_err
@@ -109,6 +189,9 @@ local function run()
   if not h.peerstore then
     return nil, "expected host peerstore"
   end
+  if not h.address_manager then
+    return nil, "expected host address manager"
+  end
 
   local addrs_raw = h:get_multiaddrs_raw()
   if #addrs_raw ~= 1 or addrs_raw[1] ~= addrs[1] then
@@ -121,6 +204,37 @@ local function run()
   end
   if full_addrs[1] ~= addrs[1] .. "/p2p/" .. local_peer.id then
     return nil, "get_multiaddrs should append local peer id"
+  end
+
+  h.address_manager:add_relay_addr("/ip4/198.51.100.1/tcp/4001/p2p/relay/p2p-circuit")
+  local with_relay = h:get_multiaddrs()
+  if #with_relay ~= 2 then
+    return nil, "expected listen and relay advertised addrs"
+  end
+  if with_relay[2] ~= "/ip4/198.51.100.1/tcp/4001/p2p/relay/p2p-circuit/p2p/" .. local_peer.id then
+    return nil, "expected relay addr to be advertised with local peer id"
+  end
+  h.address_manager:remove_relay_addr("/ip4/198.51.100.1/tcp/4001/p2p/relay/p2p-circuit")
+
+  local matched_peer = nil
+  local protocol_cb, protocol_cb_err = h:on_protocol("/relay/test/1.0.0", function(peer_id)
+    matched_peer = peer_id
+    return true
+  end)
+  if not protocol_cb then
+    return nil, protocol_cb_err
+  end
+  local protocol_handlers = h._event_handlers.peer_protocols_updated
+  if type(protocol_handlers) ~= "table" or type(protocol_handlers[1]) ~= "function" then
+    return nil, "expected protocol update handler"
+  end
+  protocol_handlers[1]({
+    peer_id = "peer-relay",
+    protocols = { "/relay/test/1.0.0" },
+    added_protocols = { "/relay/test/1.0.0" },
+  })
+  if matched_peer ~= "peer-relay" then
+    return nil, "on_protocol should match protocol update events"
   end
 
   h.listen_addrs = {

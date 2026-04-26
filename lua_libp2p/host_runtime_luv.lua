@@ -265,9 +265,7 @@ function M.sync_watchers(host)
           })
         end
         if type(unwatch_or_err) ~= "function" then
-          return nil, error_mod.new("io", "invalid custom luv watcher unregister callback", {
-            kind = item.kind,
-          })
+          goto continue_targets
         end
 
         host._luv_watchers[target] = {

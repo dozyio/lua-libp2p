@@ -23,6 +23,7 @@ local function ensure_peer(self, peer_id)
       peer_id = peer_id,
       addrs = {},
       protocols = {},
+      tags = {},
       metadata = {},
       public_key = nil,
       peer_record_envelope = nil,
@@ -31,6 +32,23 @@ local function ensure_peer(self, peer_id)
     self._peers[peer_id] = peer
   end
   return peer
+end
+
+local function tag_expired(tag, now)
+  return type(tag.expires_at) == "number" and tag.expires_at <= now
+end
+
+local function normalize_tag_ttl(ttl)
+  if ttl == false or ttl == math.huge then
+    return nil
+  end
+  if ttl == nil then
+    return 120
+  end
+  if type(ttl) ~= "number" or ttl <= 0 then
+    return nil
+  end
+  return ttl
 end
 
 local function addr_expired(addr_entry, now)
@@ -141,6 +159,62 @@ function Store:supports_protocol(peer_id, protocol)
   return peer ~= nil and peer.protocols[protocol] == true
 end
 
+function Store:tag(peer_id, name, opts)
+  if type(name) ~= "string" or name == "" then
+    return nil, error_mod.new("input", "tag name must be non-empty")
+  end
+  local peer, peer_err = ensure_peer(self, peer_id)
+  if not peer then
+    return nil, peer_err
+  end
+  local options = opts or {}
+  local ttl = normalize_tag_ttl(options.ttl)
+  peer.tags[name] = {
+    name = name,
+    value = options.value or 0,
+    expires_at = ttl and (os.time() + ttl) or nil,
+  }
+  peer.updated_at = os.time()
+  return true
+end
+
+function Store:get_tags(peer_id)
+  local peer = self._peers[peer_id]
+  if not peer then
+    return {}
+  end
+  local now = os.time()
+  local out = {}
+  for name, tag in pairs(peer.tags) do
+    if tag_expired(tag, now) then
+      peer.tags[name] = nil
+    else
+      out[name] = {
+        name = tag.name,
+        value = tag.value,
+        expires_at = tag.expires_at,
+      }
+    end
+  end
+  return out
+end
+
+function Store:untag(peer_id, name)
+  if type(name) ~= "string" or name == "" then
+    return nil, error_mod.new("input", "tag name must be non-empty")
+  end
+  local peer = self._peers[peer_id]
+  if not peer then
+    return false
+  end
+  local existed = peer.tags[name] ~= nil
+  peer.tags[name] = nil
+  if existed then
+    peer.updated_at = os.time()
+  end
+  return existed
+end
+
 function Store:merge(peer_id, data, opts)
   local peer, peer_err = ensure_peer(self, peer_id)
   if not peer then
@@ -219,6 +293,7 @@ function Store:get(peer_id)
     peer_id = peer.peer_id,
     addrs = self:get_addrs(peer_id),
     protocols = self:get_protocols(peer_id),
+    tags = self:get_tags(peer_id),
     public_key = peer.public_key,
     metadata = peer.metadata,
     peer_record_envelope = peer.peer_record_envelope,
@@ -254,6 +329,12 @@ function Store:clear_expired()
     for addr, entry in pairs(peer.addrs) do
       if addr_expired(entry, now) then
         peer.addrs[addr] = nil
+        removed = removed + 1
+      end
+    end
+    for name, tag in pairs(peer.tags) do
+      if tag_expired(tag, now) then
+        peer.tags[name] = nil
         removed = removed + 1
       end
     end

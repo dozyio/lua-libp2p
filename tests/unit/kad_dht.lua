@@ -13,14 +13,6 @@ end
 
 local function run()
   local wire_peer_id = "QmaCpDMGvV2BGHeYERUEnRQAwe3N8SzbUtfsmvsqQLuvuJ"
-  if #kad_dht.DEFAULT_BOOTSTRAPPERS ~= 6 then
-    return nil, "expected six default bootstrappers"
-  end
-  local dialable = kad_dht.default_bootstrappers({ dialable_only = true })
-  if #dialable ~= 1 then
-    return nil, "expected only tcp bootstrappers to be dialable without dnsaddr resolution"
-  end
-
   local handled_protocol = nil
   local registered_handler = nil
   local host = {
@@ -84,6 +76,7 @@ local function run()
   end
 
   local dht, dht_err = kad_dht.new(host, {
+    mode = "server",
     hash_function = fake_hash,
     k = 2,
     alpha = 1,
@@ -127,6 +120,37 @@ local function run()
   local custom_addrs = custom_dht:_filter_addrs({ "/ip4/8.8.8.8/tcp/4001", "/ip4/8.8.8.8/tcp/4002" }, { purpose = "test" })
   if #custom_addrs ~= 1 or custom_addrs[1] ~= "/ip4/8.8.8.8/tcp/4001" or not custom_seen then
     return nil, "custom address filter should be applied with context"
+  end
+
+  local client_handled_protocol = nil
+  local client_host = {
+    _peer = { id = "local" },
+  }
+  function client_host:peer_id()
+    return self._peer
+  end
+  function client_host:handle(protocol_id)
+    client_handled_protocol = protocol_id
+    return true
+  end
+  function client_host:add_service()
+    return true
+  end
+  local client_dht, client_dht_err = kad_dht.new(client_host, {
+    hash_function = fake_hash,
+  })
+  if not client_dht then
+    return nil, client_dht_err
+  end
+  local client_started, client_start_err = client_dht:start()
+  if not client_started then
+    return nil, client_start_err
+  end
+  if client_dht.mode ~= "client" then
+    return nil, "dht should default to client mode"
+  end
+  if client_handled_protocol ~= nil then
+    return nil, "client-mode dht should not register protocol handler"
   end
 
   local invalid_dht, invalid_filter_err = kad_dht.new(host, {

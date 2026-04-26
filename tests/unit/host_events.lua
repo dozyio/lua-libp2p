@@ -30,6 +30,7 @@ local function run()
     return nil, bus_all_err
   end
   local bus_disconnected = assert(host:subscribe("peer_disconnected"))
+  local bus_self = assert(host:subscribe("self_peer_update"))
 
   local conn = {
     closed = false,
@@ -52,6 +53,10 @@ local function run()
   local ev1 = host:next_event(bus_all)
   if not ev1 or ev1.name ~= "peer_connected" then
     return nil, "expected peer_connected from event bus subscription"
+  end
+  local ev1b = host:next_event(bus_all)
+  if not ev1b or ev1b.name ~= "connection_opened" then
+    return nil, "expected connection_opened from event bus subscription"
   end
 
   local closed, close_err = host:close()
@@ -95,6 +100,24 @@ local function run()
 
   if not host:unsubscribe(bus_disconnected) then
     return nil, "expected unsubscribe to remove subscription"
+  end
+  local self_update_ok, self_update_err = host:_emit_self_peer_update_if_changed()
+  if not self_update_ok then
+    return nil, self_update_err
+  end
+  local self_update = host:next_event(bus_self)
+  if not self_update or self_update.name ~= "self_peer_update" then
+    return nil, "expected self_peer_update event"
+  end
+  local no_update_ok, no_update_err = host:_emit_self_peer_update_if_changed()
+  if not no_update_ok then
+    return nil, no_update_err
+  end
+  if host:next_event(bus_self) ~= nil then
+    return nil, "self_peer_update should only emit when addrs change"
+  end
+  if not host:unsubscribe(bus_self) then
+    return nil, "expected unsubscribe to remove self subscription"
   end
   if not host:unsubscribe(bus_all) then
     return nil, "expected unsubscribe to remove subscription"

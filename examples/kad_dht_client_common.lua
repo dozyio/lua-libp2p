@@ -4,14 +4,9 @@ package.path = table.concat({
   package.path,
 }, ";")
 
-local discovery = require("lua_libp2p.discovery")
-local discovery_bootstrap = require("lua_libp2p.discovery.bootstrap")
 local host_mod = require("lua_libp2p.host")
-local kad_dht = require("lua_libp2p.kad_dht")
 
 local M = {}
-
-M.DEFAULT_BOOTSTRAP = "/ip4/104.131.131.82/tcp/4001/p2p/QmaCpDMGvV2BGHeYERUEnRQAwe3N8SzbUtfsmvsqQLuvuJ"
 
 function M.parse_args(args)
   local opts = {
@@ -69,10 +64,6 @@ function M.parse_args(args)
     end
   end
 
-  if #opts.bootstrappers == 0 then
-    opts.bootstrappers[1] = M.DEFAULT_BOOTSTRAP
-  end
-
   return opts
 end
 
@@ -95,6 +86,19 @@ function M.key_from_opts(opts)
     return opts.key
   end
   return nil, "provide --key <bytes-as-text> or --key-hex <hex>"
+end
+
+local function bootstrap_config(opts)
+  if #opts.bootstrappers > 0 then
+    return {
+      list = opts.bootstrappers,
+      dialable_only = true,
+      ignore_resolve_errors = true,
+    }
+  end
+  return {
+    ignore_resolve_errors = true,
+  }
 end
 
 local function print_error_summary(errors)
@@ -134,8 +138,17 @@ end
 function M.new_client(opts)
   local host, host_err = host_mod.new({
     runtime = "luv",
+    peer_discovery = {
+      bootstrap = bootstrap_config(opts),
+    },
     listen_addrs = { "/ip4/127.0.0.1/tcp/0" },
-    services = { "identify" },
+    services = { "identify", "kad_dht" },
+    kad_dht = {
+      mode = "client",
+      alpha = opts.alpha,
+      disjoint_paths = opts.disjoint_paths,
+      address_filter = opts.address_filter,
+    },
     blocking = false,
     connect_timeout = opts.connect_timeout,
     io_timeout = opts.io_timeout,
@@ -150,38 +163,7 @@ function M.new_client(opts)
     return nil, start_err
   end
 
-  local bootstrap_source, source_err = discovery_bootstrap.new({
-    list = opts.bootstrappers,
-    dialable_only = true,
-    ignore_resolve_errors = true,
-  })
-  if not bootstrap_source then
-    host:stop()
-    return nil, source_err
-  end
-
-  local peer_discovery, discovery_err = discovery.new({ sources = { bootstrap_source } })
-  if not peer_discovery then
-    host:stop()
-    return nil, discovery_err
-  end
-
-  local dht, dht_err = kad_dht.new(host, {
-    peer_discovery = peer_discovery,
-    alpha = opts.alpha,
-    disjoint_paths = opts.disjoint_paths,
-    address_filter = opts.address_filter,
-  })
-  if not dht then
-    host:stop()
-    return nil, dht_err
-  end
-
-  local dht_started, dht_start_err = dht:start()
-  if not dht_started then
-    host:stop()
-    return nil, dht_start_err
-  end
+  local dht = host.kad_dht
 
   local bootstrap_report, bootstrap_err = dht:bootstrap()
   if not bootstrap_report then

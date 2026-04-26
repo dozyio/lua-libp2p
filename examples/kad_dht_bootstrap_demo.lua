@@ -4,9 +4,8 @@ package.path = table.concat({
   package.path,
 }, ";")
 
-local discovery = require("lua_libp2p.discovery")
-local discovery_bootstrap = require("lua_libp2p.discovery.bootstrap")
 local host_mod = require("lua_libp2p.host")
+local bootstrap_defaults = require("lua_libp2p.bootstrap")
 local kad_dht = require("lua_libp2p.kad_dht")
 local multiaddr = require("lua_libp2p.multiaddr")
 local socket = require("socket")
@@ -267,7 +266,10 @@ local function run_server()
 
   local host, host_err = host_mod.new({
     listen_addrs = { listen_addr },
-    services = { "identify", "ping" },
+    services = { "identify", "ping", "kad_dht" },
+    kad_dht = {
+      mode = "server",
+    },
     blocking = true,
     accept_timeout = 0.05,
     poll_interval = 0.01,
@@ -282,18 +284,6 @@ local function run_server()
   })
   if not host then
     io.stderr:write("host init failed: " .. tostring(host_err) .. "\n")
-    os.exit(1)
-  end
-
-  local dht, dht_err = kad_dht.new(host, {})
-  if not dht then
-    io.stderr:write("dht init failed: " .. tostring(dht_err) .. "\n")
-    os.exit(1)
-  end
-
-  local dht_started, dht_start_err = dht:start()
-  if not dht_started then
-    io.stderr:write("dht start failed: " .. tostring(dht_start_err) .. "\n")
     os.exit(1)
   end
 
@@ -338,7 +328,7 @@ local function run_client()
   io.stdout:write("dnsaddr resolver: system nameservers from /etc/resolv.conf\n")
 
   if bootstrap_arg == "--default-bootstrap" then
-    bootstrap_addrs = kad_dht.default_bootstrappers()
+    bootstrap_addrs = bootstrap_defaults.default_bootstrappers()
     if #bootstrap_addrs == 0 then
       io.stderr:write("no default bootstrap addresses available\n")
       os.exit(1)
@@ -367,8 +357,19 @@ local function run_client()
 
   local host, host_err = host_mod.new({
     runtime = "luv",
+    peer_discovery = {
+      bootstrap = {
+        list = bootstrap_addrs,
+        dialable_only = true,
+        dnsaddr_resolver = dnsaddr_resolver,
+        ignore_resolve_errors = false,
+      },
+    },
     listen_addrs = { "/ip4/127.0.0.1/tcp/0" },
-    services = { "identify" },
+    services = { "identify", "kad_dht" },
+    kad_dht = {
+      mode = "client",
+    },
     blocking = false,
     connect_timeout = 6,
     io_timeout = 10,
@@ -395,26 +396,7 @@ local function run_client()
     return true
   end
 
-  local bootstrap_source, source_err = discovery_bootstrap.new({
-    list = bootstrap_addrs,
-    dialable_only = true,
-    dnsaddr_resolver = dnsaddr_resolver,
-    ignore_resolve_errors = false,
-  })
-  if not bootstrap_source then
-    io.stderr:write("bootstrap source init failed: " .. tostring(source_err) .. "\n")
-    os.exit(1)
-  end
-
-  local peer_discovery, discovery_err = discovery.new({
-    sources = { bootstrap_source },
-  })
-  if not peer_discovery then
-    io.stderr:write("peer discovery init failed: " .. tostring(discovery_err) .. "\n")
-    os.exit(1)
-  end
-
-  local discovered, discovered_err = peer_discovery:discover({
+  local discovered, discovered_err = host.peer_discovery:discover({
     dialable_only = true,
   })
   if not discovered then
@@ -426,19 +408,7 @@ local function run_client()
     io.stdout:write("  peer=" .. tostring(candidate.peer_id) .. " addr=" .. tostring((candidate.addrs or {})[1]) .. "\n")
   end
 
-  local dht, dht_err = kad_dht.new(host, {
-    peer_discovery = peer_discovery,
-  })
-  if not dht then
-    io.stderr:write("dht init failed: " .. tostring(dht_err) .. "\n")
-    os.exit(1)
-  end
-
-  local dht_started, dht_start_err = dht:start()
-  if not dht_started then
-    io.stderr:write("dht start failed: " .. tostring(dht_start_err) .. "\n")
-    os.exit(1)
-  end
+  local dht = host.kad_dht
 
   local report, bootstrap_err = dht:bootstrap()
   if not report then

@@ -1,4 +1,5 @@
 local error_mod = require("lua_libp2p.error")
+local bootstrap = require("lua_libp2p.bootstrap")
 local dnsaddr = require("lua_libp2p.dnsaddr")
 local discovery = require("lua_libp2p.discovery")
 local discovery_bootstrap = require("lua_libp2p.discovery.bootstrap")
@@ -15,44 +16,11 @@ M.DEFAULT_K = 20
 M.DEFAULT_ALPHA = 10
 M.DEFAULT_DISJOINT_PATHS = 10
 M.DEFAULT_ADDRESS_FILTER = "public"
-M.DEFAULT_BOOTSTRAPPERS = {
-  "/ip4/104.131.131.82/tcp/4001/p2p/QmaCpDMGvV2BGHeYERUEnRQAwe3N8SzbUtfsmvsqQLuvuJ",
-  "/dnsaddr/bootstrap.libp2p.io/p2p/QmNnooDu7bfjPFoTZYxMNLWUQJyrVwtbZg5gBMjTezGAJN",
-  "/dnsaddr/bootstrap.libp2p.io/p2p/QmQCU2EcMqAqQPR2i9bChDtGNJchTbq5TbXJJ16u19uLTa",
-  "/dnsaddr/bootstrap.libp2p.io/p2p/QmbLHAnMoJPWSCR5Zhtx6BHJX9KiKNN6L6K6TQK6KiBovQ",
-  "/dnsaddr/bootstrap.libp2p.io/p2p/QmbLHAnMoJPWSCR5Zhtx6BHJX9KiKNN6tpvbUcqanj75Nb",
-  "/dnsaddr/bootstrap.libp2p.io/p2p/QmcZf59bWwK5XFi76CZX8cbJ4BhTzzA3gU1ZjYZcYW3dwt",
-}
-
-local function copy_list(values)
-  local out = {}
-  for i, value in ipairs(values or {}) do
-    out[i] = value
-  end
-  return out
-end
-
-function M.default_bootstrappers(opts)
-  local options = opts or {}
-  local list = copy_list(M.DEFAULT_BOOTSTRAPPERS)
-  if not options.dialable_only then
-    return list
-  end
-
-  local out = {}
-  for _, addr in ipairs(list) do
-    local endpoint = multiaddr.to_tcp_endpoint(addr)
-    if endpoint then
-      out[#out + 1] = addr
-    end
-  end
-  return out
-end
 
 function M.default_peer_discovery(opts)
   local options = opts or {}
   local bootstrap_source, bootstrap_err = discovery_bootstrap.new({
-    list = options.bootstrappers or M.DEFAULT_BOOTSTRAPPERS,
+    list = options.bootstrappers or bootstrap.DEFAULT_BOOTSTRAPPERS,
     dnsaddr_resolver = options.dnsaddr_resolver,
     dialable_only = options.dialable_only,
     ignore_resolve_errors = options.ignore_resolve_errors,
@@ -112,7 +80,7 @@ function DHT:start()
     end
   end
 
-  if self.host and type(self.host.handle) == "function" then
+  if self.mode == "server" and self.host and type(self.host.handle) == "function" then
     local ok, err = self.host:handle(self.protocol_id, function(stream, ctx)
       return self:_handle_rpc(stream, ctx)
     end)
@@ -886,7 +854,7 @@ function DHT:bootstrap_targets(opts)
   if not discoverer then
     local discover_err
     discoverer, discover_err = M.default_peer_discovery({
-      bootstrappers = options.bootstrappers or self.bootstrappers or M.DEFAULT_BOOTSTRAPPERS,
+      bootstrappers = options.bootstrappers or self.bootstrappers or bootstrap.DEFAULT_BOOTSTRAPPERS,
       dnsaddr_resolver = options.dnsaddr_resolver or self._dnsaddr_resolver,
       ignore_resolve_errors = options.ignore_resolve_errors,
       dialable_only = true,
@@ -1617,6 +1585,7 @@ function M.new(host, opts)
     alpha = options.alpha or M.DEFAULT_ALPHA,
     disjoint_paths = options.disjoint_paths or M.DEFAULT_DISJOINT_PATHS,
     max_message_size = options.max_message_size or protocol.MAX_MESSAGE_SIZE,
+    mode = options.mode or "client",
     address_filter = address_filter,
     bootstrappers = options.bootstrappers,
     peer_discovery = options.peer_discovery,
@@ -1648,9 +1617,13 @@ function M.new(host, opts)
     end
   end
 
-  if not self_obj.peer_discovery and (self_obj.bootstrappers or self_obj._dnsaddr_resolver) then
+  if not self_obj.peer_discovery and host and host.peer_discovery then
+    self_obj.peer_discovery = host.peer_discovery
+  end
+
+  if not self_obj.peer_discovery and self_obj.bootstrappers then
     local default_discovery, discovery_err = M.default_peer_discovery({
-      bootstrappers = self_obj.bootstrappers or M.DEFAULT_BOOTSTRAPPERS,
+      bootstrappers = self_obj.bootstrappers or bootstrap.DEFAULT_BOOTSTRAPPERS,
       dnsaddr_resolver = self_obj._dnsaddr_resolver,
       ignore_resolve_errors = true,
       dialable_only = true,
