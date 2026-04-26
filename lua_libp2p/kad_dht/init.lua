@@ -777,7 +777,7 @@ function DHT:random_walk(opts)
   if type(alpha) ~= "number" or alpha <= 0 then
     return nil, error_mod.new("input", "alpha must be > 0")
   end
-  local disjoint_paths = options.disjoint_paths or options.disjointPaths or self.disjoint_paths
+  local disjoint_paths = options.disjoint_paths or self.disjoint_paths
   if type(disjoint_paths) ~= "number" or disjoint_paths <= 0 then
     return nil, error_mod.new("input", "disjoint_paths must be > 0")
   end
@@ -1069,12 +1069,12 @@ end
 function M.new(host, opts)
   local options = opts or {}
 
-  local address_filter, address_filter_err = normalize_address_filter(options.address_filter or options.addressFilter or options.address_filter_mode or options.addressFilterMode)
+  local address_filter, address_filter_err = normalize_address_filter(options.address_filter or options.address_filter_mode)
   if not address_filter then
     return nil, address_filter_err
   end
 
-  local local_peer_id = options.local_peer_id or options.localPeerId
+  local local_peer_id = options.local_peer_id
   if not local_peer_id and host and type(host.peer_id) == "function" then
     local p = host:peer_id()
     local_peer_id = p and p.id
@@ -1103,8 +1103,8 @@ function M.new(host, opts)
     protocol_id = options.protocol_id or M.PROTOCOL_ID,
     k = options.k or M.DEFAULT_K,
     alpha = options.alpha or M.DEFAULT_ALPHA,
-    disjoint_paths = options.disjoint_paths or options.disjointPaths or M.DEFAULT_DISJOINT_PATHS,
-    max_message_size = options.max_message_size or options.maxMessageSize or protocol.MAX_MESSAGE_SIZE,
+    disjoint_paths = options.disjoint_paths or M.DEFAULT_DISJOINT_PATHS,
+    max_message_size = options.max_message_size or protocol.MAX_MESSAGE_SIZE,
     address_filter = address_filter,
     bootstrappers = options.bootstrappers,
     peer_discovery = options.peer_discovery,

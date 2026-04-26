@@ -264,7 +264,7 @@ end
 function M.new(opts)
   local options = opts or {}
   return setmetatable({
-    default_addr_ttl = options.default_addr_ttl or options.defaultAddrTtl or 3600,
+    default_addr_ttl = options.default_addr_ttl or 3600,
     _peers = {},
   }, Store)
 end

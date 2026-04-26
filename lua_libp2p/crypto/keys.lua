@@ -212,7 +212,7 @@ function M.public_key_proto(identity)
     return identity.public_key_proto
   end
 
-  local code, name = normalize_type(identity.type or identity.key_type or identity.keyType)
+  local code, name = normalize_type(identity.type or identity.key_type)
   if not code then
     if type(identity.public_key) == "string" and #identity.public_key == 32 then
       code, name = key_pb.KEY_TYPE.Ed25519, "ed25519"
@@ -297,7 +297,7 @@ function M.sign(identity, message)
   if type(message) ~= "string" then
     return nil, error_mod.new("input", "signature message must be bytes")
   end
-  local code, name = normalize_type(type(identity) == "table" and (identity.type or identity.key_type or identity.keyType) or nil)
+  local code, name = normalize_type(type(identity) == "table" and (identity.type or identity.key_type) or nil)
   if not code and type(identity) == "table" and type(identity.public_key) == "string" and #identity.public_key == 32 then
     code, name = key_pb.KEY_TYPE.Ed25519, "ed25519"
   end

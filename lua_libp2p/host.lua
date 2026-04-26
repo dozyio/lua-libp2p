@@ -286,7 +286,7 @@ end
 
 function Host:new(config)
   local cfg = config or {}
-  local runtime_name = cfg.runtime or cfg.runtime_backend or cfg.runtimeBackend or "auto"
+  local runtime_name = cfg.runtime or cfg.runtime_backend or "auto"
   if runtime_name == "auto" then
     runtime_name = default_runtime_name()
   end
@@ -304,7 +304,7 @@ function Host:new(config)
 
   local keypair = cfg.identity
   if not keypair then
-    local generated, gen_err = keys.generate_keypair(cfg.identity_type or cfg.identityType or "ed25519")
+    local generated, gen_err = keys.generate_keypair(cfg.identity_type or "ed25519")
     if not generated then
       return nil, gen_err
     end
@@ -319,10 +319,10 @@ function Host:new(config)
   local self_obj = setmetatable({
     identity = keypair,
     _peer_id = local_peer,
-    peerstore = cfg.peerstore or peerstore.new(cfg.peerstore_options or cfg.peerstoreOptions),
-    listen_addrs = list_copy(cfg.listen_addrs or cfg.listenAddrs or {}),
+    peerstore = cfg.peerstore or peerstore.new(cfg.peerstore_options),
+    listen_addrs = list_copy(cfg.listen_addrs or {}),
     transports = list_copy(cfg.transports or { "tcp" }),
-    security_transports = list_copy(cfg.security_transports or cfg.securityTransports or {}),
+    security_transports = list_copy(cfg.security_transports or {}),
     muxers = list_copy(cfg.muxers or {}),
     _handlers = {},
     _handler_tasks = {},
@@ -331,7 +331,7 @@ function Host:new(config)
     _connections_by_peer = {},
     _pending_inbound = {},
     _event_handlers = {},
-    _event_queue_max = cfg.event_queue_max or cfg.eventQueueMax or DEFAULT_EVENT_QUEUE_MAX,
+    _event_queue_max = cfg.event_queue_max or DEFAULT_EVENT_QUEUE_MAX,
     _event_subscribers = {},
     _next_subscriber_id = 1,
     _identify_on_connect_handler = nil,
@@ -344,13 +344,13 @@ function Host:new(config)
     _luv_ready = {},
     _runtime_last_error = nil,
     _start_blocking = start_blocking ~= false,
-    _start_max_iterations = cfg.max_iterations or cfg.maxIterations,
-    _start_poll_interval = cfg.poll_interval or cfg.pollInterval or 0.01,
-    _on_started = cfg.on_started or cfg.onStarted,
+    _start_max_iterations = cfg.max_iterations,
+    _start_poll_interval = cfg.poll_interval or 0.01,
+    _on_started = cfg.on_started,
     _running = false,
-    _connect_timeout = cfg.connect_timeout or cfg.connectTimeout or 6,
-    _io_timeout = cfg.io_timeout or cfg.ioTimeout or 10,
-    _accept_timeout = cfg.accept_timeout or cfg.acceptTimeout or 0,
+    _connect_timeout = cfg.connect_timeout or 6,
+    _io_timeout = cfg.io_timeout or 10,
+    _accept_timeout = cfg.accept_timeout or 0,
     _service_options = {
       identify = cfg.identify or {},
       perf = cfg.perf or {},
@@ -676,8 +676,8 @@ function Host:add_service(name)
     local perf_opts = self._service_options.perf or {}
     return self:handle(perf.ID, function(stream)
       return perf.handle(stream, {
-        write_block_size = perf_opts.write_block_size or perf_opts.writeBlockSize,
-        yield_every_bytes = perf_opts.yield_every_bytes or perf_opts.yieldEveryBytes,
+        write_block_size = perf_opts.write_block_size,
+        yield_every_bytes = perf_opts.yield_every_bytes,
       })
     end)
   end
@@ -804,7 +804,7 @@ function Host:subscribe(event_name_or_opts, opts)
     id = self._next_subscriber_id,
     event_name = event_name,
     queue = {},
-    max_queue = options.max_queue or options.maxQueue or self._event_queue_max or DEFAULT_EVENT_QUEUE_MAX,
+    max_queue = options.max_queue or self._event_queue_max or DEFAULT_EVENT_QUEUE_MAX,
   }
   self._next_subscriber_id = self._next_subscriber_id + 1
   self._event_subscribers[sub.id] = sub

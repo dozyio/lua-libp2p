@@ -331,19 +331,19 @@ end
 function M.new(opts)
   local options = opts or {}
 
-  local local_peer_id, local_key_bytes, peer_err = normalize_peer_id(options.local_peer_id or options.localPeerId)
+  local local_peer_id, local_key_bytes, peer_err = normalize_peer_id(options.local_peer_id)
   if not local_peer_id then
     return nil, peer_err
   end
 
-  local hash_fn = options.hash_function or options.hashFunction or default_hash
+  local hash_fn = options.hash_function or default_hash
   if type(hash_fn) ~= "function" then
     return nil, error_mod.new("input", "hash_function must be a function")
   end
 
   local self_obj = setmetatable({
     local_peer_id = local_peer_id,
-    bucket_size = options.bucket_size or options.bucketSize or M.DEFAULT_BUCKET_SIZE,
+    bucket_size = options.bucket_size or M.DEFAULT_BUCKET_SIZE,
     _hash_function = hash_fn,
     _entries = {},
     _buckets = {},
