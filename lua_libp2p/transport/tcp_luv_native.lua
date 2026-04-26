@@ -92,7 +92,16 @@ local function classify_uv_error(err, io_message)
 end
 
 local function run_once_or_loop_running()
-  local ok, err = uv.run("once")
+  local called, ok, err = pcall(function()
+    return uv.run("once")
+  end)
+  if not called then
+    local msg = tostring(ok or "")
+    if string.find(msg, "loop already running", 1, true) ~= nil or string.find(msg, "cannot resume non%-suspended coroutine") ~= nil then
+      return nil, "loop_running"
+    end
+    return nil, ok
+  end
   if ok == nil and string.find(tostring(err or ""), "loop already running", 1, true) ~= nil then
     return nil, "loop_running"
   end

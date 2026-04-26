@@ -142,6 +142,30 @@ local function is_nonfatal_stream_error(err)
     or err.kind == "unsupported"
 end
 
+local function flatten_error_fields(err, prefix, fields, depth)
+  local key = prefix or "error"
+  local out = fields or {}
+  local remaining = depth or 4
+  out[key] = tostring(err)
+  if remaining <= 0 or not error_mod.is_error(err) then
+    return out
+  end
+  out[key .. "_kind"] = err.kind
+  if type(err.context) == "table" then
+    for k, v in pairs(err.context) do
+      if k == "cause" then
+        out[key .. "_cause"] = tostring(v)
+        if error_mod.is_error(v) then
+          flatten_error_fields(v, key .. "_cause", out, remaining - 1)
+        end
+      elseif type(v) ~= "table" and type(v) ~= "function" and type(v) ~= "thread" then
+        out[key .. "_" .. tostring(k)] = v
+      end
+    end
+  end
+  return out
+end
+
 local function runtime_luv_start(host)
   local ok, err = host_runtime_luv.start(host)
   if not ok then
@@ -383,6 +407,7 @@ end
 function Host:_spawn_handler_task(handler, ctx)
   local task = {
     protocol = ctx.protocol,
+    peer_id = ctx.peer_id,
     connection = ctx.connection,
     state = ctx.state,
   }
@@ -398,9 +423,35 @@ function Host:_run_handler_tasks()
     local task = self._handler_tasks[i]
     local ok, result, err = coroutine.resume(task.co)
     if not ok then
+      if task.protocol == "identify_connect" then
+        local identify_err = error_mod.new("protocol", "identify on connect panicked", {
+          peer_id = task.peer_id,
+          cause = result,
+          traceback = debug.traceback(task.co, tostring(result)),
+        })
+        if task.peer_id then
+          self._identify_inflight[task.peer_id] = nil
+        end
+        table.remove(self._handler_tasks, i)
+        log.warn("identify on connect failed", {
+          subsystem = "identify",
+          peer_id = task.peer_id,
+          cause = tostring(identify_err),
+          panic = tostring(result),
+        })
+        local emit_ok, emit_err = emit_event(self, "peer_identify_failed", {
+          peer_id = task.peer_id,
+          cause = identify_err,
+        })
+        if not emit_ok then
+          return nil, emit_err
+        end
+        goto continue_tasks
+      end
       return nil, error_mod.new("protocol", "handler task panicked", {
         protocol = task.protocol,
         cause = result,
+        traceback = debug.traceback(task.co, tostring(result)),
       })
     end
 
@@ -521,7 +572,14 @@ function Host:_schedule_identify_for_peer(peer_id)
 
   self:_spawn_handler_task(function(_, ctx)
     local pid = ctx and ctx.peer_id
-    local result, identify_err = self:_request_identify(pid)
+    local call_ok, result, identify_err = pcall(function()
+      return self:_request_identify(pid)
+    end)
+    if not call_ok then
+      local panic = result
+      result = nil
+      identify_err = error_mod.new("protocol", "identify on connect panicked", { cause = panic })
+    end
     self._identify_inflight[pid] = nil
 
     if not result then
@@ -773,11 +831,11 @@ end
 function Host:_set_runtime_error(runtime_name, err)
   self._runtime_last_error = err
   self._running = false
-  log.error("host runtime tick failed", {
+  local fields = flatten_error_fields(err, "cause", {
     subsystem = "host",
     runtime = runtime_name,
-    cause = tostring(err),
   })
+  log.error("host runtime tick failed", fields)
 
   local ok, emit_err = emit_event(self, "host_runtime_error", {
     runtime = runtime_name,
@@ -1096,6 +1154,15 @@ function Host:_poll_once_poll(timeout)
 end
 
 function Host:_poll_once_luv(timeout)
+  local ok_luv, uv = pcall(require, "luv")
+  if ok_luv then
+    local ok, err = pcall(function()
+      return uv.run("nowait")
+    end)
+    if not ok and string.find(tostring(err or ""), "loop already running", 1, true) == nil then
+      return nil, error_mod.new("io", "luv poll failed", { cause = err })
+    end
+  end
   local ready_map = self._luv_ready
   self._luv_ready = {}
   return self:_poll_once_with_ready_map(timeout, ready_map)

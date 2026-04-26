@@ -198,6 +198,9 @@ function Stream:read(length)
       if err then
         return nil, err
       end
+      if type(coroutine.isyieldable) == "function" and coroutine.isyieldable() then
+        coroutine.yield({ kind = "yamux_stream_wait", session = self.session, stream_id = self.id })
+      end
       if self.reset then
         return nil, error_mod.new("closed", "yamux stream reset during read")
       end
@@ -324,6 +327,7 @@ function Session:new(conn, opts)
     max_accept_backlog = options.max_accept_backlog or 256,
     pending_accept = {},
     go_away = false,
+    _processing = false,
   }, self)
 end
 
@@ -419,7 +423,7 @@ function Session:accept_stream_now()
   return table.remove(self.pending_accept, 1)
 end
 
-function Session:process_one()
+function Session:_process_one_unlocked()
   local frame, frame_err = M.read_frame(self.conn)
   if not frame then
     return nil, frame_err
@@ -493,6 +497,29 @@ function Session:process_one()
   end
 
   return frame
+end
+
+function Session:process_one()
+  if self._processing then
+    if type(coroutine.isyieldable) == "function" and coroutine.isyieldable() then
+      while self._processing do
+        coroutine.yield({ kind = "yamux_read_pump", session = self })
+      end
+      return true
+    end
+    return nil, error_mod.new("state", "yamux read pump is already active")
+  end
+
+  self._processing = true
+  local result = { pcall(function()
+    return self:_process_one_unlocked()
+  end) }
+  self._processing = false
+
+  if not result[1] then
+    return nil, error_mod.new("protocol", "yamux read pump panicked", { cause = result[2] })
+  end
+  return result[2], result[3]
 end
 
 function M.new_session(conn, opts)

@@ -68,6 +68,7 @@ local function run()
   local child_source = [[
 package.path = "./?.lua;./?/init.lua;" .. package.path
 local host = require("lua_libp2p.host")
+local socket = require("socket")
 
 local addr = arg[1]
 local out_path = arg[2]
@@ -79,6 +80,7 @@ local function write_out(text)
 end
 
 local h, h_err = host.new({
+  runtime = "poll",
   services = { "identify" },
   blocking = false,
   accept_timeout = 0.05,
@@ -109,6 +111,7 @@ for _ = 1, 200 do
     write_out("poll_error:" .. tostring(poll_err))
     os.exit(1)
   end
+  socket.sleep(0.005)
 end
 
 h:stop()
