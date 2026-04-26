@@ -91,6 +91,51 @@ local function run()
   if not dht then
     return nil, dht_err
   end
+  if dht.max_message_size ~= kad_protocol.MAX_MESSAGE_SIZE then
+    return nil, "dht should default to kad protocol max message size"
+  end
+  if dht.address_filter ~= "public" then
+    return nil, "dht should default to public address filter"
+  end
+
+  local small_dht, small_dht_err = kad_dht.new(host, {
+    hash_function = fake_hash,
+    max_message_size = 32,
+    address_filter = "all",
+  })
+  if not small_dht then
+    return nil, small_dht_err
+  end
+  if small_dht.max_message_size ~= 32 then
+    return nil, "dht should allow max_message_size override"
+  end
+  if small_dht.address_filter ~= "all" then
+    return nil, "dht should allow built-in address filter override"
+  end
+
+  local custom_seen = false
+  local custom_dht, custom_dht_err = kad_dht.new(host, {
+    hash_function = fake_hash,
+    address_filter = function(addr, ctx)
+      custom_seen = custom_seen or (ctx and ctx.purpose == "test")
+      return addr:match("/tcp/4001") ~= nil
+    end,
+  })
+  if not custom_dht then
+    return nil, custom_dht_err
+  end
+  local custom_addrs = custom_dht:_filter_addrs({ "/ip4/8.8.8.8/tcp/4001", "/ip4/8.8.8.8/tcp/4002" }, { purpose = "test" })
+  if #custom_addrs ~= 1 or custom_addrs[1] ~= "/ip4/8.8.8.8/tcp/4001" or not custom_seen then
+    return nil, "custom address filter should be applied with context"
+  end
+
+  local invalid_dht, invalid_filter_err = kad_dht.new(host, {
+    hash_function = fake_hash,
+    address_filter = "invalid",
+  })
+  if invalid_dht ~= nil or not invalid_filter_err then
+    return nil, "expected invalid address filter to fail"
+  end
 
   local started, start_err = dht:start()
   if not started then

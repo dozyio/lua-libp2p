@@ -6,6 +6,7 @@ local host_runtime_luv_native = require("lua_libp2p.host_runtime_luv_native")
 local host_runtime_poll = require("lua_libp2p.host_runtime_poll")
 local multiaddr = require("lua_libp2p.multiaddr")
 local peerid = require("lua_libp2p.peerid")
+local peerstore = require("lua_libp2p.peerstore")
 local identify = require("lua_libp2p.protocol.identify")
 local key_pb = require("lua_libp2p.crypto.key_pb")
 local perf = require("lua_libp2p.protocol.perf")
@@ -175,6 +176,14 @@ local RUNTIME_IMPLS = {
   },
 }
 
+local function default_runtime_name()
+  local ok_luv = pcall(require, "luv")
+  if ok_luv then
+    return "luv"
+  end
+  return "poll"
+end
+
 local function extract_peer_id_from_multiaddr(addr)
   local parsed = multiaddr.parse(addr)
   if not parsed then
@@ -198,6 +207,37 @@ local function has_terminal_peer_id(addr)
   return last.protocol == "p2p" and type(last.value) == "string" and last.value ~= ""
 end
 
+local function is_dialable_tcp_addr(addr)
+  local parsed = multiaddr.parse(addr)
+  if not parsed or type(parsed.components) ~= "table" or #parsed.components < 2 then
+    return false
+  end
+  local host_part = parsed.components[1]
+  local tcp_part = parsed.components[2]
+  if host_part.protocol ~= "ip4" and host_part.protocol ~= "dns" and host_part.protocol ~= "dns4" and host_part.protocol ~= "dns6" then
+    return false
+  end
+  if tcp_part.protocol ~= "tcp" then
+    return false
+  end
+  for i = 3, #parsed.components do
+    local protocol = parsed.components[i].protocol
+    if protocol ~= "p2p" then
+      return false
+    end
+  end
+  return true
+end
+
+local function first_dialable_tcp_addr(addrs)
+  for _, addr in ipairs(addrs or {}) do
+    if is_dialable_tcp_addr(addr) then
+      return addr
+    end
+  end
+  return nil
+end
+
 local function resolve_target(target)
   if type(target) == "string" then
     if target:sub(1, 1) == "/" then
@@ -209,7 +249,7 @@ local function resolve_target(target)
   if type(target) == "table" then
     local addr = target.addr
     if not addr and type(target.addrs) == "table" then
-      addr = target.addrs[1]
+      addr = first_dialable_tcp_addr(target.addrs)
     end
     return {
       peer_id = target.peer_id,
@@ -222,12 +262,15 @@ end
 
 function Host:new(config)
   local cfg = config or {}
-  local runtime_name = cfg.runtime or cfg.runtime_backend or cfg.runtimeBackend or "poll"
+  local runtime_name = cfg.runtime or cfg.runtime_backend or cfg.runtimeBackend or "auto"
+  if runtime_name == "auto" then
+    runtime_name = default_runtime_name()
+  end
   local runtime_impl = RUNTIME_IMPLS[runtime_name]
   if runtime_impl == nil then
     return nil, error_mod.new("input", "unsupported host runtime", {
       runtime = runtime_name,
-      supported = { "poll", "luv" },
+      supported = { "auto", "poll", "luv" },
     })
   end
   local start_blocking = cfg.blocking
@@ -252,6 +295,7 @@ function Host:new(config)
   local self_obj = setmetatable({
     identity = keypair,
     _peer_id = local_peer,
+    peerstore = cfg.peerstore or peerstore.new(cfg.peerstore_options or cfg.peerstoreOptions),
     listen_addrs = list_copy(cfg.listen_addrs or cfg.listenAddrs or {}),
     transports = list_copy(cfg.transports or { "tcp" }),
     security_transports = list_copy(cfg.security_transports or cfg.securityTransports or {}),
@@ -280,8 +324,8 @@ function Host:new(config)
     _start_poll_interval = cfg.poll_interval or cfg.pollInterval or 0.01,
     _on_started = cfg.on_started or cfg.onStarted,
     _running = false,
-    _connect_timeout = cfg.connect_timeout or cfg.connectTimeout or 2,
-    _io_timeout = cfg.io_timeout or cfg.ioTimeout or 2,
+    _connect_timeout = cfg.connect_timeout or cfg.connectTimeout or 6,
+    _io_timeout = cfg.io_timeout or cfg.ioTimeout or 10,
     _accept_timeout = cfg.accept_timeout or cfg.acceptTimeout or 0,
     _service_options = {
       identify = cfg.identify or {},
@@ -767,6 +811,10 @@ function Host:dial(peer_or_addr, opts)
   end
 
   local addr = resolved.addr
+  if not addr then
+    local addrs = self.peerstore and self.peerstore:get_addrs(resolved.peer_id) or {}
+    addr = first_dialable_tcp_addr(addrs)
+  end
   if not addr then
     return nil, nil, error_mod.new("input", "dial target must include an address when no connection exists")
   end

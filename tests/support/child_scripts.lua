@@ -21,7 +21,7 @@ local function fail(prefix, err)
   os.exit(1)
 end
 
-local h, h_err = host.new({ blocking = false })
+local h, h_err = host.new({ runtime = "poll", blocking = false })
 if not h then
   fail("init_error", h_err)
 end
@@ -80,7 +80,7 @@ local function write_out(text)
   f:close()
 end
 
-local h, h_err = host.new({ blocking = false })
+local h, h_err = host.new({ runtime = "poll", blocking = false })
 if not h then
   write_out("init_error:" .. tostring(h_err))
   os.exit(1)
@@ -125,6 +125,7 @@ local function write_out(text)
 end
 
 local h, h_err = host.new({
+  runtime = "poll",
   blocking = false,
   services = { "identify" },
 })

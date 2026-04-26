@@ -105,6 +105,13 @@ local function run()
   local result = subprocess.read_file(child_out)
   local log_out = subprocess.read_file(child_log)
 
+  for _ = 1, 5 do
+    if handled_stream ~= nil then
+      break
+    end
+    host:poll_once(0)
+  end
+
   subprocess.remove_files({ child_script, child_out, child_phase, child_log })
 
   if not completed then

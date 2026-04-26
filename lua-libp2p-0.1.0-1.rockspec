@@ -38,6 +38,7 @@ build = {
     ["lua_libp2p.network.connection"] = "lua_libp2p/network/connection.lua",
     ["lua_libp2p.network.upgrader"] = "lua_libp2p/network/upgrader.lua",
     ["lua_libp2p.peerid"] = "lua_libp2p/peerid.lua",
+    ["lua_libp2p.peerstore"] = "lua_libp2p/peerstore/init.lua",
     ["lua_libp2p.record"] = "lua_libp2p/record/init.lua",
     ["lua_libp2p.record.signed_envelope"] = "lua_libp2p/record/signed_envelope.lua",
     ["lua_libp2p.record.peer_record"] = "lua_libp2p/record/peer_record.lua",

@@ -8,6 +8,7 @@ local NONFATAL_KINDS = { "timeout", "closed", "decode", "protocol", "unsupported
 local function new_host()
   local keypair = assert(ed25519.generate_keypair())
   local h, err = host_mod.new({
+    runtime = "poll",
     identity = keypair,
     listen_addrs = {},
   })

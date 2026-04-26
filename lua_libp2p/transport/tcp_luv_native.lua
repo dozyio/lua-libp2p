@@ -2,6 +2,7 @@ local error_mod = require("lua_libp2p.error")
 local multiaddr = require("lua_libp2p.multiaddr")
 
 local ok_luv, uv = pcall(require, "luv")
+local ok_socket, socket = pcall(require, "socket")
 
 local M = {
   AVAILABLE = ok_luv,
@@ -22,6 +23,21 @@ local function parse_ipv4(host)
     end
   end
   return string.format("%d.%d.%d.%d", parts[1], parts[2], parts[3], parts[4])
+end
+
+local function resolve_dial_host(host)
+  local ip = parse_ipv4(host)
+  if ip then
+    return ip
+  end
+  if not ok_socket or not socket or not socket.dns or type(socket.dns.toip) ~= "function" then
+    return nil, error_mod.new("unsupported", "native luv tcp dial requires DNS resolver for hostnames", { host = host })
+  end
+  local resolved, resolve_err = socket.dns.toip(host)
+  if type(resolved) ~= "string" or resolved == "" then
+    return nil, error_mod.new("io", "dns lookup failed", { host = host, cause = resolve_err })
+  end
+  return resolved
 end
 
 local function parse_multiaddr(addr_text)
@@ -647,8 +663,10 @@ function M.dial(target, opts)
     return nil, error_mod.new("input", "address must be multiaddr string or table")
   end
 
-  local normalized_host = parse_ipv4(host)
-  local dial_host = normalized_host or host
+  local dial_host, resolve_err = resolve_dial_host(host)
+  if not dial_host then
+    return nil, resolve_err
+  end
   if type(dial_host) ~= "string" or dial_host == "" then
     return nil, error_mod.new("input", "invalid dial host", { host = host })
   end
@@ -659,10 +677,16 @@ function M.dial(target, opts)
   local conn = uv.new_tcp()
   local done = false
   local dial_err = nil
-  conn:connect(dial_host, port, function(err)
-    dial_err = err
-    done = true
+  local connect_ok, connect_err = pcall(function()
+    conn:connect(dial_host, port, function(err)
+      dial_err = err
+      done = true
+    end)
   end)
+  if not connect_ok then
+    conn:close()
+    return nil, classify_uv_error(connect_err, "native luv tcp connect failed")
+  end
 
   local timeout = options.connect_timeout or options.timeout
   local timer = build_timeout_timer(timeout, function()
@@ -675,9 +699,14 @@ function M.dial(target, opts)
   while not done do
     local _, step_err = run_once_or_loop_running()
     if step_err == "loop_running" then
+      if yield_if_possible({ kind = "dial", connection = conn }) then
+        goto continue_dial_wait
+      end
       done = true
       dial_err = error_mod.new("timeout", "dial would block while loop is already running")
     end
+
+    ::continue_dial_wait::
   end
 
   if timer then

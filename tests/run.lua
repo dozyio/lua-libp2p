@@ -47,6 +47,7 @@ local tests = {
   (require("tests.unit.noise")),
   (require("tests.unit.noise_rsa")),
   (require("tests.unit.noise_xx")),
+  (require("tests.unit.peerstore")),
   (require("tests.unit.signed_envelope")),
   (require("tests.unit.rockspec")),
   (require("tests.unit.peer_record")),

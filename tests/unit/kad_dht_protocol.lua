@@ -1,4 +1,5 @@
 local kad_protocol = require("lua_libp2p.kad_dht.protocol")
+local network = require("lua_libp2p.network")
 local varint = require("lua_libp2p.multiformats.varint")
 
 local function new_scripted_conn(incoming)
@@ -29,6 +30,10 @@ local function new_scripted_conn(incoming)
 end
 
 local function run()
+  if kad_protocol.MAX_MESSAGE_SIZE ~= network.MESSAGE_SIZE_MAX then
+    return nil, "kad-dht should default to network message size max"
+  end
+
   local encoded, enc_err = kad_protocol.encode_message({
     type = kad_protocol.MESSAGE_TYPE.FIND_NODE,
     key = "target-key",
@@ -72,15 +77,27 @@ local function run()
     return nil, "framed read/write key mismatch"
   end
 
-  local oversized = string.rep("x", kad_protocol.MAX_MESSAGE_SIZE + 1)
+  local oversized = string.rep("x", 33)
   local oversized_frame = assert(varint.encode_u64(#oversized)) .. oversized
   local oversized_reader = new_scripted_conn(oversized_frame)
-  local oversized_msg, oversized_err = kad_protocol.read(oversized_reader)
+  local oversized_msg, oversized_err = kad_protocol.read(oversized_reader, { max_message_size = 32 })
   if oversized_msg ~= nil then
     return nil, "expected oversized kad-dht frame to fail"
   end
   if not oversized_err or oversized_err.kind ~= "decode" then
     return nil, "expected decode error for oversized kad-dht frame"
+  end
+
+  local too_large_writer = new_scripted_conn("")
+  local too_large_ok, too_large_err = kad_protocol.write(too_large_writer, {
+    type = kad_protocol.MESSAGE_TYPE.FIND_NODE,
+    key = string.rep("k", 40),
+  }, { max_message_size = 16 })
+  if too_large_ok ~= nil then
+    return nil, "expected oversized kad-dht write to fail"
+  end
+  if not too_large_err or too_large_err.kind ~= "input" then
+    return nil, "expected input error for oversized kad-dht write"
   end
 
   return true

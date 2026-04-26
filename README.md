@@ -77,6 +77,13 @@ brew install libsodium
 luarocks make lua-libp2p-0.1.0-1.rockspec
 ```
 
+If using Homebrew `lua@5.4`, put Lua 5.4 first on `PATH` and load the matching LuaRocks paths before running examples/tests:
+
+```bash
+export PATH="/opt/homebrew/opt/lua@5.4/bin:$PATH"
+eval "$(luarocks --lua-version=5.4 --lua-dir=/opt/homebrew/opt/lua@5.4 path)"
+```
+
 ## Key serialization
 
 - Public keys for PeerId are encoded as libp2p `PublicKey` protobuf bytes (`Type`, `Data`) using deterministic field order/minimal varints.
