@@ -60,6 +60,17 @@ local function parse_bool(raw, name)
   fatal("invalid boolean env var for " .. name .. ": " .. tostring(raw))
 end
 
+local function parse_runtime(raw)
+  local value = raw
+  if value == nil or value == "" then
+    value = "luv"
+  end
+  if value ~= "luv" and value ~= "poll" then
+    fatal("invalid HOST_RUNTIME env var, expected 'luv' or 'poll': " .. tostring(value))
+  end
+  return value
+end
+
 local function parse_int(raw, default_value)
   if not raw or raw == "" or raw == "null" then
     return default_value
@@ -301,6 +312,7 @@ end
 
 local function run_listener(cfg)
   local h, host_err = host_mod.new({
+    runtime = cfg.runtime,
     listen_addrs = { "/ip4/" .. cfg.listener_ip .. "/tcp/0" },
     security_transports = { "/noise" },
     muxers = { "/yamux/1.0.0" },
@@ -433,6 +445,7 @@ end
 
 local function run_dialer(cfg)
   local h, host_err = host_mod.new({
+    runtime = cfg.runtime,
     security_transports = { "/noise" },
     muxers = { "/yamux/1.0.0" },
     connect_timeout = 10,
@@ -494,6 +507,7 @@ end
 local function main()
   local cfg = {
     is_dialer = parse_bool(env("IS_DIALER"), "IS_DIALER"),
+    runtime = parse_runtime(os.getenv("HOST_RUNTIME")),
     redis_addr = env("REDIS_ADDR"),
     test_key = env("TEST_KEY"),
     transport = env("TRANSPORT"),

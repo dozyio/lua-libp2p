@@ -1,16 +1,19 @@
 local ed25519 = require("lua_libp2p.crypto.ed25519")
 local error_mod = require("lua_libp2p.error")
 local log = require("lua_libp2p.log")
+local host_runtime_luv = require("lua_libp2p.host_runtime_luv")
+local host_runtime_luv_native = require("lua_libp2p.host_runtime_luv_native")
+local host_runtime_poll = require("lua_libp2p.host_runtime_poll")
 local multiaddr = require("lua_libp2p.multiaddr")
 local peerid = require("lua_libp2p.peerid")
+local peerstore = require("lua_libp2p.peerstore")
 local identify = require("lua_libp2p.protocol.identify")
 local key_pb = require("lua_libp2p.crypto.key_pb")
 local perf = require("lua_libp2p.protocol.perf")
 local ping = require("lua_libp2p.protocol.ping")
 local upgrader = require("lua_libp2p.network.upgrader")
-local tcp = require("lua_libp2p.transport.tcp")
-
-local ok_socket, socket = pcall(require, "socket")
+local tcp_poll = require("lua_libp2p.transport.tcp")
+local tcp_luv = require("lua_libp2p.transport.tcp_luv")
 
 local M = {}
 
@@ -78,7 +81,7 @@ local function bind_listeners(self, addrs)
   end
 
   for _, addr in ipairs(targets) do
-    local listener, listen_err = tcp.listen({
+    local listener, listen_err = self._tcp_transport.listen({
       multiaddr = addr,
       accept_timeout = self._accept_timeout,
       io_timeout = self._io_timeout,
@@ -108,6 +111,13 @@ local function bind_listeners(self, addrs)
     self.listen_addrs[i] = resolved
   end
 
+  if self._running and self._runtime_impl and self._runtime_impl.sync_watchers then
+    local ok, sync_err = self._runtime_impl.sync_watchers(self)
+    if not ok then
+      return nil, sync_err
+    end
+  end
+
   return true
 end
 
@@ -115,6 +125,7 @@ local Host = {}
 Host.__index = Host
 
 local function sleep_seconds(seconds)
+  local ok_socket, socket = pcall(require, "socket")
   if ok_socket and type(socket.sleep) == "function" then
     socket.sleep(seconds)
   end
@@ -131,92 +142,70 @@ local function is_nonfatal_stream_error(err)
     or err.kind == "unsupported"
 end
 
-local function unwrap_socket(value, seen)
-  if type(value) ~= "table" then
-    return nil
+local function flatten_error_fields(err, prefix, fields, depth)
+  local key = prefix or "error"
+  local out = fields or {}
+  local remaining = depth or 4
+  out[key] = tostring(err)
+  if remaining <= 0 or not error_mod.is_error(err) then
+    return out
   end
-  local visited = seen or {}
-  if visited[value] then
-    return nil
-  end
-  visited[value] = true
-
-  if type(value.socket) == "function" then
-    local ok, sock = pcall(value.socket, value)
-    if ok and sock then
-      return sock
+  out[key .. "_kind"] = err.kind
+  if type(err.context) == "table" then
+    for k, v in pairs(err.context) do
+      if k == "cause" then
+        out[key .. "_cause"] = tostring(v)
+        if error_mod.is_error(v) then
+          flatten_error_fields(v, key .. "_cause", out, remaining - 1)
+        end
+      elseif type(v) ~= "table" and type(v) ~= "function" and type(v) ~= "thread" then
+        out[key .. "_" .. tostring(k)] = v
+      end
     end
   end
-
-  if value._socket then
-    return value._socket
-  end
-  if value._server then
-    return value._server
-  end
-
-  if value._raw then
-    local sock = unwrap_socket(value._raw, visited)
-    if sock then
-      return sock
-    end
-  end
-  if value._raw_conn then
-    local sock = unwrap_socket(value._raw_conn, visited)
-    if sock then
-      return sock
-    end
-  end
-
-  return nil
+  return out
 end
 
-local function build_ready_map(host_obj, timeout)
-  if not (ok_socket and type(socket.select) == "function") then
-    return nil
+local function runtime_luv_start(host)
+  local ok, err = host_runtime_luv.start(host)
+  if not ok then
+    return nil, err
   end
+  return true, nil, true
+end
 
-  local read_set = {}
-  local by_socket = {}
+local function runtime_luv_stop(host)
+  return host_runtime_luv.stop(host)
+end
 
-  for _, listener in ipairs(host_obj._listeners) do
-    local sock = unwrap_socket(listener)
-    if sock then
-      read_set[#read_set + 1] = sock
-      by_socket[sock] = { kind = "listener", value = listener }
-    end
+local function runtime_luv_poll_once(host, timeout)
+  return host:_poll_once_luv(timeout)
+end
+
+local function runtime_luv_sync_watchers(host)
+  return host_runtime_luv.sync_watchers(host)
+end
+
+local RUNTIME_IMPLS = {
+  poll = {
+    start = host_runtime_poll.start,
+    stop = host_runtime_poll.stop,
+    poll_once = host_runtime_poll.poll_once,
+  },
+  luv = {
+    start = runtime_luv_start,
+    stop = runtime_luv_stop,
+    poll_once = runtime_luv_poll_once,
+    sync_watchers = runtime_luv_sync_watchers,
+  },
+}
+
+local function default_runtime_name()
+  local ok_luv = pcall(require, "luv")
+  if ok_luv then
+    return "luv"
   end
-
-  for _, entry in ipairs(host_obj._connections) do
-    local sock = unwrap_socket(entry.conn)
-    if sock then
-      read_set[#read_set + 1] = sock
-      by_socket[sock] = { kind = "connection", value = entry }
-    end
-  end
-
-  if #read_set == 0 then
-    return {}
-  end
-
-  local wait_timeout = timeout
-  if wait_timeout == nil then
-    wait_timeout = host_obj._accept_timeout or 0
-  end
-
-  local readable, _, sel_err = socket.select(read_set, nil, wait_timeout)
-  if not readable then
-    return nil, error_mod.new("io", "socket select failed", { cause = sel_err })
-  end
-
-  local ready = {}
-  for _, sock in ipairs(readable) do
-    local item = by_socket[sock]
-    if item then
-      ready[item.value] = true
-    end
-  end
-  return ready
+  return "poll"
 end
 
 local function extract_peer_id_from_multiaddr(addr)
@@ -242,6 +231,37 @@ local function has_terminal_peer_id(addr)
   return last.protocol == "p2p" and type(last.value) == "string" and last.value ~= ""
 end
 
+local function is_dialable_tcp_addr(addr)
+  local parsed = multiaddr.parse(addr)
+  if not parsed or type(parsed.components) ~= "table" or #parsed.components < 2 then
+    return false
+  end
+  local host_part = parsed.components[1]
+  local tcp_part = parsed.components[2]
+  if host_part.protocol ~= "ip4" and host_part.protocol ~= "dns" and host_part.protocol ~= "dns4" and host_part.protocol ~= "dns6" then
+    return false
+  end
+  if tcp_part.protocol ~= "tcp" then
+    return false
+  end
+  for i = 3, #parsed.components do
+    local protocol = parsed.components[i].protocol
+    if protocol ~= "p2p" then
+      return false
+    end
+  end
+  return true
+end
+
+local function first_dialable_tcp_addr(addrs)
+  for _, addr in ipairs(addrs or {}) do
+    if is_dialable_tcp_addr(addr) then
+      return addr
+    end
+  end
+  return nil
+end
+
 local function resolve_target(target)
   if type(target) == "string" then
     if target:sub(1, 1) == "/" then
@@ -253,7 +273,7 @@ local function resolve_target(target)
   if type(target) == "table" then
     local addr = target.addr
     if not addr and type(target.addrs) == "table" then
-      addr = target.addrs[1]
+      addr = first_dialable_tcp_addr(target.addrs)
     end
     return {
       peer_id = target.peer_id,
@@ -266,6 +286,21 @@ end
 
 function Host:new(config)
   local cfg = config or {}
+  local runtime_name = cfg.runtime or cfg.runtime_backend or cfg.runtimeBackend or "auto"
+  if runtime_name == "auto" then
+    runtime_name = default_runtime_name()
+  end
+  local runtime_impl = RUNTIME_IMPLS[runtime_name]
+  if runtime_impl == nil then
+    return nil, error_mod.new("input", "unsupported host runtime", {
+      runtime = runtime_name,
+      supported = { "auto", "poll", "luv" },
+    })
+  end
+  local start_blocking = cfg.blocking
+  if start_blocking == nil then
+    start_blocking = runtime_name ~= "luv"
+  end
 
   local keypair = cfg.identity
   if not keypair then
@@ -284,6 +319,7 @@ function Host:new(config)
   local self_obj = setmetatable({
     identity = keypair,
     _peer_id = local_peer,
+    peerstore = cfg.peerstore or peerstore.new(cfg.peerstore_options or cfg.peerstoreOptions),
     listen_addrs = list_copy(cfg.listen_addrs or cfg.listenAddrs or {}),
     transports = list_copy(cfg.transports or { "tcp" }),
     security_transports = list_copy(cfg.security_transports or cfg.securityTransports or {}),
@@ -293,19 +329,27 @@ function Host:new(config)
     _listeners = {},
     _connections = {},
     _connections_by_peer = {},
+    _pending_inbound = {},
     _event_handlers = {},
     _event_queue_max = cfg.event_queue_max or cfg.eventQueueMax or DEFAULT_EVENT_QUEUE_MAX,
     _event_subscribers = {},
     _next_subscriber_id = 1,
     _identify_on_connect_handler = nil,
     _identify_inflight = {},
-    _start_blocking = cfg.blocking ~= false,
+    _runtime = runtime_name,
+    _runtime_impl = runtime_impl,
+    _tcp_transport = runtime_name == "luv" and tcp_luv or tcp_poll,
+    _luv_tick_timer = nil,
+    _luv_watchers = {},
+    _luv_ready = {},
+    _runtime_last_error = nil,
+    _start_blocking = start_blocking ~= false,
     _start_max_iterations = cfg.max_iterations or cfg.maxIterations,
     _start_poll_interval = cfg.poll_interval or cfg.pollInterval or 0.01,
     _on_started = cfg.on_started or cfg.onStarted,
     _running = false,
-    _connect_timeout = cfg.connect_timeout or cfg.connectTimeout or 2,
-    _io_timeout = cfg.io_timeout or cfg.ioTimeout or 2,
+    _connect_timeout = cfg.connect_timeout or cfg.connectTimeout or 6,
+    _io_timeout = cfg.io_timeout or cfg.ioTimeout or 10,
     _accept_timeout = cfg.accept_timeout or cfg.acceptTimeout or 0,
     _service_options = {
       identify = cfg.identify or {},
@@ -363,6 +407,7 @@ end
 function Host:_spawn_handler_task(handler, ctx)
   local task = {
     protocol = ctx.protocol,
+    peer_id = ctx.peer_id,
     connection = ctx.connection,
     state = ctx.state,
   }
@@ -378,9 +423,36 @@ function Host:_run_handler_tasks()
     local task = self._handler_tasks[i]
     local ok, result, err = coroutine.resume(task.co)
     if not ok then
+      if task.protocol == "identify_connect" then
+        local identify_err = error_mod.new("protocol", "identify on connect panicked", {
+          peer_id = task.peer_id,
+          cause = result,
+          traceback = debug.traceback(task.co, tostring(result)),
+        })
+        if task.peer_id then
+          self._identify_inflight[task.peer_id] = nil
+        end
+        table.remove(self._handler_tasks, i)
+        log.warn("identify on connect failed", {
+          subsystem = "identify",
+          peer_id = task.peer_id,
+          cause = tostring(identify_err),
+          panic = tostring(result),
+          queue_size = map_count(self._identify_inflight),
+        })
+        local emit_ok, emit_err = emit_event(self, "peer_identify_failed", {
+          peer_id = task.peer_id,
+          cause = identify_err,
+        })
+        if not emit_ok then
+          return nil, emit_err
+        end
+        goto continue_tasks
+      end
       return nil, error_mod.new("protocol", "handler task panicked", {
         protocol = task.protocol,
         cause = result,
+        traceback = debug.traceback(task.co, tostring(result)),
       })
     end
 
@@ -410,6 +482,14 @@ local function list_protocol_handlers(handlers)
   end
   table.sort(out)
   return out
+end
+
+local function map_count(values)
+  local n = 0
+  for _ in pairs(values or {}) do
+    n = n + 1
+  end
+  return n
 end
 
 function Host:_handle_identify(stream, ctx)
@@ -497,11 +577,19 @@ function Host:_schedule_identify_for_peer(peer_id)
   log.info("identify on connect scheduled", {
     subsystem = "identify",
     peer_id = peer_id,
+    queue_size = map_count(self._identify_inflight),
   })
 
   self:_spawn_handler_task(function(_, ctx)
     local pid = ctx and ctx.peer_id
-    local result, identify_err = self:_request_identify(pid)
+    local call_ok, result, identify_err = pcall(function()
+      return self:_request_identify(pid)
+    end)
+    if not call_ok then
+      local panic = result
+      result = nil
+      identify_err = error_mod.new("protocol", "identify on connect panicked", { cause = panic })
+    end
     self._identify_inflight[pid] = nil
 
     if not result then
@@ -509,6 +597,7 @@ function Host:_schedule_identify_for_peer(peer_id)
         subsystem = "identify",
         peer_id = pid,
         cause = tostring(identify_err),
+        queue_size = map_count(self._identify_inflight),
       })
       local ok, emit_err = emit_event(self, "peer_identify_failed", {
         peer_id = pid,
@@ -523,6 +612,7 @@ function Host:_schedule_identify_for_peer(peer_id)
     log.info("identify on connect completed", {
       subsystem = "identify",
       peer_id = pid,
+      queue_size = map_count(self._identify_inflight),
     })
 
     local ok, emit_err = emit_event(self, "peer_identified", {
@@ -654,6 +744,13 @@ function Host:_register_connection(conn, state)
     return nil, emit_err
   end
 
+  if self._running and self._runtime_impl and self._runtime_impl.sync_watchers then
+    local sync_ok, sync_err = self._runtime_impl.sync_watchers(self)
+    if not sync_ok then
+      return nil, sync_err
+    end
+  end
+
   return entry
 end
 
@@ -743,6 +840,28 @@ function Host:next_event(subscriber)
   return table.remove(current.queue, 1)
 end
 
+function Host:_set_runtime_error(runtime_name, err)
+  self._runtime_last_error = err
+  self._running = false
+  local fields = flatten_error_fields(err, "cause", {
+    subsystem = "host",
+    runtime = runtime_name,
+  })
+  log.error("host runtime tick failed", fields)
+
+  local ok, emit_err = emit_event(self, "host_runtime_error", {
+    runtime = runtime_name,
+    cause = err,
+  })
+  if not ok then
+    log.error("host runtime error emit failed", {
+      subsystem = "host",
+      runtime = runtime_name,
+      cause = tostring(emit_err),
+    })
+  end
+end
+
 function Host:_find_connection(peer_id)
   if not peer_id then
     return nil
@@ -763,6 +882,10 @@ function Host:dial(peer_or_addr, opts)
 
   local addr = resolved.addr
   if not addr then
+    local addrs = self.peerstore and self.peerstore:get_addrs(resolved.peer_id) or {}
+    addr = first_dialable_tcp_addr(addrs)
+  end
+  if not addr then
     return nil, nil, error_mod.new("input", "dial target must include an address when no connection exists")
   end
 
@@ -771,7 +894,7 @@ function Host:dial(peer_or_addr, opts)
     return nil, nil, endpoint_err
   end
 
-  local raw_conn, dial_err = tcp.dial({
+  local raw_conn, dial_err = self._tcp_transport.dial({
     host = endpoint.host,
     port = endpoint.port,
   }, {
@@ -817,10 +940,68 @@ function Host:new_stream(peer_or_addr, protocols, opts)
   return stream, selected, conn, state
 end
 
-function Host:poll_once(timeout)
-  local ready_map, ready_err = build_ready_map(self, timeout)
-  if not ready_map and ready_err then
-    return nil, ready_err
+function Host:_poll_once_with_ready_map(timeout, ready_map)
+
+  for i = #self._pending_inbound, 1, -1 do
+    local pending_entry = self._pending_inbound[i]
+    local raw_conn = host_runtime_luv_native.pending_raw(pending_entry)
+
+    if host_runtime_luv_native.is_native_host(self) then
+      local status, _, resume_err, normalized_entry = host_runtime_luv_native.resume_inbound_upgrade(
+        self,
+        pending_entry,
+        is_nonfatal_stream_error
+      )
+      self._pending_inbound[i] = normalized_entry
+      if status == "pending" then
+        goto continue_pending_inbound
+      end
+      table.remove(self._pending_inbound, i)
+      if status == "error" then
+        return nil, resume_err
+      end
+      goto continue_pending_inbound
+    end
+
+    if raw_conn and type(raw_conn.begin_read_tx) == "function" then
+      raw_conn:begin_read_tx()
+    end
+    local conn, state, up_err = upgrader.upgrade_inbound(raw_conn, {
+      local_keypair = self.identity,
+      security_protocols = self.security_transports,
+      muxer_protocols = self.muxers,
+    })
+    if conn then
+      if raw_conn and type(raw_conn.commit_read_tx) == "function" then
+        raw_conn:commit_read_tx()
+      end
+      table.remove(self._pending_inbound, i)
+      local entry, register_err = self:_register_connection(conn, state)
+      if not entry then
+        conn:close()
+        return nil, register_err
+      end
+    elseif up_err and error_mod.is_error(up_err) and up_err.kind == "timeout" then
+      if raw_conn and type(raw_conn.rollback_read_tx) == "function" then
+        raw_conn:rollback_read_tx()
+      end
+      -- keep pending; retry on next poll tick
+    elseif is_nonfatal_stream_error(up_err) then
+      if raw_conn and type(raw_conn.rollback_read_tx) == "function" then
+        raw_conn:rollback_read_tx()
+      end
+      table.remove(self._pending_inbound, i)
+      raw_conn:close()
+    else
+      if raw_conn and type(raw_conn.rollback_read_tx) == "function" then
+        raw_conn:rollback_read_tx()
+      end
+      table.remove(self._pending_inbound, i)
+      raw_conn:close()
+      return nil, up_err
+    end
+
+    ::continue_pending_inbound::
   end
 
   for _, listener in ipairs(self._listeners) do
@@ -838,17 +1019,44 @@ function Host:poll_once(timeout)
       raw_conn, accept_err = listener:accept(accept_timeout)
     end
     if raw_conn then
+      if host_runtime_luv_native.is_native_host(self) then
+        self._pending_inbound[#self._pending_inbound + 1] = { raw_conn = raw_conn }
+        goto continue_listeners
+      end
+
+      if raw_conn and type(raw_conn.begin_read_tx) == "function" then
+        raw_conn:begin_read_tx()
+      end
       local conn, state, up_err = upgrader.upgrade_inbound(raw_conn, {
         local_keypair = self.identity,
         security_protocols = self.security_transports,
         muxer_protocols = self.muxers,
       })
       if not conn then
+        if up_err and error_mod.is_error(up_err)
+          and up_err.kind == "timeout"
+          and self._runtime == "luv"
+          and self._tcp_transport
+          and self._tcp_transport.BACKEND == "luv-native"
+        then
+          if raw_conn and type(raw_conn.rollback_read_tx) == "function" then
+            raw_conn:rollback_read_tx()
+          end
+          self._pending_inbound[#self._pending_inbound + 1] = raw_conn
+          goto continue_listeners
+        end
+
+        if raw_conn and type(raw_conn.rollback_read_tx) == "function" then
+          raw_conn:rollback_read_tx()
+        end
         raw_conn:close()
         if is_nonfatal_stream_error(up_err) then
           goto continue_listeners
         end
         return nil, up_err
+      end
+      if raw_conn and type(raw_conn.commit_read_tx) == "function" then
+        raw_conn:commit_read_tx()
       end
       local entry, register_err = self:_register_connection(conn, state)
       if not entry then
@@ -877,7 +1085,25 @@ function Host:poll_once(timeout)
     end
 
     if should_process then
-      local _, process_err = conn:process_one()
+      if host_runtime_luv_native.is_native_host(self) then
+        local ok, native_err = host_runtime_luv_native.process_connection(
+          self,
+          entry,
+          router,
+          is_nonfatal_stream_error
+        )
+        if not ok then
+          return nil, native_err
+        end
+        goto continue_connections
+      end
+
+      local _, process_err
+      if type(conn.pump_once) == "function" then
+        _, process_err = conn:pump_once()
+      else
+        _, process_err = conn:process_one()
+      end
       if process_err then
         if is_nonfatal_stream_error(process_err) then
           if process_err.kind ~= "timeout" then
@@ -885,6 +1111,12 @@ function Host:poll_once(timeout)
             table.remove(self._connections, i)
             if entry.state and entry.state.remote_peer_id then
               self._connections_by_peer[entry.state.remote_peer_id] = nil
+            end
+            if self._runtime_impl and self._runtime_impl.sync_watchers then
+              local sync_ok, sync_err = self._runtime_impl.sync_watchers(self)
+              if not sync_ok then
+                return nil, sync_err
+              end
             end
             local ok, emit_err = emit_event(self, "peer_disconnected", {
               connection = conn,
@@ -930,6 +1162,36 @@ function Host:poll_once(timeout)
   return true
 end
 
+function Host:_poll_once_poll(timeout)
+  local ready_map, ready_err = host_runtime_poll.build_ready_map(self, timeout)
+  if not ready_map and ready_err then
+    return nil, ready_err
+  end
+  return self:_poll_once_with_ready_map(timeout, ready_map)
+end
+
+function Host:_poll_once_luv(timeout)
+  local ok_luv, uv = pcall(require, "luv")
+  if ok_luv then
+    local ok, err = pcall(function()
+      return uv.run("nowait")
+    end)
+    if not ok and string.find(tostring(err or ""), "loop already running", 1, true) == nil then
+      return nil, error_mod.new("io", "luv poll failed", { cause = err })
+    end
+  end
+  local ready_map = self._luv_ready
+  self._luv_ready = {}
+  return self:_poll_once_with_ready_map(timeout, ready_map)
+end
+
+function Host:poll_once(timeout)
+  if self._runtime_impl and self._runtime_impl.poll_once then
+    return self._runtime_impl.poll_once(self, timeout)
+  end
+  return self:_poll_once_poll(timeout)
+end
+
 function Host:start()
   if #self._listeners == 0 then
     local ok, bind_err = bind_listeners(self)
@@ -947,6 +1209,16 @@ function Host:start()
 
   if type(self._on_started) == "function" then
     self._on_started(self)
+  end
+
+  if self._runtime_impl and self._runtime_impl.start then
+    local runtime_ok, runtime_err, handled = self._runtime_impl.start(self)
+    if not runtime_ok then
+      return nil, runtime_err
+    end
+    if handled then
+      return true
+    end
   end
 
   local blocking = self._start_blocking
@@ -980,6 +1252,9 @@ end
 
 function Host:close()
   self._running = false
+  if self._runtime_impl and self._runtime_impl.stop then
+    self._runtime_impl.stop(self)
+  end
   for _, entry in ipairs(self._connections) do
     entry.conn:close()
     local ok, emit_err = emit_event(self, "peer_disconnected", {
@@ -995,6 +1270,11 @@ function Host:close()
   self._connections = {}
   self._connections_by_peer = {}
   self._handler_tasks = {}
+
+  for _, raw_conn in ipairs(self._pending_inbound) do
+    raw_conn:close()
+  end
+  self._pending_inbound = {}
 
   for _, listener in ipairs(self._listeners) do
     listener:close()

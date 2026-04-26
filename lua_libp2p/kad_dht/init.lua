@@ -12,6 +12,8 @@ local M = {}
 M.PROTOCOL_ID = "/ipfs/kad/1.0.0"
 M.DEFAULT_K = 20
 M.DEFAULT_ALPHA = 10
+M.DEFAULT_DISJOINT_PATHS = 10
+M.DEFAULT_ADDRESS_FILTER = "public"
 M.DEFAULT_BOOTSTRAPPERS = {
   "/ip4/104.131.131.82/tcp/4001/p2p/QmaCpDMGvV2BGHeYERUEnRQAwe3N8SzbUtfsmvsqQLuvuJ",
   "/dnsaddr/bootstrap.libp2p.io/p2p/QmNnooDu7bfjPFoTZYxMNLWUQJyrVwtbZg5gBMjTezGAJN",
@@ -193,6 +195,101 @@ local function extract_peer_id_from_multiaddr(addr)
   return nil
 end
 
+local function decode_kad_multiaddrs(addrs)
+  local out = {}
+  for _, addr in ipairs(addrs or {}) do
+    if type(addr) == "string" and addr:sub(1, 1) == "/" then
+      out[#out + 1] = addr
+    elseif type(addr) == "string" and addr ~= "" then
+      local parsed = multiaddr.from_bytes(addr)
+      if parsed and parsed.text then
+        out[#out + 1] = parsed.text
+      end
+    end
+  end
+  return out
+end
+
+local function is_dialable_tcp_addr(addr)
+  local parsed = multiaddr.parse(addr)
+  if not parsed or type(parsed.components) ~= "table" or #parsed.components < 2 then
+    return false
+  end
+  local host_part = parsed.components[1]
+  local tcp_part = parsed.components[2]
+  if host_part.protocol ~= "ip4" and host_part.protocol ~= "dns" and host_part.protocol ~= "dns4" and host_part.protocol ~= "dns6" then
+    return false
+  end
+  if tcp_part.protocol ~= "tcp" then
+    return false
+  end
+  for i = 3, #parsed.components do
+    local protocol = parsed.components[i].protocol
+    if protocol ~= "p2p" then
+      return false
+    end
+  end
+  return true
+end
+
+local function dialable_tcp_addrs(addrs)
+  local out = {}
+  for _, addr in ipairs(addrs or {}) do
+    if is_dialable_tcp_addr(addr) then
+      out[#out + 1] = addr
+    end
+  end
+  return out
+end
+
+local function is_capacity_error(err)
+  return error_mod.is_error(err) and err.kind == "capacity"
+end
+
+local function normalize_address_filter(filter)
+  if filter == nil then
+    return M.DEFAULT_ADDRESS_FILTER
+  end
+  if type(filter) == "function" then
+    return filter
+  end
+  if filter == "public" or filter == "private" or filter == "all" then
+    return filter
+  end
+  return nil, error_mod.new("input", "unsupported kad-dht address filter", {
+    filter = filter,
+    supported = { "public", "private", "all" },
+  })
+end
+
+function DHT:_addr_allowed(addr, ctx)
+  local filter = self.address_filter
+  if type(filter) == "function" then
+    local ok, allowed = pcall(filter, addr, ctx or {})
+    if not ok then
+      return false
+    end
+    return allowed ~= false
+  end
+  if filter == "all" then
+    return true
+  end
+  if filter == "private" then
+    return multiaddr.is_private_addr(addr)
+  end
+  return multiaddr.is_public_addr(addr)
+end
+
+function DHT:_filter_addrs(addrs, ctx)
+  local out = {}
+  for _, addr in ipairs(addrs or {}) do
+    if self:_addr_allowed(addr, ctx) then
+      out[#out + 1] = addr
+    end
+  end
+  return out
+end
+
 function DHT:_closest_peer_records(target_key, count)
   local nearest, nearest_err = self:find_closest_peers(target_key, count)
   if not nearest then
@@ -205,9 +302,16 @@ function DHT:_closest_peer_records(target_key, count)
     if not id_bytes then
       return nil, id_err
     end
+    local addrs = {}
+    if self.host and self.host.peerstore then
+      addrs = self:_filter_addrs(self.host.peerstore:get_addrs(entry.peer_id), {
+        peer_id = entry.peer_id,
+        purpose = "response",
+      })
+    end
     peers[#peers + 1] = {
       id = id_bytes,
-      addrs = {},
+      addrs = addrs,
     }
   end
   return peers
@@ -232,7 +336,7 @@ function DHT:_handle_find_node(req)
 end
 
 function DHT:_handle_rpc(stream)
-  local req, req_err = protocol.read(stream)
+  local req, req_err = protocol.read(stream, { max_message_size = self.max_message_size })
   if not req then
     return nil, req_err
   end
@@ -247,7 +351,7 @@ function DHT:_handle_rpc(stream)
     return nil, response_err
   end
 
-  local wrote, write_err = protocol.write(stream, response)
+  local wrote, write_err = protocol.write(stream, response, { max_message_size = self.max_message_size })
   if not wrote then
     return nil, write_err
   end
@@ -280,7 +384,7 @@ function DHT:find_node(peer_or_addr, target_key, opts)
   local wrote, write_err = protocol.write(stream, {
     type = protocol.MESSAGE_TYPE.FIND_NODE,
     key = target_bytes,
-  })
+  }, { max_message_size = self.max_message_size })
   if not wrote then
     if type(stream.reset_now) == "function" then
       stream:reset_now()
@@ -297,7 +401,7 @@ function DHT:find_node(peer_or_addr, target_key, opts)
     end
   end
 
-  local response, response_err = protocol.read(stream)
+  local response, response_err = protocol.read(stream, { max_message_size = self.max_message_size })
   if not response then
     return nil, response_err
   end
@@ -311,10 +415,21 @@ function DHT:find_node(peer_or_addr, target_key, opts)
 
   local out = {}
   for _, peer in ipairs(response.closer_peers or {}) do
+    local peer_id_text = decode_peer_id_text(peer.id)
+    local addrs = self:_filter_addrs(decode_kad_multiaddrs(peer.addrs), {
+      peer_id = peer_id_text,
+      purpose = "query_result",
+    })
+    if self.host and self.host.peerstore and peer_id_text then
+      self.host.peerstore:merge(peer_id_text, {
+        addrs = addrs,
+        protocols = { self.protocol_id },
+      })
+    end
     out[#out + 1] = {
-      peer_id = decode_peer_id_text(peer.id),
+      peer_id = peer_id_text,
       id = peer.id,
-      addrs = peer.addrs or {},
+      addrs = addrs,
     }
   end
   return out
@@ -438,6 +553,7 @@ function DHT:bootstrap(opts)
     attempted = 0,
     connected = 0,
     added = 0,
+    skipped = 0,
     failed = 0,
     peers = {},
     errors = {},
@@ -446,8 +562,16 @@ function DHT:bootstrap(opts)
   local seen = {}
   for _, candidate in ipairs(candidates) do
     local peer_id = candidate.peer_id
-    local addrs = candidate.addrs or {}
+    local addrs = self:_filter_addrs(candidate.addrs or {}, {
+      peer_id = peer_id,
+      purpose = "bootstrap",
+    })
     for _, addr in ipairs(addrs) do
+      if not is_dialable_tcp_addr(addr) then
+        result.skipped = result.skipped + 1
+        goto continue_addrs
+      end
+
       local key = tostring(peer_id or "") .. "|" .. tostring(addr)
       if seen[key] then
         goto continue_addrs
@@ -494,6 +618,8 @@ function DHT:bootstrap(opts)
           })
           if added then
             result.added = result.added + 1
+          elseif add_err and is_capacity_error(add_err) then
+            result.skipped = result.skipped + 1
           elseif add_err and not options.ignore_add_errors then
             result.failed = result.failed + 1
             result.errors[#result.errors + 1] = add_err
@@ -581,6 +707,50 @@ function DHT:refresh_once(opts)
   return report
 end
 
+local function compare_distance(left, right)
+  local size = #left
+  if #right < size then
+    size = #right
+  end
+  for i = 1, size do
+    local a = left:byte(i)
+    local b = right:byte(i)
+    if a < b then
+      return -1
+    end
+    if a > b then
+      return 1
+    end
+  end
+  if #left < #right then
+    return -1
+  end
+  if #left > #right then
+    return 1
+  end
+  return 0
+end
+
+local function xor_distance(left, right)
+  local out = {}
+  for i = 1, #left do
+    out[i] = string.char(left:byte(i) ~ right:byte(i))
+  end
+  return table.concat(out)
+end
+
+function DHT:_distance_to_target(peer_id, target_hash)
+  local bytes, bytes_err = protocol.peer_bytes(peer_id)
+  if not bytes then
+    return nil, bytes_err
+  end
+  local hashed, hash_err = self.routing_table:_hash(bytes)
+  if not hashed then
+    return nil, hash_err
+  end
+  return xor_distance(target_hash, hashed)
+end
+
 function DHT:random_walk(opts)
   local options = opts or {}
   local report = {
@@ -588,18 +758,32 @@ function DHT:random_walk(opts)
     responses = 0,
     failed = 0,
     added = 0,
+    skipped = 0,
     discovered = 0,
     errors = {},
   }
 
   local target_key = options.target_key or self.local_peer_id
-  local query_limit = options.max_queries or self.alpha
-  if type(query_limit) ~= "number" or query_limit <= 0 then
-    return nil, error_mod.new("input", "max_queries must be > 0")
+  local target_bytes, target_err = protocol.peer_bytes(target_key)
+  if not target_bytes then
+    return nil, target_err
+  end
+  local target_hash, hash_err = self.routing_table:_hash(target_bytes)
+  if not target_hash then
+    return nil, hash_err
   end
 
-  local peers = self.routing_table:all_peers()
-  if #peers == 0 and options.bootstrap_if_empty then
+  local alpha = options.alpha or self.alpha
+  if type(alpha) ~= "number" or alpha <= 0 then
+    return nil, error_mod.new("input", "alpha must be > 0")
+  end
+  local disjoint_paths = options.disjoint_paths or options.disjointPaths or self.disjoint_paths
+  if type(disjoint_paths) ~= "number" or disjoint_paths <= 0 then
+    return nil, error_mod.new("input", "disjoint_paths must be > 0")
+  end
+
+  local initial_peers = self.routing_table:all_peers()
+  if #initial_peers == 0 and options.bootstrap_if_empty then
     local bootstrap_report, bootstrap_err = self:bootstrap({
       peer_discovery = options.peer_discovery,
       dnsaddr_resolver = options.dnsaddr_resolver,
@@ -611,28 +795,98 @@ function DHT:random_walk(opts)
     if not bootstrap_report then
       return nil, bootstrap_err
     end
-    peers = self.routing_table:all_peers()
+    initial_peers = self.routing_table:all_peers()
   end
 
-  local queried = 0
-  for _, entry in ipairs(peers) do
-    if queried >= query_limit then
-      break
+  local paths = {}
+  for i = 1, disjoint_paths do
+    paths[i] = {}
+  end
+  local queued = {}
+  local queried_peers = {}
+  local next_seed_path = 1
+  local function enqueue(path_index, peer, referrer_distance)
+    if not peer or not peer.peer_id or peer.peer_id == self.local_peer_id then
+      return
+    end
+    if queued[peer.peer_id] or queried_peers[peer.peer_id] then
+      return
+    end
+    if peer.addrs ~= nil and type(peer.addrs) == "table" and #dialable_tcp_addrs(self:_filter_addrs(peer.addrs, {
+      peer_id = peer.peer_id,
+      purpose = "random_walk_enqueue",
+    })) == 0 then
+      return
     end
 
-    queried = queried + 1
-    report.queried = report.queried + 1
-
-    local closest, closest_err = self:find_node(entry.peer_id, target_key, options.find_node_opts)
-    if not closest then
-      report.failed = report.failed + 1
-      report.errors[#report.errors + 1] = closest_err
-      if options.fail_fast then
-        return nil, closest_err
+    local distance, distance_err = self:_distance_to_target(peer.peer_id, target_hash)
+    if not distance then
+      if not options.ignore_add_errors then
+        report.errors[#report.errors + 1] = distance_err
       end
-      goto continue_queries
+      return
+    end
+    if referrer_distance and compare_distance(distance, referrer_distance) >= 0 then
+      return
     end
 
+    peer._distance = distance
+    queued[peer.peer_id] = true
+    paths[path_index][#paths[path_index] + 1] = peer
+  end
+
+  for _, entry in ipairs(initial_peers) do
+    enqueue(next_seed_path, entry)
+    next_seed_path = (next_seed_path % disjoint_paths) + 1
+  end
+
+  local function queue_has_entries()
+    for _, queue in ipairs(paths) do
+      if #queue > 0 then
+        return true
+      end
+    end
+    return false
+  end
+
+  local function next_from_path(path_index)
+    local queue = paths[path_index]
+    if #queue == 0 then
+      return nil
+    end
+    table.sort(queue, function(a, b)
+      local cmp = compare_distance(a._distance, b._distance)
+      if cmp == 0 then
+        return a.peer_id < b.peer_id
+      end
+      return cmp < 0
+    end)
+    return table.remove(queue, 1)
+  end
+
+  local function query_target_for(entry)
+    if entry.addr and not is_dialable_tcp_addr(entry.addr) then
+      return entry.peer_id
+    end
+    if entry.addrs then
+      local addrs = dialable_tcp_addrs(self:_filter_addrs(entry.addrs, {
+        peer_id = entry.peer_id,
+        purpose = "random_walk_query",
+      }))
+      if #addrs > 0 then
+        return {
+          peer_id = entry.peer_id,
+          addrs = addrs,
+        }
+      end
+    end
+    if not entry.addr and not entry.addrs then
+      return entry.peer_id
+    end
+    return entry
+  end
+
+  local function apply_query_result(path_index, entry, closest)
     report.responses = report.responses + 1
     report.discovered = report.discovered + #closest
 
@@ -643,13 +897,170 @@ function DHT:random_walk(opts)
         })
         if added then
           report.added = report.added + 1
+        elseif add_err and is_capacity_error(add_err) then
+          report.skipped = report.skipped + 1
         elseif add_err and not options.ignore_add_errors then
           report.errors[#report.errors + 1] = add_err
+        end
+        enqueue(path_index, candidate, entry._distance)
+      end
+    end
+  end
+
+  local ok_luv, uv = pcall(require, "luv")
+  local use_luv_concurrency = ok_luv
+    and self.host
+    and self.host._runtime == "luv"
+    and self.host._tcp_transport
+    and self.host._tcp_transport.BACKEND == "luv-native"
+
+  if use_luv_concurrency then
+    local active_by_path = {}
+    for i = 1, disjoint_paths do
+      active_by_path[i] = 0
+    end
+    local workers = {}
+    local done = false
+
+    local function spawn_worker(path_index, entry)
+      queued[entry.peer_id] = nil
+      if queried_peers[entry.peer_id] then
+        return
+      end
+      queried_peers[entry.peer_id] = true
+      report.queried = report.queried + 1
+      active_by_path[path_index] = active_by_path[path_index] + 1
+      workers[#workers + 1] = {
+        path_index = path_index,
+        entry = entry,
+        co = coroutine.create(function()
+          return self:find_node(query_target_for(entry), target_key, options.find_node_opts)
+        end),
+      }
+    end
+
+    local function fill_workers()
+      for path_index = 1, disjoint_paths do
+        while active_by_path[path_index] < alpha do
+          local entry = next_from_path(path_index)
+          if not entry then
+            break
+          end
+          spawn_worker(path_index, entry)
         end
       end
     end
 
-    ::continue_queries::
+    local timer = assert(uv.new_timer())
+    timer:start(0, 10, function()
+      fill_workers()
+
+      for i = #workers, 1, -1 do
+        local worker = workers[i]
+        local ok, closest, closest_err = coroutine.resume(worker.co)
+        if not ok then
+          local panic = closest
+          closest = nil
+          closest_err = error_mod.new("protocol", "kad query coroutine failed", { cause = panic })
+        end
+        if coroutine.status(worker.co) == "dead" then
+          table.remove(workers, i)
+          active_by_path[worker.path_index] = active_by_path[worker.path_index] - 1
+          if closest then
+            apply_query_result(worker.path_index, worker.entry, closest)
+          else
+            report.failed = report.failed + 1
+            report.errors[#report.errors + 1] = closest_err
+            if options.fail_fast then
+              done = true
+            end
+          end
+        end
+      end
+
+      if done or (#workers == 0 and not queue_has_entries()) then
+        timer:stop()
+        timer:close()
+        done = true
+      end
+    end)
+
+    while not done do
+      uv.run("once")
+    end
+
+    if options.fail_fast and #report.errors > 0 then
+      return nil, report.errors[#report.errors]
+    end
+    return report
+  end
+
+  local active = true
+  while active do
+    active = false
+    for path_index, queue in ipairs(paths) do
+      if #queue > 0 then
+        active = true
+        table.sort(queue, function(a, b)
+          local cmp = compare_distance(a._distance, b._distance)
+          if cmp == 0 then
+            return a.peer_id < b.peer_id
+          end
+          return cmp < 0
+        end)
+
+        local batch = {}
+        for _ = 1, math.min(alpha, #queue) do
+          batch[#batch + 1] = table.remove(queue, 1)
+        end
+
+        for _, entry in ipairs(batch) do
+          queued[entry.peer_id] = nil
+          if queried_peers[entry.peer_id] then
+            goto continue_queries
+          end
+          queried_peers[entry.peer_id] = true
+
+          report.queried = report.queried + 1
+
+          local query_target = entry
+          if not entry.addr and not entry.addrs then
+            query_target = entry.peer_id
+          end
+
+          local closest, closest_err = self:find_node(query_target, target_key, options.find_node_opts)
+          if not closest then
+            report.failed = report.failed + 1
+            report.errors[#report.errors + 1] = closest_err
+            if options.fail_fast then
+              return nil, closest_err
+            end
+            goto continue_queries
+          end
+
+          report.responses = report.responses + 1
+          report.discovered = report.discovered + #closest
+
+          for _, candidate in ipairs(closest) do
+            if candidate.peer_id then
+              local added, add_err = self:add_peer(candidate.peer_id, {
+                allow_replace = options.allow_replace,
+              })
+              if added then
+                report.added = report.added + 1
+              elseif add_err and is_capacity_error(add_err) then
+                report.skipped = report.skipped + 1
+              elseif add_err and not options.ignore_add_errors then
+                report.errors[#report.errors + 1] = add_err
+              end
+              enqueue(path_index, candidate, entry._distance)
+            end
+          end
+
+          ::continue_queries::
+        end
+      end
+    end
   end
 
   return report
@@ -657,6 +1068,11 @@ end
 
 function M.new(host, opts)
   local options = opts or {}
+
+  local address_filter, address_filter_err = normalize_address_filter(options.address_filter or options.addressFilter or options.address_filter_mode or options.addressFilterMode)
+  if not address_filter then
+    return nil, address_filter_err
+  end
 
   local local_peer_id = options.local_peer_id or options.localPeerId
   if not local_peer_id and host and type(host.peer_id) == "function" then
@@ -687,6 +1103,9 @@ function M.new(host, opts)
     protocol_id = options.protocol_id or M.PROTOCOL_ID,
     k = options.k or M.DEFAULT_K,
     alpha = options.alpha or M.DEFAULT_ALPHA,
+    disjoint_paths = options.disjoint_paths or options.disjointPaths or M.DEFAULT_DISJOINT_PATHS,
+    max_message_size = options.max_message_size or options.maxMessageSize or protocol.MAX_MESSAGE_SIZE,
+    address_filter = address_filter,
     bootstrappers = options.bootstrappers,
     peer_discovery = options.peer_discovery,
     routing_table = rt,

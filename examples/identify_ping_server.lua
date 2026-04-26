@@ -9,6 +9,7 @@ local ed25519 = require("lua_libp2p.crypto.ed25519")
 
 local listen_addr = arg[1] or "/ip4/127.0.0.1/tcp/64333"
 local key_path = arg[2] or "examples/.identify_ping_server.ed25519.key"
+local runtime = os.getenv("LUA_LIBP2P_RUNTIME") or "poll"
 
 local function file_exists(path)
 	local f = io.open(path, "rb")
@@ -50,11 +51,13 @@ local function on_started(h)
 	end
 	io.stdout:write("identity key: " .. key_path .. "\n")
 	io.stdout:write("peer id: " .. h:peer_id().id .. "\n")
+	io.stdout:write("runtime: " .. runtime .. "\n")
 	io.stdout:write("running; Ctrl-C to stop\n")
 	io.stdout:flush()
 end
 
 local host, host_err = host_mod.new({
+	runtime = runtime,
 	identity = identity,
 	listen_addrs = { listen_addr },
 	services = { "identify", "ping", "perf" },

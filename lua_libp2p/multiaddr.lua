@@ -31,6 +31,20 @@ local function validate_ip4(value)
   return true
 end
 
+local function parse_ip4_parts(value)
+  local a, b, c, d = tostring(value or ""):match("^(%d+)%.(%d+)%.(%d+)%.(%d+)$")
+  if not a then
+    return nil
+  end
+  local parts = { tonumber(a), tonumber(b), tonumber(c), tonumber(d) }
+  for i = 1, 4 do
+    if not parts[i] or parts[i] < 0 or parts[i] > 255 then
+      return nil
+    end
+  end
+  return parts
+end
+
 local function validate_ip6(value)
   if not value:match(":") then
     return nil, "invalid ip6 address"
@@ -385,13 +399,23 @@ function M.to_tcp_endpoint(input)
   end
 
   local host_part = addr.components[1]
-  local tcp_part = addr.components[2]
-  if tcp_part.protocol ~= "tcp" then
-    return nil, error_mod.new("input", "multiaddr must include /tcp as second component")
-  end
-
   if host_part.protocol ~= "ip4" and host_part.protocol ~= "dns" and host_part.protocol ~= "dns4" and host_part.protocol ~= "dns6" then
     return nil, error_mod.new("input", "unsupported tcp host protocol", { protocol = host_part.protocol })
+  end
+
+  local tcp_part = nil
+  for i = 2, #addr.components do
+    local component = addr.components[i]
+    if component.protocol == "tcp" then
+      tcp_part = component
+      break
+    end
+    if component.protocol == "udp" or component.protocol == "quic" or component.protocol == "quic-v1" or component.protocol == "ws" or component.protocol == "wss" then
+      return nil, error_mod.new("input", "unsupported tcp multiaddr transport", { protocol = component.protocol })
+    end
+  end
+  if not tcp_part then
+    return nil, error_mod.new("input", "multiaddr must include /tcp")
   end
 
   local port = tonumber(tcp_part.value)
@@ -404,6 +428,70 @@ function M.to_tcp_endpoint(input)
     host_protocol = host_part.protocol,
     port = port,
   }
+end
+
+local function first_host_component(input)
+  local addr = input
+  if type(addr) == "string" then
+    local parsed = M.parse(addr)
+    if not parsed then
+      return nil
+    end
+    addr = parsed
+  end
+  if type(addr) ~= "table" or type(addr.components) ~= "table" then
+    return nil
+  end
+  for _, component in ipairs(addr.components) do
+    if component.protocol == "ip4" or component.protocol == "ip6" or component.protocol == "dns" or component.protocol == "dns4" or component.protocol == "dns6" then
+      return component
+    end
+  end
+  return nil
+end
+
+function M.is_private_addr(input)
+  local host = first_host_component(input)
+  if not host then
+    return false
+  end
+  if host.protocol == "ip4" then
+    local parts = parse_ip4_parts(host.value)
+    if not parts then
+      return false
+    end
+    local a, b = parts[1], parts[2]
+    if a == 10 or a == 127 or a == 0 or a >= 224 then
+      return true
+    end
+    if a == 172 and b >= 16 and b <= 31 then
+      return true
+    end
+    if a == 192 and b == 168 then
+      return true
+    end
+    if a == 169 and b == 254 then
+      return true
+    end
+    if a == 100 and b >= 64 and b <= 127 then
+      return true
+    end
+    return false
+  end
+  if host.protocol == "ip6" then
+    local value = string.lower(tostring(host.value or ""))
+    return value == "::1" or value:match("^fc") ~= nil or value:match("^fd") ~= nil or value:match("^fe8") ~= nil or value:match("^fe9") ~= nil or value:match("^fea") ~= nil or value:match("^feb") ~= nil
+  end
+  local dns_name = string.lower(tostring(host.value or ""))
+  return dns_name == "localhost" or dns_name:match("%.localhost$") ~= nil or dns_name:match("%.local$") ~= nil
+end
+
+function M.is_public_addr(input)
+  local host = first_host_component(input)
+  if not host then
+    return false
+  end
+  return not M.is_private_addr(input)
 end
 
 local function ip4_to_bytes(ip4)

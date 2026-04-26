@@ -57,6 +57,17 @@ local function parse_bool(raw, name)
   fatal("invalid boolean env var for " .. name .. ": " .. tostring(raw))
 end
 
+local function parse_runtime(raw)
+  local value = raw
+  if value == nil or value == "" then
+    value = "luv"
+  end
+  if value ~= "luv" and value ~= "poll" then
+    fatal("invalid HOST_RUNTIME env var, expected 'luv' or 'poll': " .. tostring(value))
+  end
+  return value
+end
+
 local function run_command_capture(cmd)
   local pipe = io.popen(cmd)
   if not pipe then
@@ -233,6 +244,7 @@ local function run_listener(cfg)
   local muxer_protocol = muxer_protocol_id(cfg.muxer)
 
   local h, host_err = host_mod.new({
+    runtime = cfg.runtime,
     listen_addrs = { "/ip4/" .. cfg.listener_ip .. "/tcp/0" },
     security_transports = { security_protocol },
     muxers = { muxer_protocol },
@@ -305,6 +317,7 @@ local function run_dialer(cfg)
   local muxer_protocol = muxer_protocol_id(cfg.muxer)
 
   local h, host_err = host_mod.new({
+    runtime = cfg.runtime,
     security_transports = { security_protocol },
     muxers = { muxer_protocol },
     connect_timeout = 5,
@@ -358,6 +371,7 @@ local function main()
   local cfg = {
     debug = parse_bool(os.getenv("DEBUG") or "false", "DEBUG"),
     is_dialer = parse_bool(env("IS_DIALER"), "IS_DIALER"),
+    runtime = parse_runtime(os.getenv("HOST_RUNTIME")),
     redis_addr = env("REDIS_ADDR"),
     test_key = env("TEST_KEY"),
     transport = env("TRANSPORT"),

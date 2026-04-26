@@ -10,7 +10,26 @@ local function run()
     return nil, key_err
   end
 
+  local bad_host, bad_err = host.new({ runtime = "invalid-runtime" })
+  if bad_host ~= nil or not bad_err then
+    return nil, "expected invalid runtime to return input error"
+  end
+
+  local default_host, default_host_err = host.new({
+    identity = keypair,
+    blocking = false,
+  })
+  if not default_host then
+    return nil, default_host_err
+  end
+  local has_luv = pcall(require, "luv")
+  local expected_default_runtime = has_luv and "luv" or "poll"
+  if default_host._runtime ~= expected_default_runtime then
+    return nil, "host should default to luv when available and poll otherwise"
+  end
+
   local h, h_err = host.new({
+    runtime = "poll",
     identity = keypair,
     listen_addrs = { "/ip4/127.0.0.1/tcp/0" },
     transports = { "tcp" },
@@ -67,6 +86,9 @@ local function run()
   local local_peer = h:peer_id()
   if type(local_peer) ~= "table" or type(local_peer.id) ~= "string" or local_peer.id == "" then
     return nil, "peer_id method should return local peer id record"
+  end
+  if not h.peerstore then
+    return nil, "expected host peerstore"
   end
 
   local addrs_raw = h:get_multiaddrs_raw()

@@ -68,6 +68,19 @@ local function run()
     return nil, "no-value protocol roundtrip mismatch"
   end
 
+  if not multiaddr.is_private_addr("/ip4/10.0.0.1/tcp/4001") then
+    return nil, "expected RFC1918 ip4 addr to be private"
+  end
+  if multiaddr.is_public_addr("/ip4/127.0.0.1/tcp/4001") then
+    return nil, "expected loopback ip4 addr to not be public"
+  end
+  if not multiaddr.is_public_addr("/ip4/8.8.8.8/tcp/4001") then
+    return nil, "expected public ip4 addr to be public"
+  end
+  if not multiaddr.is_public_addr("/dns/bootstrap.libp2p.io/tcp/4001") then
+    return nil, "expected dns addr to pass public filter by default"
+  end
+
   return true
 end
 

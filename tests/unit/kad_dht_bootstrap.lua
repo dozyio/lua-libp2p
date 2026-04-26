@@ -8,7 +8,8 @@ local function fake_hash(value)
     ["peer-a"] = string.char(128) .. string.rep("\0", 31),
     ["peer-b"] = string.char(129) .. string.rep("\0", 31),
     ["peer-c"] = string.char(130) .. string.rep("\0", 31),
-    ["peer-d"] = string.char(131) .. string.rep("\0", 31),
+    ["peer-d"] = string.char(64) .. string.rep("\0", 31),
+    ["peer-e"] = string.char(32) .. string.rep("\0", 31),
   }
   return map[value] or (string.char(255) .. string.rep("\0", 31))
 end
@@ -19,22 +20,32 @@ local function run()
 
   function host:dial(target)
     dial_calls = dial_calls + 1
-    if target.addr == "/ip4/1.2.3.4/tcp/4001/p2p/peer-a" then
+    if target.addr == "/ip4/1.2.3.4/tcp/4001" then
       return {}, { remote_peer_id = "peer-a" }
     end
-    if target.addr == "/ip4/2.3.4.5/tcp/4001/p2p/peer-c" then
+    if target.addr == "/ip4/2.3.4.5/tcp/4001" then
       return {}, { remote_peer_id = "peer-c" }
     end
     return nil, nil, "dial failed"
   end
 
   function host:new_stream(peer_or_addr)
+    local target_peer = peer_or_addr
+    if type(peer_or_addr) == "table" then
+      target_peer = peer_or_addr.peer_id
+    end
+    local closer = {
+      { id = "peer-d", addrs = { "/ip4/4.4.4.4/tcp/4001" } },
+    }
+    if target_peer == "peer-d" then
+      closer = {
+        { id = "peer-e", addrs = { "/ip4/5.5.5.5/tcp/4001" } },
+      }
+    end
     local response, response_err = kad_protocol.encode_message({
       type = kad_protocol.MESSAGE_TYPE.FIND_NODE,
       key = "local",
-      closer_peers = {
-        { id = "peer-d" },
-      },
+      closer_peers = closer,
     })
     if not response then
       return nil, nil, nil, response_err
@@ -57,7 +68,7 @@ local function run()
       return out
     end
     function stream:write(payload)
-      if peer_or_addr == "peer-c" then
+      if target_peer == "peer-c" then
         return nil, "query stream failed"
       end
       self._out = self._out .. payload
@@ -79,19 +90,19 @@ local function run()
         {
           peer_id = "peer-a",
           addrs = {
-            "/ip4/1.2.3.4/tcp/4001/p2p/peer-a",
-            "/ip4/1.2.3.4/tcp/4001/p2p/peer-a",
+            "/ip4/1.2.3.4/tcp/4001",
+            "/ip4/1.2.3.4/tcp/4001",
           },
         },
         {
           peer_id = "peer-b",
           addrs = {
-            "/ip4/9.9.9.9/tcp/4001/p2p/peer-b",
+            "/ip4/9.9.9.9/tcp/4001",
           },
         },
         {
           addrs = {
-            "/ip4/2.3.4.5/tcp/4001/p2p/peer-c",
+            "/ip4/2.3.4.5/tcp/4001",
           },
         },
       }
@@ -139,7 +150,7 @@ local function run()
         {
           peer_id = "peer-b",
           addrs = {
-            "/ip4/9.9.9.9/tcp/4001/p2p/peer-b",
+            "/ip4/9.9.9.9/tcp/4001",
           },
         },
       }
@@ -160,19 +171,23 @@ local function run()
   if not walk then
     return nil, walk_err
   end
-  if walk.queried ~= 2 then
-    return nil, "expected two random walk queries"
+  if walk.queried < 3 then
+    return nil, "expected random walk to continue querying discovered peers"
   end
-  if walk.responses ~= 1 or walk.failed ~= 1 then
-    return nil, "expected one random walk success and one failure"
+  if walk.responses < 2 or walk.failed ~= 1 then
+    return nil, "expected random walk successes plus one initial failure"
   end
-  if walk.added < 1 then
+  if walk.added < 2 then
     return nil, "expected random walk to add discovered peers"
   end
 
   local peer_d = dht:find_peer("peer-d")
   if not peer_d then
     return nil, "random walk should add discovered peer-d"
+  end
+  local peer_e = dht:find_peer("peer-e")
+  if not peer_e then
+    return nil, "random walk should query discovered peer-d and add peer-e"
   end
 
   return true

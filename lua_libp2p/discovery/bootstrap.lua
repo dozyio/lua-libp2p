@@ -29,6 +29,27 @@ local function copy_list(values)
   return out
 end
 
+local function is_dialable_tcp_addr(addr)
+  local parsed = multiaddr.parse(addr)
+  if not parsed or type(parsed.components) ~= "table" or #parsed.components < 2 then
+    return false
+  end
+  local host_part = parsed.components[1]
+  local tcp_part = parsed.components[2]
+  if host_part.protocol ~= "ip4" and host_part.protocol ~= "dns" and host_part.protocol ~= "dns4" and host_part.protocol ~= "dns6" then
+    return false
+  end
+  if tcp_part.protocol ~= "tcp" then
+    return false
+  end
+  for i = 3, #parsed.components do
+    if parsed.components[i].protocol ~= "p2p" then
+      return false
+    end
+  end
+  return true
+end
+
 function BootstrapSource:discover(opts)
   local options = opts or {}
   local resolver = options.dnsaddr_resolver or self.dnsaddr_resolver
@@ -47,7 +68,7 @@ function BootstrapSource:discover(opts)
     end
 
     for _, candidate in ipairs(resolved) do
-      if not dialable_only or multiaddr.to_tcp_endpoint(candidate) then
+      if not dialable_only or is_dialable_tcp_addr(candidate) then
         out[#out + 1] = {
           peer_id = parse_peer_id(candidate),
           addrs = { candidate },

@@ -164,6 +164,10 @@ end
 local Stream = {}
 Stream.__index = Stream
 
+local function can_yield()
+  return type(coroutine.isyieldable) == "function" and coroutine.isyieldable()
+end
+
 function Stream:new(session, stream_id)
   return setmetatable({
     session = session,
@@ -194,13 +198,25 @@ function Stream:read(length)
       if self.remote_closed then
         return nil, error_mod.new("closed", "yamux stream closed during read")
       end
+      if self.session._pump_error then
+        return nil, self.session._pump_error
+      end
+      if can_yield() then
+        self.session._has_waiters = true
+        coroutine.yield({ kind = "yamux_stream_wait", session = self.session, stream_id = self.id })
+        goto continue_read_wait
+      end
       local _, err = self.session:process_one()
       if err then
         return nil, err
       end
+      if type(coroutine.isyieldable) == "function" and coroutine.isyieldable() then
+        coroutine.yield({ kind = "yamux_stream_wait", session = self.session, stream_id = self.id })
+      end
       if self.reset then
         return nil, error_mod.new("closed", "yamux stream reset during read")
       end
+      ::continue_read_wait::
     end
   end
 
@@ -223,6 +239,14 @@ function Stream:write(payload)
   local offset = 1
   while offset <= #payload do
     while self.send_window <= 0 do
+      if self.session._pump_error then
+        return nil, self.session._pump_error
+      end
+      if can_yield() then
+        self.session._has_waiters = true
+        coroutine.yield({ kind = "yamux_window_wait", session = self.session, stream_id = self.id })
+        goto continue_window_wait
+      end
       local _, proc_err = self.session:process_one()
       if proc_err then
         return nil, proc_err
@@ -230,6 +254,7 @@ function Stream:write(payload)
       if self.reset then
         return nil, error_mod.new("closed", "yamux stream reset during write")
       end
+      ::continue_window_wait::
     end
 
     local remaining = #payload - offset + 1
@@ -324,7 +349,14 @@ function Session:new(conn, opts)
     max_accept_backlog = options.max_accept_backlog or 256,
     pending_accept = {},
     go_away = false,
+    _processing = false,
+    _pump_error = nil,
+    _has_waiters = false,
   }, self)
+end
+
+function Session:has_waiters()
+  return self._has_waiters == true
 end
 
 function Session:_is_local_stream_id(stream_id)
@@ -419,7 +451,7 @@ function Session:accept_stream_now()
   return table.remove(self.pending_accept, 1)
 end
 
-function Session:process_one()
+function Session:_process_one_unlocked()
   local frame, frame_err = M.read_frame(self.conn)
   if not frame then
     return nil, frame_err
@@ -493,6 +525,38 @@ function Session:process_one()
   end
 
   return frame
+end
+
+function Session:process_one()
+  if self._pump_error then
+    return nil, self._pump_error
+  end
+  self._has_waiters = false
+  if self._processing then
+    if type(coroutine.isyieldable) == "function" and coroutine.isyieldable() then
+      while self._processing do
+        coroutine.yield({ kind = "yamux_read_pump", session = self })
+      end
+      return true
+    end
+    self._has_waiters = true
+    return nil, error_mod.new("timeout", "yamux read pump is already active")
+  end
+
+  self._processing = true
+  local result = { pcall(function()
+    return self:_process_one_unlocked()
+  end) }
+  self._processing = false
+
+  if not result[1] then
+    self._pump_error = error_mod.new("protocol", "yamux read pump panicked", { cause = result[2] })
+    return nil, self._pump_error
+  end
+  if result[2] == nil and result[3] and not (error_mod.is_error(result[3]) and result[3].kind == "timeout") then
+    self._pump_error = result[3]
+  end
+  return result[2], result[3]
 end
 
 function M.new_session(conn, opts)

@@ -14,7 +14,7 @@ This repo currently includes:
 - Multibase/multiformat primitives (base58btc, base32, varint, multihash, CIDv1)
 - Signed envelope + peer record encode/sign/verify primitives
 - Kademlia kbucket routing-table module (`lua_libp2p.kbucket`)
-- Kademlia DHT module with routing-table integration, FIND_NODE wire codec/handler path, default libp2p bootstrapper list, and discovery-driven bootstrap dial routine (`lua_libp2p.kad_dht`)
+- Kademlia DHT module with routing-table integration, FIND_NODE wire codec/handler path, public/private/custom address filtering, default libp2p bootstrapper list, discovery-driven bootstrap, and concurrent random-walk refresh (`lua_libp2p.kad_dht`)
 - TCP transport with `/ip4/.../tcp/...` multiaddr parsing, dial/listen, and connection lifecycle controls
 - multistream-select framing and protocol negotiation (`/multistream/1.0.0`)
 - noise-libp2p XX handshake + secure channel framing primitives (`/noise`)
@@ -23,8 +23,8 @@ This repo currently includes:
 - identify protocol message codec (protobuf framing, binary multiaddr fields, optional `signedPeerRecord`), basic request/response, push helpers, and multi-message merge utility (`/ipfs/id/1.0.0`, `/ipfs/id/push/1.0.0`)
 - ping protocol echo + RTT helper (`/ipfs/ping/1.0.0`)
 - perf protocol upload/download helper and handler (`/perf/1.0.0`)
-- yamux stream multiplexer foundation (`/yamux/1.0.0`) with frame codec and multi-stream session basics
-- transport-agnostic connection/stream abstraction with pluggable muxer session support
+- yamux stream multiplexer foundation (`/yamux/1.0.0`) with frame codec, multi-stream sessions, and a single-reader pump path
+- transport-agnostic connection/stream abstraction with pluggable stream session support
 - connection upgrader pipeline (security + muxer negotiation) for plaintext+yamux and noise+yamux
 - host/node API with lifecycle (`start`/`stop`) and stream operations (`dial`, `new_stream`, `handle`)
 - Host behavior is configured at `new(...)`; `start()` takes no options
@@ -52,20 +52,42 @@ This repo currently includes:
 
 ## Runtime assumptions
 
-- Lua 5.4.x (recommended)
+- Lua 5.4.8 (recommended)
+- Lua 5.5 is not currently supported for the full dependency set because `luaossl` does not build against Lua 5.5 yet.
 - LuaRocks for dependency management
 - Runtime dependencies:
-  - `luasocket`
-  - `lua-protobuf`
+- `luasocket`
+- `lua-protobuf`
 - `luasodium` (ed25519)
-- `openssl` command available on PATH (required for RSA noise identity verification)
+- `luv` (libuv runtime backend)
+- `luaossl` (native RSA noise identity verification)
 - Tests run with the Lua interpreter directly
+
+Host runtime note:
+- `runtime = "auto"` is the default. It selects `luv` when the `luv` module is available, otherwise `poll`.
+- `runtime = "poll"` keeps the poll/select scheduler.
+- `runtime = "luv"` enables a libuv-backed internal scheduler and uses the native `luv` TCP transport when `luv` is available.
+- With `runtime = "luv"` and `blocking = false`, a uv loop must be running in the process.
+- Set `LUA_LIBP2P_TCP_LUV_PROXY=1` to force the compatibility proxy transport under `runtime = "luv"`.
+- Proxy mode is a temporary fallback/debug path; native luv TCP is the recommended and faster luv runtime transport.
+
+Networking note:
+- `lua_libp2p.network.MESSAGE_SIZE_MAX` is `4 * 1024 * 1024` bytes, matching the 4 MiB practical KAD RPC cap used by Go/JS implementations.
+- The connection abstraction is stream-session based, not yamux-specific. TCP+Noise+Yamux is the current default stack, but future transports with native stream multiplexing, such as QUIC, can provide their own session implementation.
+- A stream session is expected to provide `open_stream()`, `accept_stream_now()`, optional `process_one()`, optional `has_waiters()`, and optional `close()`.
 
 ## Install dependencies (LuaRocks)
 
 ```bash
 brew install libsodium
 luarocks make lua-libp2p-0.1.0-1.rockspec
+```
+
+If using Homebrew `lua@5.4`, put Lua 5.4 first on `PATH` and load the matching LuaRocks paths before running examples/tests:
+
+```bash
+export PATH="/opt/homebrew/opt/lua@5.4/bin:$PATH"
+eval "$(luarocks --lua-version=5.4 --lua-dir=/opt/homebrew/opt/lua@5.4 path)"
 ```
 
 ## Key serialization
@@ -87,6 +109,8 @@ Or via Make:
 
 ```bash
 make test
+make test-luv-native
+make test-luv-proxy
 ```
 
 Yamux interop check against go-yamux:
@@ -94,13 +118,23 @@ Yamux interop check against go-yamux:
 ```bash
 make interop-yamux-go
 make interop-yamux-go-reverse
+make interop-yamux-go-luv-native
+make interop-yamux-go-reverse-luv-native
+make interop-yamux-go-luv-proxy
+make interop-yamux-go-reverse-luv-proxy
 
 # Noise interop checks against go-libp2p Noise
 make interop-noise-go
 make interop-noise-go-reverse
+make interop-noise-go-luv-native
+make interop-noise-go-reverse-luv-native
+make interop-noise-go-luv-proxy
+make interop-noise-go-reverse-luv-proxy
 
 # JS perf interop check against lua host
 make interop-perf-js
+make interop-perf-js-luv-native
+make interop-perf-js-luv-proxy
 ```
 
 Note: multiaddr conformance tests include a go/js-derived vector set plus an explicit
@@ -114,4 +148,38 @@ lua examples/kad_dht_bootstrap_demo.lua server
 
 # terminal 2 (paste a /p2p listen addr printed by terminal 1)
 lua examples/kad_dht_bootstrap_demo.lua client /ip4/127.0.0.1/tcp/12345/p2p/12D3KooW...
+
+# public libp2p bootstrap crawl
+lua examples/kad_dht_bootstrap_demo.lua client --default-bootstrap
 ```
+
+The public bootstrap demo:
+- resolves `/dnsaddr/bootstrap.libp2p.io`, filtering to currently dialable TCP addresses,
+- bootstraps against the default public libp2p bootstrap peers,
+- runs one `FIND_NODE` query,
+- runs one concurrent random-walk refresh with `alpha = 10` and `disjoint_paths = 10`,
+- prints summarized error counts and the closest routing-table peers at the end.
+
+The DHT defaults are tuned for the public DHT:
+- `k = 20`
+- `alpha = 10`
+- `disjoint_paths = 10`
+- `max_message_size = lua_libp2p.network.MESSAGE_SIZE_MAX` (`4 MiB`)
+- `address_filter = "public"`
+
+Address filtering is configurable:
+
+```lua
+local dht = assert(kad_dht.new(host, {
+  address_filter = "public", -- "public", "private", or "all"
+}))
+
+local custom = assert(kad_dht.new(host, {
+  address_filter = function(addr, ctx)
+    -- ctx includes fields such as peer_id and purpose.
+    return addr:match("/tcp/4001") ~= nil
+  end,
+}))
+```
+
+The address-scope filter is separate from transport dialability filtering. For now, the public crawler stores valid peer addresses but only dials currently supported TCP addresses.

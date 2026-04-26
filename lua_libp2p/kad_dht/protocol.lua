@@ -1,10 +1,11 @@
 local error_mod = require("lua_libp2p.error")
+local network = require("lua_libp2p.network")
 local peerid = require("lua_libp2p.peerid")
 local varint = require("lua_libp2p.multiformats.varint")
 
 local M = {}
 
-M.MAX_MESSAGE_SIZE = 16 * 1024
+M.MAX_MESSAGE_SIZE = network.MESSAGE_SIZE_MAX
 
 M.MESSAGE_TYPE = {
   PUT_VALUE = 0,
@@ -405,14 +406,27 @@ function M.decode_message(payload)
   return out
 end
 
-function M.read(conn)
+local function max_message_size(opts)
+  local max = opts and opts.max_message_size or M.MAX_MESSAGE_SIZE
+  if type(max) ~= "number" or max < 1 then
+    return nil, error_mod.new("input", "max_message_size must be a positive number")
+  end
+  return max
+end
+
+function M.read(conn, opts)
+  local max, max_err = max_message_size(opts)
+  if not max then
+    return nil, max_err
+  end
+
   local length, len_err = read_varint(conn)
   if not length then
     return nil, len_err
   end
-  if length > M.MAX_MESSAGE_SIZE then
+  if length > max then
     return nil, error_mod.new("decode", "kad-dht message too large", {
-      max = M.MAX_MESSAGE_SIZE,
+      max = max,
       got = length,
     })
   end
@@ -425,14 +439,19 @@ function M.read(conn)
   return M.decode_message(payload)
 end
 
-function M.write(conn, message)
+function M.write(conn, message, opts)
+  local max, max_err = max_message_size(opts)
+  if not max then
+    return nil, max_err
+  end
+
   local payload, payload_err = M.encode_message(message)
   if not payload then
     return nil, payload_err
   end
-  if #payload > M.MAX_MESSAGE_SIZE then
+  if #payload > max then
     return nil, error_mod.new("input", "kad-dht payload too large", {
-      max = M.MAX_MESSAGE_SIZE,
+      max = max,
       got = #payload,
     })
   end

@@ -217,6 +217,51 @@ local function usage()
   io.stderr:write("  (note: bootstrap multiaddr must start with '/'; e.g. /ip4/127.0.0.1/tcp/12345/p2p/12D3KooW...)\n")
 end
 
+local function summarize_error(err)
+  local suffix = ""
+  if type(err) == "table" and type(err.context) == "table" then
+    local parts = {}
+    for _, key in ipairs({ "cause", "code", "protocol", "protocol_id", "received_key_type_name", "received_key_type" }) do
+      if err.context[key] ~= nil then
+        parts[#parts + 1] = key .. "=" .. tostring(err.context[key])
+      end
+    end
+    if #parts > 0 then
+      suffix = " (" .. table.concat(parts, ", ") .. ")"
+    end
+  end
+  return tostring(err) .. suffix
+end
+
+local function print_error_summary(errors, max_lines)
+  local counts = {}
+  local order = {}
+  for _, err in ipairs(errors or {}) do
+    local key = summarize_error(err)
+    if counts[key] == nil then
+      counts[key] = 0
+      order[#order + 1] = key
+    end
+    counts[key] = counts[key] + 1
+  end
+
+  table.sort(order, function(a, b)
+    if counts[a] == counts[b] then
+      return a < b
+    end
+    return counts[a] > counts[b]
+  end)
+
+  local limit = max_lines or 20
+  for i, key in ipairs(order) do
+    if i > limit then
+      io.stdout:write("    ... " .. tostring(#order - limit) .. " more error type(s)\n")
+      break
+    end
+    io.stdout:write("    " .. tostring(counts[key]) .. "x " .. key .. "\n")
+  end
+end
+
 local function run_server()
   local listen_addr = arg[2] or "/ip4/127.0.0.1/tcp/0"
 
@@ -321,9 +366,12 @@ local function run_client()
   end
 
   local host, host_err = host_mod.new({
+    runtime = "luv",
     listen_addrs = { "/ip4/127.0.0.1/tcp/0" },
     services = { "identify" },
     blocking = false,
+    connect_timeout = 6,
+    io_timeout = 10,
     accept_timeout = 0.05,
   })
   if not host then
@@ -392,9 +440,7 @@ local function run_client()
     os.exit(1)
   end
 
-  local report, bootstrap_err = dht:bootstrap({
-    max_success = 1,
-  })
+  local report, bootstrap_err = dht:bootstrap()
   if not report then
     io.stderr:write("bootstrap failed: " .. tostring(bootstrap_err) .. "\n")
     os.exit(1)
@@ -404,20 +450,11 @@ local function run_client()
   io.stdout:write("  attempted: " .. tostring(report.attempted) .. "\n")
   io.stdout:write("  connected: " .. tostring(report.connected) .. "\n")
   io.stdout:write("  added: " .. tostring(report.added) .. "\n")
+  io.stdout:write("  skipped: " .. tostring(report.skipped or 0) .. "\n")
   io.stdout:write("  failed: " .. tostring(report.failed) .. "\n")
   if #report.errors > 0 then
     io.stdout:write("  errors:\n")
-    for _, err in ipairs(report.errors) do
-      local suffix = ""
-      if type(err) == "table" and type(err.context) == "table" then
-        local key_name = err.context.received_key_type_name
-        local key_num = err.context.received_key_type
-        if key_name or key_num then
-          suffix = string.format(" (received_key_type=%s/%s)", tostring(key_name), tostring(key_num))
-        end
-      end
-      io.stdout:write("    " .. tostring(err) .. suffix .. "\n")
-    end
+    print_error_summary(report.errors)
   end
 
   local pumped, pump_err = pump_host(20)
@@ -460,7 +497,8 @@ local function run_client()
 
     io.stdout:write("running one random-walk refresh (target=self peer id)...\n")
     local walk, walk_err = dht:random_walk({
-      max_queries = 1,
+      alpha = 10,
+      disjoint_paths = 10,
       bootstrap_if_empty = true,
     })
     if not walk then
@@ -470,7 +508,18 @@ local function run_client()
       io.stdout:write("  queried: " .. tostring(walk.queried) .. "\n")
       io.stdout:write("  responses: " .. tostring(walk.responses) .. "\n")
       io.stdout:write("  added: " .. tostring(walk.added) .. "\n")
+      io.stdout:write("  skipped: " .. tostring(walk.skipped or 0) .. "\n")
       io.stdout:write("  failed: " .. tostring(walk.failed) .. "\n")
+      if #walk.errors > 0 then
+        io.stdout:write("  errors:\n")
+        print_error_summary(walk.errors)
+      end
+
+      local closest = dht:find_closest_peers(host:peer_id().id, 20) or {}
+      io.stdout:write("closest routing table peers:\n")
+      for _, peer in ipairs(closest) do
+        io.stdout:write("  " .. tostring(peer.peer_id) .. "\n")
+      end
     end
   else
     io.stdout:write("bootstrap addr has no /p2p component; skipping FIND_NODE demo\n")
