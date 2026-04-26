@@ -1,9 +1,9 @@
 local error_mod = require("lua_libp2p.error")
 local connection = require("lua_libp2p.network.connection")
+local muxer_registry = require("lua_libp2p.muxer")
 local mss = require("lua_libp2p.protocol.mss")
 local noise = require("lua_libp2p.security.noise")
 local plaintext = require("lua_libp2p.protocol.plaintext")
-local yamux = require("lua_libp2p.muxer.yamux")
 
 local M = {}
 
@@ -12,7 +12,7 @@ local function default_security_protocols()
 end
 
 local function default_muxer_protocols()
-  return { yamux.PROTOCOL_ID }
+  return muxer_registry.protocol_ids()
 end
 
 local function select_early_muxer(selected_security, muxer_protocols, sec_state, is_outbound)
@@ -183,16 +183,16 @@ function M.upgrade_outbound(raw_conn, opts)
       return nil, nil, mux_err
     end
   end
-  if selected_muxer ~= yamux.PROTOCOL_ID then
-    return nil, nil, error_mod.new("unsupported", "muxer protocol not supported", { protocol = selected_muxer })
-  end
-
-  local conn = connection.with_yamux(secure_conn, {
+  local session, session_err = muxer_registry.new_session(selected_muxer, secure_conn, {
     is_client = true,
     initial_stream_window = options.initial_stream_window,
     max_ack_backlog = options.max_ack_backlog,
     max_accept_backlog = options.max_accept_backlog,
   })
+  if not session then
+    return nil, nil, session_err
+  end
+  local conn = connection.from_session(secure_conn, session)
 
   local state = {
     security = sec_state.security,
@@ -237,16 +237,16 @@ function M.upgrade_inbound(raw_conn, opts)
       return nil, nil, mux_err
     end
   end
-  if selected_muxer ~= yamux.PROTOCOL_ID then
-    return nil, nil, error_mod.new("unsupported", "muxer protocol not supported", { protocol = selected_muxer })
-  end
-
-  local conn = connection.with_yamux(secure_conn, {
+  local session, session_err = muxer_registry.new_session(selected_muxer, secure_conn, {
     is_client = false,
     initial_stream_window = options.initial_stream_window,
     max_ack_backlog = options.max_ack_backlog,
     max_accept_backlog = options.max_accept_backlog,
   })
+  if not session then
+    return nil, nil, session_err
+  end
+  local conn = connection.from_session(secure_conn, session)
 
   local state = {
     security = sec_state.security,

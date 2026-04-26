@@ -77,7 +77,7 @@ local function run()
   })
   local stream = new_scripted_stream(inbound)
   local mux_conn = connection.from_raw(new_scripted_stream(""), {
-    muxer_session = new_fake_muxer(stream),
+    session = new_fake_muxer(stream),
   })
 
   local selected_stream, selected, sel_err = mux_conn:new_stream({ proto })
@@ -94,6 +94,10 @@ local function run()
   })
   if stream:writes() ~= expected_writes then
     return nil, "network connection did not negotiate using mss"
+  end
+
+  if mux_conn:session() == nil then
+    return nil, "expected generic session accessor"
   end
 
   return true

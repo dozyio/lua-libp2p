@@ -1,6 +1,5 @@
 local error_mod = require("lua_libp2p.error")
 local mss = require("lua_libp2p.protocol.mss")
-local yamux = require("lua_libp2p.muxer.yamux")
 
 local M = {}
 
@@ -11,7 +10,7 @@ function Connection:new(raw_conn, opts)
   local options = opts or {}
   return setmetatable({
     _raw_conn = raw_conn,
-    _muxer = options.muxer_session,
+    _session = options.session or options.muxer_session,
     _direct_consumed = false,
   }, self)
 end
@@ -21,11 +20,15 @@ function Connection:raw()
 end
 
 function Connection:muxer_session()
-  return self._muxer
+  return self._session
+end
+
+function Connection:session()
+  return self._session
 end
 
 function Connection:has_waiters()
-  return self._muxer and type(self._muxer.has_waiters) == "function" and self._muxer:has_waiters() or false
+  return self._session and type(self._session.has_waiters) == "function" and self._session:has_waiters() or false
 end
 
 function Connection:socket()
@@ -47,15 +50,18 @@ function Connection:process_one()
 end
 
 function Connection:pump_once()
-  if not self._muxer then
+  if not self._session or type(self._session.process_one) ~= "function" then
     return nil
   end
-  return self._muxer:process_one()
+  return self._session:process_one()
 end
 
 function Connection:new_stream_raw()
-  if self._muxer then
-    return self._muxer:open_stream()
+  if self._session then
+    if type(self._session.open_stream) ~= "function" then
+      return nil, error_mod.new("unsupported", "connection session cannot open streams")
+    end
+    return self._session:open_stream()
   end
   if self._direct_consumed then
     return nil, error_mod.new("state", "raw connection already consumed as stream")
@@ -65,8 +71,11 @@ function Connection:new_stream_raw()
 end
 
 function Connection:accept_stream_raw()
-  if self._muxer then
-    return self._muxer:accept_stream_now()
+  if self._session then
+    if type(self._session.accept_stream_now) ~= "function" then
+      return nil, error_mod.new("unsupported", "connection session cannot accept streams")
+    end
+    return self._session:accept_stream_now()
   end
   if self._direct_consumed then
     return nil, error_mod.new("state", "raw connection already consumed as stream")
@@ -106,6 +115,9 @@ function Connection:accept_stream(router)
 end
 
 function Connection:close()
+  if self._session and type(self._session.close) == "function" then
+    return self._session:close()
+  end
   return self._raw_conn:close()
 end
 
@@ -113,17 +125,9 @@ function M.from_raw(raw_conn, opts)
   return Connection:new(raw_conn, opts)
 end
 
-function M.with_yamux(raw_conn, opts)
-  local options = opts or {}
-  local muxer = yamux.new_session(raw_conn, {
-    is_client = not not options.is_client,
-    initial_stream_window = options.initial_stream_window,
-    max_ack_backlog = options.max_ack_backlog,
-    max_accept_backlog = options.max_accept_backlog,
-  })
-
+function M.from_session(raw_conn, session)
   return Connection:new(raw_conn, {
-    muxer_session = muxer,
+    session = session,
   })
 end
 
