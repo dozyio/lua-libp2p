@@ -2,6 +2,7 @@ local ed25519 = require("lua_libp2p.crypto.ed25519")
 local error_mod = require("lua_libp2p.error")
 local log = require("lua_libp2p.log")
 local host_runtime_luv = require("lua_libp2p.host_runtime_luv")
+local host_runtime_luv_native = require("lua_libp2p.host_runtime_luv_native")
 local host_runtime_poll = require("lua_libp2p.host_runtime_poll")
 local multiaddr = require("lua_libp2p.multiaddr")
 local peerid = require("lua_libp2p.peerid")
@@ -260,6 +261,7 @@ function Host:new(config)
     _listeners = {},
     _connections = {},
     _connections_by_peer = {},
+    _pending_inbound = {},
     _event_handlers = {},
     _event_queue_max = cfg.event_queue_max or cfg.eventQueueMax or DEFAULT_EVENT_QUEUE_MAX,
     _event_subscribers = {},
@@ -822,6 +824,68 @@ end
 
 function Host:_poll_once_with_ready_map(timeout, ready_map)
 
+  for i = #self._pending_inbound, 1, -1 do
+    local pending_entry = self._pending_inbound[i]
+    local raw_conn = host_runtime_luv_native.pending_raw(pending_entry)
+
+    if host_runtime_luv_native.is_native_host(self) then
+      local status, _, resume_err, normalized_entry = host_runtime_luv_native.resume_inbound_upgrade(
+        self,
+        pending_entry,
+        is_nonfatal_stream_error
+      )
+      self._pending_inbound[i] = normalized_entry
+      if status == "pending" then
+        goto continue_pending_inbound
+      end
+      table.remove(self._pending_inbound, i)
+      if status == "error" then
+        return nil, resume_err
+      end
+      goto continue_pending_inbound
+    end
+
+    if raw_conn and type(raw_conn.begin_read_tx) == "function" then
+      raw_conn:begin_read_tx()
+    end
+    local conn, state, up_err = upgrader.upgrade_inbound(raw_conn, {
+      local_keypair = self.identity,
+      security_protocols = self.security_transports,
+      muxer_protocols = self.muxers,
+    })
+    if conn then
+      if raw_conn and type(raw_conn.commit_read_tx) == "function" then
+        raw_conn:commit_read_tx()
+      end
+      table.remove(self._pending_inbound, i)
+      local entry, register_err = self:_register_connection(conn, state)
+      if not entry then
+        conn:close()
+        return nil, register_err
+      end
+    elseif up_err and error_mod.is_error(up_err) and up_err.kind == "timeout" then
+      if raw_conn and type(raw_conn.rollback_read_tx) == "function" then
+        raw_conn:rollback_read_tx()
+      end
+      -- keep pending; retry on next poll tick
+    elseif is_nonfatal_stream_error(up_err) then
+      if raw_conn and type(raw_conn.rollback_read_tx) == "function" then
+        raw_conn:rollback_read_tx()
+      end
+      table.remove(self._pending_inbound, i)
+      raw_conn:close()
+    else
+      if raw_conn and type(raw_conn.rollback_read_tx) == "function" then
+        raw_conn:rollback_read_tx()
+      end
+      table.remove(self._pending_inbound, i)
+      raw_conn:close()
+      return nil, up_err
+    end
+
+    ::continue_pending_inbound::
+  end
+
   for _, listener in ipairs(self._listeners) do
     local should_accept = true
     if ready_map then
@@ -837,17 +901,44 @@ function Host:_poll_once_with_ready_map(timeout, ready_map)
       raw_conn, accept_err = listener:accept(accept_timeout)
     end
     if raw_conn then
+      if host_runtime_luv_native.is_native_host(self) then
+        self._pending_inbound[#self._pending_inbound + 1] = { raw_conn = raw_conn }
+        goto continue_listeners
+      end
+
+      if raw_conn and type(raw_conn.begin_read_tx) == "function" then
+        raw_conn:begin_read_tx()
+      end
       local conn, state, up_err = upgrader.upgrade_inbound(raw_conn, {
         local_keypair = self.identity,
         security_protocols = self.security_transports,
         muxer_protocols = self.muxers,
       })
       if not conn then
+        if up_err and error_mod.is_error(up_err)
+          and up_err.kind == "timeout"
+          and self._runtime == "luv"
+          and self._tcp_transport
+          and self._tcp_transport.BACKEND == "luv-native"
+        then
+          if raw_conn and type(raw_conn.rollback_read_tx) == "function" then
+            raw_conn:rollback_read_tx()
+          end
+          self._pending_inbound[#self._pending_inbound + 1] = raw_conn
+          goto continue_listeners
+        end
+
+        if raw_conn and type(raw_conn.rollback_read_tx) == "function" then
+          raw_conn:rollback_read_tx()
+        end
         raw_conn:close()
         if is_nonfatal_stream_error(up_err) then
           goto continue_listeners
         end
         return nil, up_err
+      end
+      if raw_conn and type(raw_conn.commit_read_tx) == "function" then
+        raw_conn:commit_read_tx()
       end
       local entry, register_err = self:_register_connection(conn, state)
       if not entry then
@@ -876,6 +967,19 @@ function Host:_poll_once_with_ready_map(timeout, ready_map)
     end
 
     if should_process then
+      if host_runtime_luv_native.is_native_host(self) then
+        local ok, native_err = host_runtime_luv_native.process_connection(
+          self,
+          entry,
+          router,
+          is_nonfatal_stream_error
+        )
+        if not ok then
+          return nil, native_err
+        end
+        goto continue_connections
+      end
+
       local _, process_err = conn:process_one()
       if process_err then
         if is_nonfatal_stream_error(process_err) then
@@ -1034,6 +1138,11 @@ function Host:close()
   self._connections = {}
   self._connections_by_peer = {}
   self._handler_tasks = {}
+
+  for _, raw_conn in ipairs(self._pending_inbound) do
+    raw_conn:close()
+  end
+  self._pending_inbound = {}
 
   for _, listener in ipairs(self._listeners) do
     listener:close()

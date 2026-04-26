@@ -8,6 +8,7 @@ local tests = {
   (require("tests.integration.dummy_loopback")),
   (require("tests.integration.identify_tcp")),
   (require("tests.integration.host_luv_runtime_identify_event")),
+  (require("tests.integration.host_luv_native_coroutine_resume")),
   (require("tests.integration.host_luv_runtime_noise_ping_subprocess")),
   (require("tests.integration.host_luv_runtime_ping_subprocess")),
   (require("tests.integration.host_luv_runtime_stream_error_kinds_subprocess")),

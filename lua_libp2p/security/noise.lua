@@ -680,6 +680,13 @@ function SecureConn:socket()
   return nil
 end
 
+function SecureConn:watch_luv_readable(on_readable)
+  if self._raw and type(self._raw.watch_luv_readable) == "function" then
+    return self._raw:watch_luv_readable(on_readable)
+  end
+  return nil, error_mod.new("unsupported", "raw noise connection does not support luv readable watches")
+end
+
 function SecureConn:local_multiaddr()
   if self._raw.local_multiaddr then
     return self._raw:local_multiaddr()

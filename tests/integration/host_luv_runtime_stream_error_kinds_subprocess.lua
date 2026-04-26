@@ -73,6 +73,7 @@ local function run()
   local completed = false
   local timeout_hit = false
   local stop_sent = false
+  local timeout_timer
 
   local poll_timer = assert(uv.new_timer())
   poll_timer:start(10, 20, function()
@@ -89,10 +90,14 @@ local function run()
       completed = true
       poll_timer:stop()
       poll_timer:close()
+      if timeout_timer then
+        timeout_timer:stop()
+        timeout_timer:close()
+      end
     end
   end)
 
-  local timeout_timer = assert(uv.new_timer())
+  timeout_timer = assert(uv.new_timer())
   timeout_timer:start(5000, 0, function()
     timeout_hit = true
     timeout_timer:stop()

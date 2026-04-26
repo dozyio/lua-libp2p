@@ -26,7 +26,7 @@ if not h then
   fail("init_error", h_err)
 end
 
-local stream, _, _, _, stream_err = h:new_stream(addr, { proto_id }, {
+local stream, _, _, stream_err = h:new_stream(addr, { proto_id }, {
   timeout = 3,
   io_timeout = 0.05,
 })
@@ -86,7 +86,7 @@ if not h then
   os.exit(1)
 end
 
-local stream, _, _, _, stream_err = h:new_stream(addr, { ping.ID }, {
+local stream, _, _, stream_err = h:new_stream(addr, { ping.ID }, {
   timeout = 2,
   io_timeout = 2,
 })
@@ -133,7 +133,7 @@ if not h then
   os.exit(1)
 end
 
-local stream, _, _, _, stream_err = h:new_stream(addr, { ping.ID }, {
+local stream, _, _, stream_err = h:new_stream(addr, { ping.ID }, {
   timeout = 3,
   io_timeout = 3,
 })

@@ -143,6 +143,7 @@ write_out("ok")
   local identified = false
   local child_done = false
   local timeout_hit = false
+  local timeout_timer
 
   local poll_timer = assert(uv.new_timer())
   poll_timer:start(10, 20, function()
@@ -164,11 +165,15 @@ write_out("ok")
     if identified and child_done then
       poll_timer:stop()
       poll_timer:close()
+      if timeout_timer then
+        timeout_timer:stop()
+        timeout_timer:close()
+      end
       host:stop()
     end
   end)
 
-  local timeout_timer = assert(uv.new_timer())
+  timeout_timer = assert(uv.new_timer())
   timeout_timer:start(4000, 0, function()
     timeout_hit = true
     timeout_timer:stop()

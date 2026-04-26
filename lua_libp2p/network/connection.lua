@@ -31,6 +31,13 @@ function Connection:socket()
   return nil
 end
 
+function Connection:watch_luv_readable(on_readable)
+  if self._raw_conn and type(self._raw_conn.watch_luv_readable) == "function" then
+    return self._raw_conn:watch_luv_readable(on_readable)
+  end
+  return nil, error_mod.new("unsupported", "raw connection does not support luv readable watches")
+end
+
 function Connection:process_one()
   if not self._muxer then
     return nil

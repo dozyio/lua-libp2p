@@ -119,6 +119,25 @@ function M.tick(host)
     return nil, err
   end
 
+  if #host._pending_inbound > 0 then
+    ok, err = host:poll_once(0)
+    if not ok then
+      host:_set_runtime_error("luv", err)
+      return nil, err
+    end
+    return true
+  end
+
+  if host._tcp_transport and host._tcp_transport.BACKEND == "luv-native" and #host._connections > 0 then
+    host._luv_ready = {}
+    ok, err = host:_poll_once_with_ready_map(0, nil)
+    if not ok then
+      host:_set_runtime_error("luv", err)
+      return nil, err
+    end
+    return true
+  end
+
   if map_size(host._luv_ready) > 0 then
     ok, err = host:poll_once(0)
     if not ok then
@@ -179,6 +198,17 @@ function M.sync_watchers(host)
       kind = "connection",
       watchable = entry.conn,
       socket = host_runtime_poll.unwrap_socket(entry.conn),
+    }
+  end
+  for _, pending in ipairs(host._pending_inbound or {}) do
+    local raw_conn = pending
+    if type(pending) == "table" and pending.raw_conn ~= nil then
+      raw_conn = pending.raw_conn
+    end
+    active[pending] = {
+      kind = "pending_inbound",
+      watchable = raw_conn,
+      socket = host_runtime_poll.unwrap_socket(raw_conn),
     }
   end
 

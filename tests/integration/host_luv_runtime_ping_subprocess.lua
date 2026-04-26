@@ -33,72 +33,18 @@ local function run()
     return nil, "expected luv host listener address"
   end
 
-  local child_script = os.tmpname() .. ".lua"
-  local child_out = os.tmpname() .. ".txt"
-  local child_log = os.tmpname() .. ".log"
-
-  local child_source = child_scripts.host_ping_client()
-
-  local wrote, write_err = subprocess.write_file(child_script, child_source)
-  if not wrote then
-    host:stop()
-    return nil, write_err
-  end
-
-  local spawn_ok = subprocess.spawn_lua_background(child_script, {
-    addrs[1],
-    child_out,
-  }, child_log)
-  if not spawn_ok then
-    host:stop()
-    subprocess.remove_files({ child_script, child_out, child_log })
-    return nil, "failed to spawn child ping client"
-  end
-
-  local completed = false
-  local timeout_hit = false
-
-  local poll_timer = assert(uv.new_timer())
-  poll_timer:start(10, 20, function()
-    local content = subprocess.read_file(child_out)
-    if content then
-      completed = true
-      poll_timer:stop()
-      poll_timer:close()
-      host:stop()
-    end
-  end)
-
-  local timeout_timer = assert(uv.new_timer())
-  timeout_timer:start(3000, 0, function()
-    timeout_hit = true
-    timeout_timer:stop()
-    timeout_timer:close()
-    pcall(function()
-      poll_timer:stop()
-      poll_timer:close()
-    end)
-    host:stop()
-  end)
-
-  uv.run("default")
-
-  local result = subprocess.read_file(child_out)
-  local log_out = subprocess.read_file(child_log)
-
-  subprocess.remove_files({ child_script, child_out, child_log })
-
-  if timeout_hit then
-    return nil, "timed out waiting for child ping client"
-  end
-  if not completed then
-    return nil, "child ping client did not complete"
-  end
-  if result ~= "ok" then
-    return nil, "child ping client failed: " .. tostring(result or log_out)
-  end
-
-  return true
+  return subprocess.run_luv_child_file_case({
+    uv = uv,
+    host = host,
+    child_source = child_scripts.host_ping_client(),
+    child_args = { addrs[1] },
+    timeout_ms = 3000,
+    spawn_error = "failed to spawn child ping client",
+    timeout_error = "timed out waiting for child ping client",
+    incomplete_error = "child ping client did not complete",
+    expected_result = "ok",
+    result_error_prefix = "child ping client failed: ",
+  })
 end
 
 return {
