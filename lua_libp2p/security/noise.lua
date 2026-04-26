@@ -5,6 +5,9 @@ local peerid = require("lua_libp2p.peerid")
 local varint = require("lua_libp2p.multiformats.varint")
 local mime = require("mime")
 
+local ok_ossl_pkey, ossl_pkey = pcall(require, "openssl.pkey")
+local ok_ossl_digest, ossl_digest = pcall(require, "openssl.digest")
+
 local ok_sodium, sodium = pcall(require, "luasodium")
 if not ok_sodium then
   error("luasodium is required for noise support")
@@ -15,10 +18,6 @@ local M = {}
 M.PROTOCOL_ID = "/noise"
 M.PROTOCOL_NAME = "Noise_XX_25519_ChaChaPoly_SHA256"
 M.SIG_PREFIX = "noise-libp2p-static-key:"
-
-local function shell_quote(text)
-  return "'" .. tostring(text):gsub("'", "'\\''") .. "'"
-end
 
 local function der_public_key_to_pem(der)
   local b64 = mime.b64(der)
@@ -31,67 +30,29 @@ local function der_public_key_to_pem(der)
     .. "\n-----END PUBLIC KEY-----\n"
 end
 
-local function write_temp_file(payload)
-  local path = os.tmpname()
-  local f, open_err = io.open(path, "wb")
-  if not f then
-    return nil, open_err
-  end
-  local ok, write_err = f:write(payload)
-  f:close()
-  if not ok then
-    return nil, write_err
-  end
-  return path
-end
-
-local function remove_file(path)
-  if path then
-    os.remove(path)
-  end
-end
-
 local function rsa_verify_pkcs1_sha256(public_key_der, message, signature)
-  local pub_pem = der_public_key_to_pem(public_key_der)
-  local pub_path, pub_err = write_temp_file(pub_pem)
-  if not pub_path then
-    return nil, error_mod.new("io", "failed to write temporary rsa public key", { cause = pub_err })
+  if not ok_ossl_pkey or not ok_ossl_digest then
+    return nil, error_mod.new("unsupported", "luaossl is required for rsa signature verification")
   end
 
-  local msg_path, msg_err = write_temp_file(message)
-  if not msg_path then
-    remove_file(pub_path)
-    return nil, error_mod.new("io", "failed to write temporary signature message", { cause = msg_err })
+  local pub_key, key_err = ossl_pkey.new(der_public_key_to_pem(public_key_der))
+  if not pub_key then
+    return nil, error_mod.new("input", "failed to parse rsa public key", { cause = key_err })
   end
 
-  local sig_path, sig_err = write_temp_file(signature)
-  if not sig_path then
-    remove_file(pub_path)
-    remove_file(msg_path)
-    return nil, error_mod.new("io", "failed to write temporary signature bytes", { cause = sig_err })
+  local digest_ctx, digest_err = ossl_digest.new("sha256")
+  if not digest_ctx then
+    return nil, error_mod.new("io", "failed to create sha256 digest context", { cause = digest_err })
   end
+  digest_ctx:update(message)
 
-  local cmd = "openssl dgst -sha256 -verify " .. shell_quote(pub_path)
-    .. " -signature " .. shell_quote(sig_path)
-    .. " " .. shell_quote(msg_path)
-    .. " >/dev/null 2>/dev/null"
-
-  local ok, why, code = os.execute(cmd)
-
-  remove_file(pub_path)
-  remove_file(msg_path)
-  remove_file(sig_path)
-
-  if ok == true or code == 0 then
-    return true
+  local ok, verified = pcall(function()
+    return pub_key:verify(signature, digest_ctx)
+  end)
+  if not ok then
+    return nil, error_mod.new("io", "rsa signature verification failed", { cause = verified })
   end
-  if why == "exit" and code == 1 then
-    return false
-  end
-  return nil, error_mod.new("io", "openssl verify command failed", {
-    reason = why,
-    code = code,
-  })
+  return verified == true
 end
 
 local function read_exact(conn, n)

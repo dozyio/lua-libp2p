@@ -52,14 +52,15 @@ This repo currently includes:
 
 ## Runtime assumptions
 
-- Lua 5.4.x (recommended)
+- Lua 5.4.8 (recommended)
+- Lua 5.5 is not currently supported for the full dependency set because `luaossl` does not build against Lua 5.5 yet.
 - LuaRocks for dependency management
 - Runtime dependencies:
 - `luasocket`
 - `lua-protobuf`
 - `luasodium` (ed25519)
 - `luv` (libuv runtime backend)
-- `openssl` command available on PATH (required for RSA noise identity verification)
+- `luaossl` (native RSA noise identity verification)
 - Tests run with the Lua interpreter directly
 
 Host runtime note:

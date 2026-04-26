@@ -15,6 +15,7 @@ dependencies = {
   "lua-protobuf >= 0.5",
   "luasodium >= 2.4",
   "luv >= 1.0",
+  "luaossl >= 20250929",
 }
 build = {
   type = "builtin",
