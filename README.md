@@ -10,7 +10,10 @@ This repo currently includes:
 - Shared error and logging helpers
 - Ed25519, RSA, ECDSA, and Secp256k1 identity + PeerId + multiformat helpers
 - Multiaddr parsing/formatting + binary codec subset (`/ip4`, `/ip6`, `/dns*`, `/tcp`, `/udp`, `/quic-v1`, `/p2p`)
-- Peer discovery abstraction + bootstrap discovery source (dnsaddr-capable via resolver injection)
+- Peer discovery abstraction + host-level bootstrap discovery config (dnsaddr-capable by default)
+- Address manager for listen, announce, no-announce, observed, and relay advertisement sources
+- Circuit relay v2 client/AutoRelay support for reservations, relayed address advertisement, Stop handling, and reservation lifecycle events
+- AutoRelay currently does not use AutoNAT reachability decisions; observed addresses are collected through identify but are not advertised by default
 - Multibase/multiformat primitives (base58btc, base32, varint, multihash, CIDv1)
 - Signed envelope + peer record encode/sign/verify primitives
 - Kademlia kbucket routing-table module (`lua_libp2p.kbucket`)
@@ -41,6 +44,8 @@ This repo currently includes:
 - `lua_libp2p/multiformats`: varint, multibase, multihash, cid helpers
 - `lua_libp2p/multiaddr.lua`: multiaddr parsing/formatting/utilities
 - `lua_libp2p/dnsaddr.lua`: dnsaddr resolution abstraction utilities (resolver-injected)
+- `lua_libp2p/bootstrap.lua`: default bootstrap peer list and bootstrapper helpers
+- `lua_libp2p/address_manager.lua`: advertised address selection and relay address tracking
 - `lua_libp2p/discovery`: pluggable peer discovery manager + bootstrap source
 - `lua_libp2p/network`: connection/stream abstraction layer
 - `lua_libp2p/record`: signed envelopes and peer routing records
@@ -48,6 +53,7 @@ This repo currently includes:
 - `lua_libp2p/peerstore`: peer metadata storage
 - `lua_libp2p/kbucket.lua`: Kademlia kbucket routing table module
 - `lua_libp2p/kad_dht`: Kademlia DHT module and wire helpers
+- `lua_libp2p/relay`: circuit relay v2 client and AutoRelay service
 - `tests`: test harness and integration tests
 
 ## Runtime assumptions
@@ -75,6 +81,49 @@ Networking note:
 - `lua_libp2p.network.MESSAGE_SIZE_MAX` is `4 * 1024 * 1024` bytes, matching the 4 MiB practical KAD RPC cap used by Go/JS implementations.
 - The connection abstraction is stream-session based, not yamux-specific. TCP+Noise+Yamux is the current default stack, but future transports with native stream multiplexing, such as QUIC, can provide their own session implementation.
 - A stream session is expected to provide `open_stream()`, `accept_stream_now()`, optional `process_one()`, optional `has_waiters()`, and optional `close()`.
+
+## AutoRelay, Bootstrap, And Addresses
+
+Host behavior is configured in `host.new(...)`; `start()` takes no options. Bootstrap discovery is configured at the host level and is shared by services such as the Kademlia DHT and AutoRelay.
+
+Enable bootstrap discovery with the default public libp2p bootstrappers:
+
+```lua
+local host = require("lua_libp2p.host")
+
+local h = assert(host.new({
+  services = { "identify", "kad_dht" },
+  peer_discovery = {
+    bootstrap = {}, -- empty table means use lua_libp2p.bootstrap defaults
+  },
+}))
+
+assert(h:start())
+```
+
+Bootstrap config notes:
+- `/dnsaddr` bootstrap peers are resolved by `lua_libp2p.dnsaddr.default_resolver` unless a resolver is supplied.
+- Bootstrap peers are merged into the host peerstore and tagged as `bootstrap`.
+- Bootstrap discovery dials on startup by default; set `dial_on_start = false` to only seed the peerstore.
+- DHT service config defaults `kad_dht.peer_discovery` to `host.peer_discovery`.
+
+Address manager status:
+- The host owns `host.address_manager`.
+- It tracks listen addrs, explicit announce addrs, no-announce addrs, observed addrs, and relay addrs.
+- `host:get_multiaddrs_raw()` returns selected advertised addrs without appending the local peer id.
+- `host:get_multiaddrs()` appends `/p2p/<self>` where needed.
+- Observed addrs from identify are collected but are not advertised by default.
+- Relayed `/p2p-circuit` addrs are advertised only while an AutoRelay reservation is active.
+
+AutoRelay status:
+- Circuit relay v2 Hop/Stop protocol codecs and stream helpers are implemented.
+- `services = { "autorelay" }` installs the Stop handler and enables relay reservation management.
+- `/p2p-circuit` in `listen_addrs` requires the `autorelay` service and is treated as a relay listen capability, not a TCP listener.
+- AutoRelay discovers relay candidates from peers advertising `/libp2p/circuit/relay/0.2.0/hop` and can also reserve explicitly configured relays.
+- Active reservations publish relayed `/p2p-circuit` addrs through the address manager; removed reservations remove those addrs.
+- AutoRelay emits reservation lifecycle events: `relay:reservation:active`, `relay:reservation:removed`, and `relay:reservation:failed`.
+- Default reservation target is small (`max_reservations = 2`), so seeing one or two active relay peers is expected.
+- AutoNAT reachability probing is not implemented yet, so AutoRelay does not currently gate reservations on public/private reachability.
 
 ## Install dependencies (LuaRocks)
 
