@@ -12,6 +12,8 @@ This repo currently includes:
 - Multiaddr parsing/formatting + binary codec subset (`/ip4`, `/ip6`, `/dns*`, `/tcp`, `/udp`, `/quic-v1`, `/p2p`)
 - Peer discovery abstraction + host-level bootstrap discovery config (dnsaddr-capable by default)
 - Address manager for listen, announce, no-announce, observed, and relay advertisement sources
+- AutoNAT v2 client service for address reachability checks and dial-back nonce verification
+- UPnP IGD/SSDP NAT mapping service for creating public TCP/UDP port mappings from private transport listen addrs
 - Circuit relay v2 client/AutoRelay support for reservations, relayed address advertisement, Stop handling, and reservation lifecycle events
 - AutoRelay currently does not use AutoNAT reachability decisions; observed addresses are collected through identify but are not advertised by default
 - Multibase/multiformat primitives (base58btc, base32, varint, multihash, CIDv1)
@@ -44,6 +46,8 @@ This repo currently includes:
 - `lua_libp2p/multiformats`: varint, multibase, multihash, cid helpers
 - `lua_libp2p/multiaddr.lua`: multiaddr parsing/formatting/utilities
 - `lua_libp2p/dnsaddr.lua`: dnsaddr resolution abstraction utilities (resolver-injected)
+- `lua_libp2p/autonat`: AutoNAT v2 client service
+- `lua_libp2p/upnp`: SSDP discovery, UPnP IGD SOAP client, and UPnP NAT service
 - `lua_libp2p/bootstrap.lua`: default bootstrap peer list and bootstrapper helpers
 - `lua_libp2p/address_manager.lua`: advertised address selection and relay address tracking
 - `lua_libp2p/discovery`: pluggable peer discovery manager + bootstrap source
@@ -110,10 +114,28 @@ Bootstrap config notes:
 Address manager status:
 - The host owns `host.address_manager`.
 - It tracks listen addrs, explicit announce addrs, no-announce addrs, observed addrs, and relay addrs.
+- Private addresses are automatically marked `status = "private"` with JS-style address metadata such as `type = "transport"` or `type = "observed"`.
+- Public mappings added by UPnP use `type = "ip-mapping"`; relayed reservation addresses use `type = "transport"`.
 - `host:get_multiaddrs_raw()` returns selected advertised addrs without appending the local peer id.
 - `host:get_multiaddrs()` appends `/p2p/<self>` where needed.
 - Observed addrs from identify are collected but are not advertised by default.
 - Relayed `/p2p-circuit` addrs are advertised only while an AutoRelay reservation is active.
+
+AutoNAT v2 client status:
+- `services = { "autonat" }` installs the client-side `/libp2p/autonat/2/dial-back` handler.
+- `host.autonat:check(server, { addrs = { ... } })` opens `/libp2p/autonat/2/dial-request` to an AutoNAT v2 server.
+- Dial-back nonce verification is tracked per request; the client responds with `DialBackResponse OK` for matching pending nonces.
+- Anti-amplification `DialDataRequest` is supported with configurable byte caps.
+- Results are stored on the address manager when available and emitted via `autonat:address:checked`, `autonat:address:reachable`, `autonat:address:unreachable`, and `autonat:request:failed` events.
+- AutoNAT v2 server mode is not implemented.
+
+UPnP NAT status:
+- `services = { "upnp_nat" }` enables SSDP gateway discovery and UPnP IGD SOAP port mapping.
+- The service maps eligible private, non-loopback IP transport listen addrs and adds external addresses to the address manager as `type = "ip-mapping"`.
+- By default mapped addresses are added as unverified and should be confirmed by AutoNAT before advertisement.
+- Set `upnp_nat = { auto_confirm_address = true }` to immediately advertise mapped addresses, useful for local testing.
+- Events emitted: `upnp_nat:mapping:active` and `upnp_nat:mapping:failed`.
+- If the gateway external IP is private, the service reports likely double NAT and does not add mappings.
 
 AutoRelay status:
 - Circuit relay v2 Hop/Stop protocol codecs and stream helpers are implemented.
@@ -123,7 +145,7 @@ AutoRelay status:
 - Active reservations publish relayed `/p2p-circuit` addrs through the address manager; removed reservations remove those addrs.
 - AutoRelay emits reservation lifecycle events: `relay:reservation:active`, `relay:reservation:removed`, and `relay:reservation:failed`.
 - Default reservation target is small (`max_reservations = 2`), so seeing one or two active relay peers is expected.
-- AutoNAT reachability probing is not implemented yet, so AutoRelay does not currently gate reservations on public/private reachability.
+- AutoRelay does not currently gate reservations on AutoNAT reachability results.
 
 ## Install dependencies (LuaRocks)
 

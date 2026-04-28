@@ -32,10 +32,14 @@ if not client then
 end
 
 local started_at = os.time()
-local result, value_err = client.dht:find_value(key, {
-  alpha = opts.alpha,
-  disjoint_paths = opts.disjoint_paths,
-})
+local result, value_err = common.run_task(client.host, "example.find_value", function(ctx)
+  return client.dht:find_value(key, {
+    alpha = opts.alpha,
+    disjoint_paths = opts.disjoint_paths,
+    scheduler_task = true,
+    ctx = ctx,
+  })
+end)
 if not result then
   common.stop(client)
   io.stderr:write("find_value failed: " .. tostring(value_err) .. "\n")

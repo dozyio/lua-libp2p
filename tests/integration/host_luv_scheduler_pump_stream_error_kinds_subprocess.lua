@@ -20,7 +20,7 @@ local function run()
     listen_addrs = { "/ip4/127.0.0.1/tcp/0" },
     accept_timeout = 0.05,
     io_timeout = 0.05,
-    scheduler_connection_pump = false,
+    scheduler_connection_pump = true,
   })
   if not host then
     return nil, host_err
@@ -51,9 +51,7 @@ local function run()
   local child_phase = os.tmpname() .. ".phase"
   local child_log = os.tmpname() .. ".log"
 
-  local child_source = child_scripts.host_stream_error_kind_client()
-
-  local wrote, write_err = subprocess.write_file(child_script, child_source)
+  local wrote, write_err = subprocess.write_file(child_script, child_scripts.host_stream_error_kind_client())
   if not wrote then
     host:stop()
     return nil, write_err
@@ -114,7 +112,6 @@ local function run()
 
   local result = subprocess.read_file(child_out)
   local log_out = subprocess.read_file(child_log)
-
   subprocess.remove_files({ child_script, child_out, child_phase, child_log })
 
   if timeout_hit then
@@ -134,6 +131,6 @@ local function run()
 end
 
 return {
-  name = "host luv runtime stream error kinds subprocess",
+  name = "host luv scheduler pump stream error kinds subprocess",
   run = run,
 }

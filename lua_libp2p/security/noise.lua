@@ -597,6 +597,20 @@ function SecureConn:watch_luv_readable(on_readable)
   return nil, error_mod.new("unsupported", "raw noise connection does not support luv readable watches")
 end
 
+function SecureConn:watch_luv_write(on_write)
+  if self._raw and type(self._raw.watch_luv_write) == "function" then
+    return self._raw:watch_luv_write(on_write)
+  end
+  return nil, error_mod.new("unsupported", "raw noise connection does not support luv write watches")
+end
+
+function SecureConn:set_context(ctx)
+  if self._raw and type(self._raw.set_context) == "function" then
+    return self._raw:set_context(ctx)
+  end
+  return true
+end
+
 function SecureConn:local_multiaddr()
   if self._raw.local_multiaddr then
     return self._raw:local_multiaddr()

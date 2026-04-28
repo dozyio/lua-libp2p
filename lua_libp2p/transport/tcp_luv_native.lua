@@ -92,6 +92,9 @@ local function classify_uv_error(err, io_message)
 end
 
 local function run_once_or_loop_running()
+  if type(coroutine.isyieldable) == "function" and coroutine.isyieldable() then
+    return nil, "loop_running"
+  end
   local called, ok, err = pcall(function()
     return uv.run("once")
   end)
@@ -108,7 +111,21 @@ local function run_once_or_loop_running()
   return ok, err
 end
 
-local function yield_if_possible(reason)
+local function yield_if_possible(reason, ctx)
+  if ctx then
+    if reason and reason.type == "read" and type(ctx.wait_read) == "function" then
+      ctx:wait_read(reason.connection)
+      return true
+    end
+    if reason and reason.type == "dial" and type(ctx.wait_dial) == "function" then
+      ctx:wait_dial(reason.connection)
+      return true
+    end
+    if reason and reason.type == "write" and type(ctx.wait_write) == "function" then
+      ctx:wait_write(reason.connection)
+      return true
+    end
+  end
   -- Under runtime=luv the host already owns uv.run. Yield lets the host resume
   -- the coroutine on a later tick instead of re-entering the running loop.
   if type(coroutine.isyieldable) == "function" and coroutine.isyieldable() then
@@ -133,12 +150,14 @@ function NativeConnection:new(raw, opts)
     _tx_active = false,
     _tx_consumed = "",
     _watch_callbacks = {},
+    _write_watch_callbacks = {},
     _next_watch_id = 1,
     _peer_host = options.peer_host,
     _peer_port = options.peer_port,
     _local_host = options.local_host,
     _local_port = options.local_port,
     _io_timeout = options.io_timeout,
+    _ctx = options.ctx,
   }, self)
   conn:_ensure_read_pump()
   return conn
@@ -210,6 +229,11 @@ function NativeConnection:set_timeout(seconds)
   return true
 end
 
+function NativeConnection:set_context(ctx)
+  self._ctx = ctx
+  return true
+end
+
 function NativeConnection:begin_read_tx()
   self._tx_active = true
   self._tx_consumed = ""
@@ -251,6 +275,25 @@ function NativeConnection:watch_luv_readable(on_readable)
   end
 end
 
+function NativeConnection:watch_luv_write(on_write)
+  if type(on_write) ~= "function" then
+    return nil, error_mod.new("input", "on_write callback is required")
+  end
+  local watch_id = self._next_watch_id
+  self._next_watch_id = watch_id + 1
+  self._write_watch_callbacks[watch_id] = on_write
+  return function()
+    self._write_watch_callbacks[watch_id] = nil
+    return true
+  end
+end
+
+function NativeConnection:_notify_write_watchers()
+  for _, cb in pairs(self._write_watch_callbacks) do
+    cb()
+  end
+end
+
 function NativeConnection:write(payload)
   if self._closed then
     return nil, error_mod.new("closed", "write on closed connection")
@@ -267,35 +310,20 @@ function NativeConnection:write(payload)
     return nil, error_mod.new("input", "payload must be a string")
   end
 
-  if uv.loop_alive and uv.loop_alive() then
-    self._raw:write(payload, function(err)
-      if err then
-        self._write_error = err
-      end
-    end)
-    if self._write_error ~= nil then
-      local mapped_loop_write = classify_uv_error(self._write_error, "native luv write failed")
-      self._write_error = nil
-      if mapped_loop_write.kind == "closed" then
-        self._closed = true
-      end
-      return nil, mapped_loop_write
+  if type(self._raw.try_write) == "function" then
+    local immediate_wrote, immediate_err = self._raw:try_write(payload)
+    if type(immediate_wrote) == "number" and immediate_wrote == #payload then
+      return true
     end
-    return true
-  end
-
-  local immediate_wrote, immediate_err = self._raw:try_write(payload)
-  if type(immediate_wrote) == "number" and immediate_wrote == #payload then
-    return true
-  end
-  if type(immediate_wrote) == "number" and immediate_wrote > 0 and immediate_wrote < #payload then
-    payload = payload:sub(immediate_wrote + 1)
-  end
-  if immediate_err and tostring(immediate_err) ~= "EAGAIN" then
-    local mapped_immediate = classify_uv_error(immediate_err, "native luv try_write failed")
-    if mapped_immediate.kind == "closed" then
-      self._closed = true
-      return nil, mapped_immediate
+    if type(immediate_wrote) == "number" and immediate_wrote > 0 and immediate_wrote < #payload then
+      payload = payload:sub(immediate_wrote + 1)
+    end
+    if immediate_err and tostring(immediate_err) ~= "EAGAIN" then
+      local mapped_immediate = classify_uv_error(immediate_err, "native luv try_write failed")
+      if mapped_immediate.kind == "closed" then
+        self._closed = true
+        return nil, mapped_immediate
+      end
     end
   end
 
@@ -307,6 +335,7 @@ function NativeConnection:write(payload)
     end
     done = true
     write_err = error_mod.new("timeout", "write timed out")
+    self:_notify_write_watchers()
   end)
 
   self._raw:write(payload, function(err)
@@ -315,14 +344,24 @@ function NativeConnection:write(payload)
     end
     write_err = err
     done = true
+    self:_notify_write_watchers()
   end)
 
   while not done do
     local _, step_err = run_once_or_loop_running()
     if step_err == "loop_running" then
-      done = true
-      write_err = nil
+      if yield_if_possible({ type = "write", connection = self }, self._ctx) then
+        goto continue_write_wait
+      end
+      -- Non-yieldable callers preserve the historical queued-write behavior.
+      if timer then
+        timer:stop()
+        timer:close()
+      end
+      return true
     end
+
+    ::continue_write_wait::
   end
 
   if timer then
@@ -384,6 +423,9 @@ function NativeConnection:read(length)
     end
     done = true
     read_err = error_mod.new("timeout", "read timed out")
+    for _, cb in pairs(self._watch_callbacks) do
+      cb()
+    end
   end)
 
   while not done do
@@ -399,7 +441,7 @@ function NativeConnection:read(length)
     end
     local _, step_err = run_once_or_loop_running()
     if step_err == "loop_running" then
-      if yield_if_possible({ kind = "read", connection = self }) then
+      if yield_if_possible({ type = "read", connection = self }, self._ctx) then
         self:_ensure_read_pump()
         goto continue_read_wait
       end
@@ -681,10 +723,30 @@ function M.dial(target, opts)
   local conn = uv.new_tcp()
   local done = false
   local dial_err = nil
+  local connect_watchers = {}
+  local dial_wait = {
+    watch_luv_connect = function(_, on_connect)
+      connect_watchers[#connect_watchers + 1] = on_connect
+      local active = true
+      return function()
+        active = false
+        for i = #connect_watchers, 1, -1 do
+          if connect_watchers[i] == on_connect then
+            table.remove(connect_watchers, i)
+            break
+          end
+        end
+        return active
+      end
+    end,
+  }
   local connect_ok, connect_err = pcall(function()
     conn:connect(dial_host, port, function(err)
       dial_err = err
       done = true
+      for _, watcher in ipairs(connect_watchers) do
+        watcher()
+      end
     end)
   end)
   if not connect_ok then
@@ -697,13 +759,16 @@ function M.dial(target, opts)
     if not done then
       done = true
       dial_err = error_mod.new("timeout", "tcp connect timed out")
+      for _, watcher in ipairs(connect_watchers) do
+        watcher()
+      end
     end
   end)
 
   while not done do
     local _, step_err = run_once_or_loop_running()
     if step_err == "loop_running" then
-      if yield_if_possible({ kind = "dial", connection = conn }) then
+      if yield_if_possible({ type = "dial", connection = dial_wait }, options.ctx) then
         goto continue_dial_wait
       end
       done = true
@@ -734,6 +799,7 @@ function M.dial(target, opts)
     peer_host = peer_name.ip or dial_host,
     peer_port = peer_name.port or port,
     io_timeout = options.io_timeout,
+    ctx = options.ctx,
   })
 end
 

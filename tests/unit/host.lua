@@ -164,6 +164,32 @@ local function run()
     return nil, "client-mode kad_dht service should not advertise/register handler"
   end
 
+  local upnp_mod = require("lua_libp2p.upnp.nat")
+  local original_upnp_new = upnp_mod.new
+  local upnp_seen_opts
+  upnp_mod.new = function(_, opts)
+    upnp_seen_opts = opts
+    return {
+      start = function()
+        return true
+      end,
+    }
+  end
+  local upnp_host, upnp_host_err = host.new({
+    runtime = "poll",
+    identity = keypair,
+    services = { "upnp_nat" },
+    upnp_nat = { internal_client = "192.168.1.124" },
+    blocking = false,
+  })
+  upnp_mod.new = original_upnp_new
+  if not upnp_host then
+    return nil, upnp_host_err
+  end
+  if not upnp_seen_opts or upnp_seen_opts.internal_client ~= "192.168.1.124" then
+    return nil, "host should pass upnp_nat service options"
+  end
+
   local started, start_err = h:start()
   if not started then
     return nil, start_err

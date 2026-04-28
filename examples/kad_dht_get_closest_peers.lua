@@ -27,11 +27,21 @@ local target = opts.target or client.host:peer_id().id
 io.stdout:write("target: " .. tostring(target) .. "\n")
 
 local started_at = os.time()
-local peers, lookup = client.dht:get_closest_peers(target, {
-  alpha = opts.alpha,
-  disjoint_paths = opts.disjoint_paths,
-  count = opts.count,
-})
+local task_result, task_err = common.run_task(client.host, "example.get_closest_peers", function(ctx)
+  local task_peers, task_lookup = client.dht:get_closest_peers(target, {
+    alpha = opts.alpha,
+    disjoint_paths = opts.disjoint_paths,
+    count = opts.count,
+    scheduler_task = true,
+    ctx = ctx,
+  })
+  if not task_peers then
+    return nil, task_lookup
+  end
+  return { peers = task_peers, lookup = task_lookup }
+end)
+local peers = task_result and task_result.peers
+local lookup = task_result and task_result.lookup or task_err
 if not peers then
   common.stop(client)
   io.stderr:write("get_closest_peers failed: " .. tostring(lookup) .. "\n")

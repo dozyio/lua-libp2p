@@ -172,6 +172,14 @@ function M.tick(host)
     end
   end
 
+  if type(host._run_background_tasks) == "function" then
+    ok, err = host:_run_background_tasks()
+    if not ok then
+      host:_set_runtime_error("luv", err)
+      return nil, err
+    end
+  end
+
   if map_size(host._luv_ready) > 0 then
     ok, err = host:poll_once(0)
     if not ok then
@@ -257,6 +265,10 @@ function M.sync_watchers(host)
       if item.watchable and type(item.watchable.watch_luv_readable) == "function" then
         local ok, unwatch_or_err = pcall(item.watchable.watch_luv_readable, item.watchable, function()
           host._luv_ready[target] = true
+          if type(host._wake_task_readers) == "function" then
+            host:_wake_task_readers(item.watchable)
+            host:_wake_task_readers(target)
+          end
         end)
         if not ok then
           return nil, error_mod.new("io", "failed to register luv readable watcher", {
@@ -296,6 +308,10 @@ function M.sync_watchers(host)
             return
           end
           host._luv_ready[target] = true
+          if type(host._wake_task_readers) == "function" then
+            host:_wake_task_readers(item.watchable)
+            host:_wake_task_readers(target)
+          end
         end)
         if not ok then
           pcall(function()

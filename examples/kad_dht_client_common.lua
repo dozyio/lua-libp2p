@@ -94,10 +94,12 @@ local function bootstrap_config(opts)
       list = opts.bootstrappers,
       dialable_only = true,
       ignore_resolve_errors = true,
+      dial_on_start = false,
     }
   end
   return {
     ignore_resolve_errors = true,
+    dial_on_start = false,
   }
 end
 
@@ -127,12 +129,25 @@ function M.print_lookup(label, lookup)
   io.stdout:write("  queried: " .. tostring(lookup and lookup.queried or 0) .. "\n")
   io.stdout:write("  responses: " .. tostring(lookup and lookup.responses or 0) .. "\n")
   io.stdout:write("  failed: " .. tostring(lookup and lookup.failed or 0) .. "\n")
+  io.stdout:write("  cancelled: " .. tostring(lookup and lookup.cancelled or 0) .. "\n")
   io.stdout:write("  active_peak: " .. tostring(lookup and lookup.active_peak or 0) .. "\n")
   io.stdout:write("  termination: " .. tostring(lookup and lookup.termination or "unknown") .. "\n")
   if lookup and lookup.errors and #lookup.errors > 0 then
     io.stdout:write("  errors:\n")
     print_error_summary(lookup.errors)
   end
+end
+
+function M.wait_task(host, task, interval)
+  return host:run_until_task(task, { poll_interval = interval })
+end
+
+function M.run_task(host, name, fn)
+  local task, task_err = host:spawn_task(name, fn, { service = "example" })
+  if not task then
+    return nil, task_err
+  end
+  return M.wait_task(host, task)
 end
 
 function M.new_client(opts)
@@ -165,7 +180,12 @@ function M.new_client(opts)
 
   local dht = host.kad_dht
 
-  local bootstrap_report, bootstrap_err = dht:bootstrap()
+  local bootstrap_task, bootstrap_task_err = dht:start_bootstrap()
+  if not bootstrap_task then
+    host:stop()
+    return nil, bootstrap_task_err
+  end
+  local bootstrap_report, bootstrap_err = M.wait_task(host, bootstrap_task)
   if not bootstrap_report then
     host:stop()
     return nil, bootstrap_err

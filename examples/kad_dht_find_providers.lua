@@ -32,11 +32,15 @@ if not client then
 end
 
 local started_at = os.time()
-local result, providers_err = client.dht:find_providers(key, {
-  alpha = opts.alpha,
-  disjoint_paths = opts.disjoint_paths,
-  limit = opts.limit,
-})
+local result, providers_err = common.run_task(client.host, "example.find_providers", function(ctx)
+  return client.dht:find_providers(key, {
+    alpha = opts.alpha,
+    disjoint_paths = opts.disjoint_paths,
+    limit = opts.limit,
+    scheduler_task = true,
+    ctx = ctx,
+  })
+end)
 if not result then
   common.stop(client)
   io.stderr:write("find_providers failed: " .. tostring(providers_err) .. "\n")

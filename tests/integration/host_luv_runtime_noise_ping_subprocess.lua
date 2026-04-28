@@ -18,6 +18,7 @@ local function run()
     listen_addrs = { "/ip4/127.0.0.1/tcp/0" },
     services = { "identify", "ping" },
     accept_timeout = 0.05,
+    scheduler_connection_pump = false,
   })
   if not host then
     return nil, host_err

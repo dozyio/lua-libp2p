@@ -46,14 +46,22 @@ local function parse_args(args)
   return opts
 end
 
-local function pump(host, ticks)
-  for _ = 1, ticks or 50 do
-    local ok, err = host:poll_once(0.01)
-    if not ok then
-      return nil, err
+local function wait_task(host, task, interval)
+  return host:run_until_task(task, { poll_interval = interval })
+end
+
+local function scheduler_sleep(host, seconds)
+  local task, task_err = host:spawn_task("example.sleep", function(ctx)
+    local slept, sleep_err = ctx:sleep(seconds)
+    if slept == nil and sleep_err then
+      return nil, sleep_err
     end
+    return true
+  end, { service = "example" })
+  if not task then
+    return nil, task_err
   end
-  return true
+  return wait_task(host, task)
 end
 
 local function bootstrap_config(opts)
@@ -144,6 +152,7 @@ local h, host_err = host_mod.new({
     max_reservations = opts.max_reservations,
   },
   blocking = false,
+  scheduler_connection_pump = true,
   connect_timeout = 6,
   io_timeout = 10,
   accept_timeout = 0.05,
@@ -164,7 +173,13 @@ local dht = h.kad_dht
 io.stdout:write("autorelay is active before DHT walk; reservations are created as identify discovers relay-hop peers\n")
 print_status(h)
 
-local report, bootstrap_err = dht:bootstrap()
+local bootstrap_task, bootstrap_task_err = dht:start_bootstrap()
+if not bootstrap_task then
+  io.stderr:write("dht bootstrap failed: " .. tostring(bootstrap_task_err) .. "\n")
+  h:stop()
+  os.exit(1)
+end
+local report, bootstrap_err = wait_task(h, bootstrap_task)
 if not report then
   io.stderr:write("dht bootstrap failed: " .. tostring(bootstrap_err) .. "\n")
   h:stop()
@@ -176,11 +191,17 @@ io.stdout:write("bootstrap: attempted=" .. tostring(report.attempted)
   .. " failed=" .. tostring(report.failed) .. "\n")
 
 local walk_started_at = os.time()
-local walk, walk_err = dht:random_walk({
+local walk_task, walk_task_err = dht:start_random_walk({
   alpha = 10,
   disjoint_paths = 10,
   bootstrap_if_empty = true,
 })
+local walk, walk_err
+if walk_task then
+  walk, walk_err = wait_task(h, walk_task)
+else
+  walk_err = walk_task_err
+end
 if not walk then
   io.stderr:write("dht random walk failed: " .. tostring(walk_err) .. "\n")
 else
@@ -192,7 +213,7 @@ else
     .. " duration=" .. tostring(os.time() - walk_started_at) .. "s\n")
 end
 
-local pumped, pump_err = pump(h, 100)
+local pumped, pump_err = scheduler_sleep(h, 1)
 if not pumped then
   io.stderr:write("host pump failed: " .. tostring(pump_err) .. "\n")
 end

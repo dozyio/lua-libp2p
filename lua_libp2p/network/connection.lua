@@ -41,6 +41,20 @@ function Connection:watch_luv_readable(on_readable)
   return nil, error_mod.new("unsupported", "raw connection does not support luv readable watches")
 end
 
+function Connection:watch_luv_write(on_write)
+  if self._raw_conn and type(self._raw_conn.watch_luv_write) == "function" then
+    return self._raw_conn:watch_luv_write(on_write)
+  end
+  return nil, error_mod.new("unsupported", "raw connection does not support luv write watches")
+end
+
+function Connection:set_context(ctx)
+  if self._raw_conn and type(self._raw_conn.set_context) == "function" then
+    return self._raw_conn:set_context(ctx)
+  end
+  return true
+end
+
 function Connection:process_one()
   return self:pump_once()
 end
@@ -50,6 +64,23 @@ function Connection:pump_once()
     return nil
   end
   return self._session:process_one()
+end
+
+function Connection:pump_ready(max_frames)
+  if not self._session then
+    return 0
+  end
+  if type(self._session.pump_ready) == "function" then
+    return self._session:pump_ready(max_frames)
+  end
+  if type(self._session.process_one) == "function" then
+    local frame, err = self._session:process_one()
+    if not frame then
+      return 0, err
+    end
+    return 1
+  end
+  return 0
 end
 
 function Connection:new_stream_raw()

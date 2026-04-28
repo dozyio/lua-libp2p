@@ -280,6 +280,69 @@ local function run()
     return nil, "get_closest_peers should include lookup termination"
   end
 
+  local spawned = 0
+  local cancelled = 0
+  local scheduler_host = {
+    _peer = { id = "local" },
+  }
+  function scheduler_host:peer_id()
+    return self._peer
+  end
+  function scheduler_host:spawn_task(_, fn)
+    spawned = spawned + 1
+    local task = { id = spawned, status = "waiting" }
+    if spawned == 1 then
+      local result, err = fn({})
+      if result then
+        task.status = "completed"
+        task.result = result
+      else
+        task.status = "failed"
+        task.error = err
+      end
+    end
+    return task
+  end
+  function scheduler_host:cancel_task()
+    cancelled = cancelled + 1
+    return true
+  end
+  local scheduler_dht = assert(kad_dht.new(scheduler_host, {
+    hash_function = fake_hash,
+    k = 1,
+    alpha = 2,
+    disjoint_paths = 1,
+    address_filter = "all",
+  }))
+  local checkpointed = 0
+  local scheduler_lookup = scheduler_dht:_run_client_lookup("target", {
+    { peer_id = "peer-a", addrs = { "/ip4/127.0.0.1/tcp/1" } },
+    { peer_id = "peer-b", addrs = { "/ip4/127.0.0.1/tcp/2" } },
+  }, function()
+    return { closer_peers = {} }
+  end, {
+    scheduler_task = true,
+    lookup_k = 1,
+    ctx = {
+      checkpoint = function()
+        checkpointed = checkpointed + 1
+        return true
+      end,
+    },
+  })
+  if not scheduler_lookup then
+    return nil, "scheduler lookup should complete"
+  end
+  if scheduler_lookup.termination ~= "closest_queried" then
+    return nil, "scheduler lookup should terminate as soon as closest peer is queried"
+  end
+  if spawned ~= 2 or cancelled ~= 1 then
+    return nil, "scheduler lookup should cancel outstanding query tasks after completion"
+  end
+  if checkpointed ~= 0 then
+    return nil, "scheduler lookup should not wait for timed-out active tasks after completion"
+  end
+
   dht._rpc = nil
 
   local req_payload = assert(kad_protocol.encode_message({

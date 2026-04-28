@@ -55,6 +55,11 @@ local function new_fake_muxer(stream)
     return true
   end
 
+  function muxer:pump_ready(max_frames)
+    self.pump_ready_limit = max_frames
+    return 2
+  end
+
   return muxer
 end
 
@@ -98,6 +103,39 @@ local function run()
 
   if mux_conn:session() == nil then
     return nil, "expected generic session accessor"
+  end
+  local pumped, pump_err = mux_conn:pump_ready(3)
+  if not pumped then
+    return nil, pump_err
+  end
+  if pumped ~= 2 or mux_conn:session().pump_ready_limit ~= 3 then
+    return nil, "connection should delegate pump_ready to session"
+  end
+
+  local readable_called = false
+  local write_called = false
+  local watched_raw = new_scripted_stream("")
+  function watched_raw:watch_luv_readable(on_readable)
+    readable_called = true
+    self.on_readable = on_readable
+    return function()
+      return true
+    end
+  end
+  function watched_raw:watch_luv_write(on_write)
+    write_called = true
+    self.on_write = on_write
+    return function()
+      return true
+    end
+  end
+
+  local watched = connection.from_raw(watched_raw)
+  if not watched:watch_luv_readable(function() end) or not readable_called then
+    return nil, "connection should delegate readable watcher"
+  end
+  if not watched:watch_luv_write(function() end) or not write_called then
+    return nil, "connection should delegate write watcher"
   end
 
   return true

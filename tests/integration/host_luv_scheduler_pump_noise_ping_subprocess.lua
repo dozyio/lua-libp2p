@@ -16,9 +16,9 @@ local function run()
     runtime = "luv",
     blocking = false,
     listen_addrs = { "/ip4/127.0.0.1/tcp/0" },
-    services = { "ping" },
+    services = { "identify", "ping" },
     accept_timeout = 0.05,
-    scheduler_connection_pump = false,
+    scheduler_connection_pump = true,
   })
   if not host then
     return nil, host_err
@@ -31,24 +31,25 @@ local function run()
 
   local addrs = host:get_multiaddrs()
   if #addrs == 0 then
+    host:stop()
     return nil, "expected luv host listener address"
   end
 
   return subprocess.run_luv_child_file_case({
     uv = uv,
     host = host,
-    child_source = child_scripts.host_ping_client(),
+    child_source = child_scripts.host_noise_ping_client(),
     child_args = { addrs[1] },
-    timeout_ms = 3000,
-    spawn_error = "failed to spawn child ping client",
-    timeout_error = "timed out waiting for child ping client",
-    incomplete_error = "child ping client did not complete",
+    timeout_ms = 4000,
+    spawn_error = "failed to spawn child noise ping client",
+    timeout_error = "timed out waiting for child noise ping client",
+    incomplete_error = "child noise ping client did not complete",
     expected_result = "ok",
-    result_error_prefix = "child ping client failed: ",
+    result_error_prefix = "child noise ping failed: ",
   })
 end
 
 return {
-  name = "host luv runtime ping subprocess",
+  name = "host luv scheduler pump noise ping subprocess",
   run = run,
 }

@@ -120,7 +120,10 @@ function Client:reserve(target, opts)
 
   if self.host.address_manager then
     for _, addr in ipairs(relay_addrs) do
-      self.host.address_manager:add_relay_addr(addr)
+      self.host.address_manager:add_relay_addr(addr, {
+        relay_peer_id = relay_target.peer_id,
+        expires = reservation.expire,
+      })
     end
   end
 

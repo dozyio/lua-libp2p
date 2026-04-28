@@ -1,5 +1,6 @@
 local M = {
   name = "protocol",
+  autonat_v2 = require("lua_libp2p.protocol.autonat_v2"),
   identify = require("lua_libp2p.protocol.identify"),
   mss = require("lua_libp2p.protocol.mss"),
   perf = require("lua_libp2p.protocol.perf"),

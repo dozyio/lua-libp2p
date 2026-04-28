@@ -1,4 +1,5 @@
 local address_manager = require("lua_libp2p.address_manager")
+local autonat_client = require("lua_libp2p.autonat.client")
 local bootstrap = require("lua_libp2p.bootstrap")
 local keys = require("lua_libp2p.crypto.keys")
 local discovery = require("lua_libp2p.discovery")
@@ -22,13 +23,23 @@ local relay_proto = require("lua_libp2p.protocol.circuit_relay_v2")
 local upgrader = require("lua_libp2p.network.upgrader")
 local tcp_poll = require("lua_libp2p.transport.tcp")
 local tcp_luv = require("lua_libp2p.transport.tcp_luv")
+local upnp_nat = require("lua_libp2p.upnp.nat")
 
 local M = {}
 
 local DEFAULT_IDENTIFY_PROTOCOL_VERSION = "/lua-libp2p/0.1.0"
 local DEFAULT_IDENTIFY_AGENT_VERSION = "lua-libp2p/0.1.0"
 local DEFAULT_EVENT_QUEUE_MAX = 256
+local DEFAULT_TASK_RESUME_BUDGET = 128
 local DEFAULT_BOOTSTRAPPERS = bootstrap.DEFAULT_BOOTSTRAPPERS
+
+local function now_seconds()
+  local ok_socket, socket = pcall(require, "socket")
+  if ok_socket and type(socket.gettime) == "function" then
+    return socket.gettime()
+  end
+  return os.time()
+end
 
 local function list_copy(values)
   local out = {}
@@ -82,6 +93,94 @@ local function emit_event(self, name, payload)
   end
 
   return true
+end
+
+local function make_task_context(task)
+  local ctx = {}
+  function ctx:id()
+    return task.id
+  end
+  function ctx:name()
+    return task.name
+  end
+  function ctx:cancelled()
+    return task.cancelled == true
+  end
+  function ctx:checkpoint()
+    if task.cancelled then
+      return nil, error_mod.new("cancelled", "task cancelled", { task_id = task.id, name = task.name })
+    end
+    return coroutine.yield({ type = "checkpoint" })
+  end
+  function ctx:sleep(seconds)
+    if type(seconds) ~= "number" or seconds < 0 then
+      return nil, error_mod.new("input", "sleep seconds must be a non-negative number")
+    end
+    if task.cancelled then
+      return nil, error_mod.new("cancelled", "task cancelled", { task_id = task.id, name = task.name })
+    end
+    return coroutine.yield({ type = "sleep", until_at = now_seconds() + seconds })
+  end
+  function ctx:wait_read(connection)
+    if not connection then
+      return nil, error_mod.new("input", "wait_read requires connection")
+    end
+    if task.cancelled then
+      return nil, error_mod.new("cancelled", "task cancelled", { task_id = task.id, name = task.name })
+    end
+    return coroutine.yield({ type = "read", connection = connection })
+  end
+  function ctx:wait_dial(connection)
+    if not connection then
+      return nil, error_mod.new("input", "wait_dial requires connection")
+    end
+    if task.cancelled then
+      return nil, error_mod.new("cancelled", "task cancelled", { task_id = task.id, name = task.name })
+    end
+    return coroutine.yield({ type = "dial", connection = connection })
+  end
+  function ctx:wait_write(connection)
+    if not connection then
+      return nil, error_mod.new("input", "wait_write requires connection")
+    end
+    if task.cancelled then
+      return nil, error_mod.new("cancelled", "task cancelled", { task_id = task.id, name = task.name })
+    end
+    return coroutine.yield({ type = "write", connection = connection })
+  end
+  function ctx:await_task(child_task)
+    if type(child_task) ~= "table" then
+      return nil, error_mod.new("input", "await_task requires task table")
+    end
+    if child_task.status ~= "completed" and child_task.status ~= "failed" and child_task.status ~= "cancelled" then
+      local ok, err = coroutine.yield({ type = "task_wait", tasks = { child_task } })
+      if ok == nil and err then
+        return nil, err
+      end
+    end
+    if child_task.status ~= "completed" then
+      return nil, child_task.error or error_mod.new("state", "task did not complete", {
+        task_id = child_task.id,
+        name = child_task.name,
+        status = child_task.status,
+      })
+    end
+    return child_task.result
+  end
+  function ctx:await_any_task(child_tasks)
+    if type(child_tasks) ~= "table" then
+      return nil, error_mod.new("input", "await_any_task requires a task list")
+    end
+    for _, child_task in ipairs(child_tasks) do
+      if type(child_task) == "table"
+        and (child_task.status == "completed" or child_task.status == "failed" or child_task.status == "cancelled")
+      then
+        return true
+      end
+    end
+    return coroutine.yield({ type = "task_wait", tasks = child_tasks })
+  end
+  return ctx
 end
 
 local function bind_listeners(self, addrs)
@@ -489,6 +588,18 @@ function Host:new(config)
     _handlers = {},
     _services = {},
     _handler_tasks = {},
+    _tasks = {},
+    _task_queue = {},
+    _task_read_waiters = {},
+    _task_dial_waiters = {},
+    _task_write_waiters = {},
+    _task_completion_waiters = {},
+    _next_task_id = 1,
+    _task_resume_budget = cfg.task_resume_budget or DEFAULT_TASK_RESUME_BUDGET,
+    _scheduler_connection_pump = cfg.scheduler_connection_pump == nil
+      and runtime_name == "luv"
+      and tcp_luv.BACKEND == "luv-native"
+      or cfg.scheduler_connection_pump == true,
     _listeners = {},
     _connections = {},
     _connections_by_peer = {},
@@ -520,9 +631,11 @@ function Host:new(config)
     _accept_timeout = cfg.accept_timeout or 0,
     _service_options = {
       identify = cfg.identify or {},
+      autonat = cfg.autonat or {},
       autorelay = cfg.autorelay or {},
       kad_dht = cfg.kad_dht or {},
       perf = cfg.perf or {},
+      upnp_nat = cfg.upnp_nat or {},
     },
   }, self)
 
@@ -593,6 +706,38 @@ function Host:handle(protocol_id, handler)
 end
 
 function Host:_spawn_handler_task(handler, ctx)
+  if self._scheduler_connection_pump
+    and ctx.protocol ~= "identify_connect"
+    and type(self.spawn_task) == "function"
+  then
+    return self:spawn_task("handler." .. tostring(ctx.protocol or "unknown"), function(task_ctx)
+      local handler_ctx = {}
+      for k, v in pairs(ctx or {}) do
+        handler_ctx[k] = v
+      end
+      for k, v in pairs(task_ctx) do
+        if handler_ctx[k] == nil then
+          handler_ctx[k] = v
+        end
+      end
+      local result, err = handler(ctx.stream, handler_ctx)
+      if result == nil and err then
+        if is_nonfatal_stream_error(err) then
+          if ctx.connection and type(ctx.connection.close) == "function" then
+            ctx.connection:close()
+          end
+          return true
+        end
+        return nil, err
+      end
+      return result
+    end, {
+      service = "handler",
+      protocol = ctx.protocol,
+      peer_id = ctx.peer_id,
+    })
+  end
+
   local task = {
     protocol = ctx.protocol,
     peer_id = ctx.peer_id,
@@ -604,6 +749,32 @@ function Host:_spawn_handler_task(handler, ctx)
   end)
   self._handler_tasks[#self._handler_tasks + 1] = task
   return task
+end
+
+function Host:_spawn_stream_negotiation_task(stream, conn, entry)
+  if type(self.spawn_task) ~= "function" then
+    return nil, error_mod.new("unsupported", "stream negotiation task requires scheduler")
+  end
+  return self:spawn_task("host.stream_negotiate", function()
+    local router, router_err = self:_build_router()
+    if not router then
+      return nil, router_err
+    end
+    local protocol_id, handler, neg_err = router:negotiate(stream)
+    if not protocol_id then
+      return nil, neg_err
+    end
+    if handler then
+      self:_spawn_handler_task(handler, {
+        stream = stream,
+        host = self,
+        connection = conn,
+        state = entry.state,
+        protocol = protocol_id,
+      })
+    end
+    return true
+  end, { service = "host" })
 end
 
 function Host:_run_handler_tasks()
@@ -806,6 +977,11 @@ function Host:_schedule_identify_for_peer(peer_id)
 
   self:_spawn_handler_task(function(_, ctx)
     local pid = ctx and ctx.peer_id
+    log.info("identify on connect running", {
+      subsystem = "identify",
+      peer_id = pid,
+      queue_size = map_count(self._identify_inflight),
+    })
     local call_ok, result, identify_err = pcall(function()
       return self:_request_identify(pid)
     end)
@@ -931,6 +1107,36 @@ function Host:add_service(name)
       return nil, start_err
     end
     self.autorelay = svc
+    self._services[name] = true
+    return true
+  end
+
+  if name == "autonat" then
+    local autonat_opts = self._service_options.autonat or {}
+    local svc, svc_err = autonat_client.new(self, autonat_opts)
+    if not svc then
+      return nil, svc_err
+    end
+    local started, start_err = svc:start()
+    if not started then
+      return nil, start_err
+    end
+    self.autonat = svc
+    self._services[name] = true
+    return true
+  end
+
+  if name == "upnp_nat" then
+    local upnp_opts = self._service_options.upnp_nat or {}
+    local svc, svc_err = upnp_nat.new(self, upnp_opts)
+    if not svc then
+      return nil, svc_err
+    end
+    local started, start_err = svc:start()
+    if not started then
+      return nil, start_err
+    end
+    self.upnp_nat = svc
     self._services[name] = true
     return true
   end
@@ -1092,6 +1298,13 @@ function Host:_register_connection(conn, state)
     end
   end
 
+  if self._scheduler_connection_pump and host_runtime_luv_native.is_native_host(self) then
+    local _, pump_err = host_runtime_luv_native.start_connection_pump_task(self, entry, is_nonfatal_stream_error)
+    if pump_err then
+      return nil, pump_err
+    end
+  end
+
   return entry
 end
 
@@ -1111,6 +1324,9 @@ function Host:_unregister_connection(index, entry, cause)
   end
   if actual_index then
     table.remove(self._connections, actual_index)
+  end
+  if entry.scheduler_pump_task and entry.scheduler_pump_task.status ~= "completed" then
+    self:cancel_task(entry.scheduler_pump_task.id)
   end
   if entry.id ~= nil then
     self._connections_by_id[entry.id] = nil
@@ -1183,6 +1399,526 @@ function Host:off(event_name, handler)
     end
   end
   return false
+end
+
+function Host:spawn_task(name, fn, opts)
+  if type(name) ~= "string" or name == "" then
+    return nil, error_mod.new("input", "task name must be non-empty")
+  end
+  if type(fn) ~= "function" then
+    return nil, error_mod.new("input", "task function is required")
+  end
+  local options = opts or {}
+  local id = self._next_task_id
+  self._next_task_id = id + 1
+  local task = {
+    id = id,
+    name = name,
+    service = options.service,
+    status = "ready",
+    started_at = now_seconds(),
+    updated_at = now_seconds(),
+    wake_at = nil,
+    result = nil,
+    error = nil,
+    cancelled = false,
+  }
+  local ctx = make_task_context(task)
+  task.co = coroutine.create(function()
+    return fn(ctx)
+  end)
+  self._tasks[id] = task
+  self._task_queue[#self._task_queue + 1] = id
+  emit_event(self, "task:started", {
+    task_id = id,
+    name = name,
+    service = task.service,
+  })
+  return task
+end
+
+function Host:get_task(task_id)
+  return self._tasks[task_id]
+end
+
+function Host:list_tasks()
+  local out = {}
+  for _, task in pairs(self._tasks) do
+    out[#out + 1] = task
+  end
+  table.sort(out, function(a, b) return a.id < b.id end)
+  return out
+end
+
+function Host:cancel_task(task_id)
+  local task = self._tasks[task_id]
+  if not task then
+    return false
+  end
+  if task.status == "completed" or task.status == "failed" or task.status == "cancelled" then
+    return false
+  end
+  if type(task.read_unwatch) == "function" then
+    pcall(task.read_unwatch)
+    task.read_unwatch = nil
+  end
+  if type(task.dial_unwatch) == "function" then
+    pcall(task.dial_unwatch)
+    task.dial_unwatch = nil
+  end
+  if type(task.write_unwatch) == "function" then
+    pcall(task.write_unwatch)
+    task.write_unwatch = nil
+  end
+  if type(task.task_unwatch) == "function" then
+    pcall(task.task_unwatch)
+    task.task_unwatch = nil
+  end
+  task.cancelled = true
+  task.status = "cancelled"
+  task.updated_at = now_seconds()
+  emit_event(self, "task:cancelled", {
+    task_id = task.id,
+    name = task.name,
+    service = task.service,
+  })
+  self:_wake_task_completion_waiters(task)
+  return true
+end
+
+function Host:_enqueue_task(task)
+  if not task or task.status ~= "ready" then
+    return false
+  end
+  self._task_queue[#self._task_queue + 1] = task.id
+  return true
+end
+
+function Host:run_until_task(task, opts)
+  if type(task) ~= "table" then
+    return nil, error_mod.new("input", "task table is required")
+  end
+  local options = opts or {}
+  local poll_interval = options.poll_interval
+  if poll_interval == nil then
+    poll_interval = 0.01
+  end
+  local timeout = options.timeout
+  local deadline = timeout and (now_seconds() + timeout) or nil
+
+  while task.status ~= "completed" and task.status ~= "failed" and task.status ~= "cancelled" do
+    if deadline and now_seconds() >= deadline then
+      return nil, error_mod.new("timeout", "task wait timed out", {
+        task_id = task.id,
+        name = task.name,
+      })
+    end
+    local ok, err = self:poll_once(poll_interval)
+    if not ok then
+      return nil, err
+    end
+  end
+  if task.status ~= "completed" then
+    return nil, task.error or error_mod.new("state", "task did not complete", {
+      task_id = task.id,
+      name = task.name,
+      status = task.status,
+    })
+  end
+  return task.result
+end
+
+function Host:_wait_task_read(task, connection)
+  if not task or not connection then
+    return false
+  end
+  local waiters = self._task_read_waiters[connection]
+  if not waiters then
+    waiters = {}
+    self._task_read_waiters[connection] = waiters
+  end
+  waiters[task.id] = true
+  task.status = "waiting_read"
+  task.waiting_on = connection
+  task.updated_at = now_seconds()
+  if task.read_unwatch == nil and type(connection.watch_luv_readable) == "function" then
+    local ok, unwatch = pcall(connection.watch_luv_readable, connection, function()
+      self:_wake_task_readers(connection)
+    end)
+    if ok and type(unwatch) == "function" then
+      if task._read_woke_before_unwatch then
+        task._read_woke_before_unwatch = nil
+        pcall(unwatch)
+      elseif task.status == "waiting_read" then
+        task.read_unwatch = unwatch
+      else
+        pcall(unwatch)
+      end
+    end
+  end
+  return true
+end
+
+function Host:_wake_task_readers(connection)
+  local waiters = self._task_read_waiters[connection]
+  if not waiters then
+    return false
+  end
+  self._task_read_waiters[connection] = nil
+  for task_id in pairs(waiters) do
+    local task = self._tasks[task_id]
+    if task and task.status == "waiting_read" and not task.cancelled then
+      if type(task.read_unwatch) == "function" then
+        pcall(task.read_unwatch)
+        task.read_unwatch = nil
+      else
+        task._read_woke_before_unwatch = true
+      end
+      if type(task.dial_unwatch) == "function" then
+        pcall(task.dial_unwatch)
+        task.dial_unwatch = nil
+      end
+      if type(task.write_unwatch) == "function" then
+        pcall(task.write_unwatch)
+        task.write_unwatch = nil
+      end
+      task.status = "ready"
+      task.waiting_on = nil
+      task.updated_at = now_seconds()
+      self:_enqueue_task(task)
+    end
+  end
+  return true
+end
+
+function Host:_wait_task_dial(task, connection)
+  if not task or not connection then
+    return false
+  end
+  local waiters = self._task_dial_waiters[connection]
+  if not waiters then
+    waiters = {}
+    self._task_dial_waiters[connection] = waiters
+  end
+  waiters[task.id] = true
+  task.status = "waiting_dial"
+  task.waiting_on = connection
+  task.updated_at = now_seconds()
+  if task.dial_unwatch == nil and type(connection.watch_luv_connect) == "function" then
+    local ok, unwatch = pcall(connection.watch_luv_connect, connection, function()
+      self:_wake_task_dialers(connection)
+    end)
+    if ok and type(unwatch) == "function" then
+      if task._dial_woke_before_unwatch then
+        task._dial_woke_before_unwatch = nil
+        pcall(unwatch)
+      elseif task.status == "waiting_dial" then
+        task.dial_unwatch = unwatch
+      else
+        pcall(unwatch)
+      end
+    end
+  end
+  return true
+end
+
+function Host:_wake_task_dialers(connection)
+  local waiters = self._task_dial_waiters[connection]
+  if not waiters then
+    return false
+  end
+  self._task_dial_waiters[connection] = nil
+  for task_id in pairs(waiters) do
+    local task = self._tasks[task_id]
+    if task and task.status == "waiting_dial" and not task.cancelled then
+      if type(task.dial_unwatch) == "function" then
+        pcall(task.dial_unwatch)
+        task.dial_unwatch = nil
+      else
+        task._dial_woke_before_unwatch = true
+      end
+      if type(task.write_unwatch) == "function" then
+        pcall(task.write_unwatch)
+        task.write_unwatch = nil
+      end
+      task.status = "ready"
+      task.waiting_on = nil
+      task.updated_at = now_seconds()
+      self:_enqueue_task(task)
+    end
+  end
+  return true
+end
+
+function Host:_wait_task_write(task, connection)
+  if not task or not connection then
+    return false
+  end
+  local waiters = self._task_write_waiters[connection]
+  if not waiters then
+    waiters = {}
+    self._task_write_waiters[connection] = waiters
+  end
+  waiters[task.id] = true
+  task.status = "waiting_write"
+  task.waiting_on = connection
+  task.updated_at = now_seconds()
+  if task.write_unwatch == nil and type(connection.watch_luv_write) == "function" then
+    local ok, unwatch = pcall(connection.watch_luv_write, connection, function()
+      self:_wake_task_writers(connection)
+    end)
+    if ok and type(unwatch) == "function" then
+      if task._write_woke_before_unwatch then
+        task._write_woke_before_unwatch = nil
+        pcall(unwatch)
+      elseif task.status == "waiting_write" then
+        task.write_unwatch = unwatch
+      else
+        pcall(unwatch)
+      end
+    end
+  end
+  return true
+end
+
+function Host:_wake_task_writers(connection)
+  local waiters = self._task_write_waiters[connection]
+  if not waiters then
+    return false
+  end
+  self._task_write_waiters[connection] = nil
+  for task_id in pairs(waiters) do
+    local task = self._tasks[task_id]
+    if task and task.status == "waiting_write" and not task.cancelled then
+      if type(task.write_unwatch) == "function" then
+        pcall(task.write_unwatch)
+        task.write_unwatch = nil
+      else
+        task._write_woke_before_unwatch = true
+      end
+      task.status = "ready"
+      task.waiting_on = nil
+      task.updated_at = now_seconds()
+      self:_enqueue_task(task)
+    end
+  end
+  return true
+end
+
+function Host:_wait_task_completion(task, child_tasks)
+  if not task or type(child_tasks) ~= "table" then
+    return false
+  end
+  local watched_ids = {}
+  for _, child_task in ipairs(child_tasks) do
+    if type(child_task) == "table" and type(child_task.id) == "number" then
+      if child_task.status == "completed" or child_task.status == "failed" or child_task.status == "cancelled" then
+        task.status = "ready"
+        task.updated_at = now_seconds()
+        self:_enqueue_task(task)
+        return true
+      end
+      local waiters = self._task_completion_waiters[child_task.id]
+      if not waiters then
+        waiters = {}
+        self._task_completion_waiters[child_task.id] = waiters
+      end
+      waiters[task.id] = true
+      watched_ids[#watched_ids + 1] = child_task.id
+    end
+  end
+  if #watched_ids == 0 then
+    task.status = "ready"
+    task.updated_at = now_seconds()
+    self:_enqueue_task(task)
+    return true
+  end
+  task.status = "waiting_task"
+  task.waiting_on = "task"
+  task.updated_at = now_seconds()
+  task.task_unwatch = function()
+    for _, child_id in ipairs(watched_ids) do
+      local waiters = self._task_completion_waiters[child_id]
+      if waiters then
+        waiters[task.id] = nil
+        if next(waiters) == nil then
+          self._task_completion_waiters[child_id] = nil
+        end
+      end
+    end
+    return true
+  end
+  return true
+end
+
+function Host:_wake_task_completion_waiters(child_task)
+  if not child_task or type(child_task.id) ~= "number" then
+    return false
+  end
+  local waiters = self._task_completion_waiters[child_task.id]
+  if not waiters then
+    return false
+  end
+  self._task_completion_waiters[child_task.id] = nil
+  for task_id in pairs(waiters) do
+    local task = self._tasks[task_id]
+    if task and task.status == "waiting_task" and not task.cancelled then
+      if type(task.task_unwatch) == "function" then
+        pcall(task.task_unwatch)
+        task.task_unwatch = nil
+      end
+      task.status = "ready"
+      task.waiting_on = nil
+      task.updated_at = now_seconds()
+      self:_enqueue_task(task)
+    end
+  end
+  return true
+end
+
+function Host:_run_background_tasks(opts)
+  local options = opts or {}
+  local budget = options.max_resumes or self._task_resume_budget or DEFAULT_TASK_RESUME_BUDGET
+  local now = now_seconds()
+
+  for _, task in pairs(self._tasks) do
+    if task.status == "sleeping" and task.wake_at and task.wake_at <= now then
+      task.status = "ready"
+      task.wake_at = nil
+      task.updated_at = now
+      self:_enqueue_task(task)
+    end
+  end
+
+  local resumes = 0
+  while resumes < budget and #self._task_queue > 0 do
+    local task_id = table.remove(self._task_queue, 1)
+    local task = self._tasks[task_id]
+    if not task or task.status ~= "ready" then
+      goto continue_tasks
+    end
+    if task.cancelled then
+      if type(task.read_unwatch) == "function" then
+        pcall(task.read_unwatch)
+        task.read_unwatch = nil
+      end
+      if type(task.dial_unwatch) == "function" then
+        pcall(task.dial_unwatch)
+        task.dial_unwatch = nil
+      end
+      if type(task.write_unwatch) == "function" then
+        pcall(task.write_unwatch)
+        task.write_unwatch = nil
+      end
+      if type(task.task_unwatch) == "function" then
+        pcall(task.task_unwatch)
+        task.task_unwatch = nil
+      end
+      task.status = "cancelled"
+      task.updated_at = now_seconds()
+      goto continue_tasks
+    end
+
+    resumes = resumes + 1
+    task.status = "running"
+    task.updated_at = now_seconds()
+    local ok, result_or_yield, extra = coroutine.resume(task.co)
+    task.updated_at = now_seconds()
+    if not ok then
+      if type(task.read_unwatch) == "function" then
+        pcall(task.read_unwatch)
+        task.read_unwatch = nil
+      end
+      if type(task.dial_unwatch) == "function" then
+        pcall(task.dial_unwatch)
+        task.dial_unwatch = nil
+      end
+      if type(task.write_unwatch) == "function" then
+        pcall(task.write_unwatch)
+        task.write_unwatch = nil
+      end
+      if type(task.task_unwatch) == "function" then
+        pcall(task.task_unwatch)
+        task.task_unwatch = nil
+      end
+      task.status = "failed"
+      task.error = error_mod.new("protocol", "task panicked", {
+        task_id = task.id,
+        name = task.name,
+        cause = result_or_yield,
+        traceback = debug.traceback(task.co, tostring(result_or_yield)),
+      })
+      emit_event(self, "task:failed", {
+        task_id = task.id,
+        name = task.name,
+        service = task.service,
+        error = task.error,
+      })
+      self:_wake_task_completion_waiters(task)
+      goto continue_tasks
+    end
+    if coroutine.status(task.co) == "dead" then
+      if type(task.read_unwatch) == "function" then
+        pcall(task.read_unwatch)
+        task.read_unwatch = nil
+      end
+      if type(task.dial_unwatch) == "function" then
+        pcall(task.dial_unwatch)
+        task.dial_unwatch = nil
+      end
+      if type(task.write_unwatch) == "function" then
+        pcall(task.write_unwatch)
+        task.write_unwatch = nil
+      end
+      if type(task.task_unwatch) == "function" then
+        pcall(task.task_unwatch)
+        task.task_unwatch = nil
+      end
+      if result_or_yield == nil and extra then
+        task.status = "failed"
+        task.error = extra
+        emit_event(self, "task:failed", {
+          task_id = task.id,
+          name = task.name,
+          service = task.service,
+          error = task.error,
+        })
+        self:_wake_task_completion_waiters(task)
+      else
+        task.status = "completed"
+        task.result = result_or_yield
+        emit_event(self, "task:completed", {
+          task_id = task.id,
+          name = task.name,
+          service = task.service,
+          result = task.result,
+        })
+        self:_wake_task_completion_waiters(task)
+      end
+      goto continue_tasks
+    end
+
+    local yielded = result_or_yield
+    if type(yielded) == "table" and yielded.type == "sleep" then
+      task.status = "sleeping"
+      task.wake_at = yielded.until_at or now_seconds()
+    elseif type(yielded) == "table" and yielded.type == "read" then
+      self:_wait_task_read(task, yielded.connection or yielded.conn or yielded.watchable)
+    elseif type(yielded) == "table" and yielded.type == "dial" then
+      self:_wait_task_dial(task, yielded.connection or yielded.conn or yielded.watchable)
+    elseif type(yielded) == "table" and yielded.type == "write" then
+      self:_wait_task_write(task, yielded.connection or yielded.conn or yielded.watchable)
+    elseif type(yielded) == "table" and yielded.type == "task_wait" then
+      self:_wait_task_completion(task, yielded.tasks or yielded.task or yielded.child_tasks)
+    else
+      task.status = "ready"
+      self:_enqueue_task(task)
+    end
+
+    ::continue_tasks::
+  end
+
+  return true
 end
 
 function Host:on_protocol(protocol_id, handler)
@@ -1396,6 +2132,7 @@ function Host:dial(peer_or_addr, opts)
     }, {
       timeout = (opts and opts.timeout) or self._connect_timeout,
       io_timeout = (opts and opts.io_timeout) or self._io_timeout,
+      ctx = opts and opts.ctx,
     })
   end
   if not raw_conn then
@@ -1409,6 +2146,7 @@ function Host:dial(peer_or_addr, opts)
     expected_remote_peer_id = expected_remote,
     security_protocols = self.security_transports,
     muxer_protocols = self.muxers,
+    ctx = opts and opts.ctx,
   })
   if not conn then
     if type(raw_conn.close) == "function" then
@@ -1422,7 +2160,6 @@ function Host:dial(peer_or_addr, opts)
     relay_state.direction = "outbound"
     state.relay = relay_state
   end
-
   local entry, register_err = self:_register_connection(conn, state)
   if not entry then
     conn:close()
@@ -1705,6 +2442,11 @@ function Host:_poll_once_with_ready_map(timeout, ready_map)
     return nil, task_err
   end
 
+  local bg_ok, bg_err = self:_run_background_tasks()
+  if not bg_ok then
+    return nil, bg_err
+  end
+
   return true
 end
 
@@ -1898,6 +2640,12 @@ function Host:close()
   self._connections_by_peer = {}
   self._connections_by_id = {}
   self._handler_tasks = {}
+  self._tasks = {}
+  self._task_queue = {}
+  self._task_read_waiters = {}
+  self._task_dial_waiters = {}
+  self._task_write_waiters = {}
+  self._task_completion_waiters = {}
 
   for _, raw_conn in ipairs(self._pending_inbound) do
     raw_conn:close()
