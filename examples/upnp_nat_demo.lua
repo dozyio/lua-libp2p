@@ -373,7 +373,6 @@ end
 local h = assert(host_mod.new({
   runtime = opts.runtime,
   blocking = false,
-  scheduler_connection_pump = opts.runtime == "luv",
   listen_addrs = { opts.listen_addr },
   services = { "identify", "ping", "autonat" },
   peer_discovery = {

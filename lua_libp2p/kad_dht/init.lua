@@ -777,19 +777,17 @@ function DHT:_run_client_lookup(key, seed_peers, query_func, opts)
 
     while true do
       reap_tasks()
-      local done, reason = self:_strict_lookup_complete(target_hash, states, strict_k)
-      if not done then
-        fill_tasks()
-      end
+      fill_tasks()
       reap_tasks()
 
-      done, reason = self:_strict_lookup_complete(target_hash, states, strict_k)
+      local done, reason = self:_strict_lookup_complete(target_hash, states, strict_k)
       if stop then
         cancel_active_tasks()
         result.termination = result.termination or "application"
         break
       end
-      if done and active == 0 then
+      if done then
+        cancel_active_tasks()
         result.termination = reason
         break
       end
@@ -870,13 +868,10 @@ function DHT:_run_client_lookup(key, seed_peers, query_func, opts)
   local workers = {}
   local function step_lookup()
     self:_sort_query_candidates(target_hash, queue)
-    local done_before_spawn = self:_strict_lookup_complete(target_hash, states, strict_k)
-    if not done_before_spawn then
-      while #queue > 0 and active < max_inflight and not stop do
-        local peer = table.remove(queue, 1)
-        if peer.state == "heard" then
-          workers[#workers + 1] = spawn(peer)
-        end
+    while #queue > 0 and active < max_inflight and not stop do
+      local peer = table.remove(queue, 1)
+      if peer.state == "heard" then
+        workers[#workers + 1] = spawn(peer)
       end
     end
 
@@ -908,7 +903,7 @@ function DHT:_run_client_lookup(key, seed_peers, query_func, opts)
       result.termination = "application"
       return true
     end
-    if done and active == 0 then
+    if done then
       result.termination = reason
       return true
     end

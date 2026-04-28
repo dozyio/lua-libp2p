@@ -152,7 +152,6 @@ local h, host_err = host_mod.new({
     max_reservations = opts.max_reservations,
   },
   blocking = false,
-  scheduler_connection_pump = true,
   connect_timeout = 6,
   io_timeout = 10,
   accept_timeout = 0.05,
@@ -232,17 +231,27 @@ local previous_int = signal and signal("int", function()
 end) or nil
 
 io.stdout:write("running; press Ctrl-C to stop\n")
-local next_status_at = os.time() + (opts.status_interval or 30)
-while running do
-  local ok, err = h:poll_once(0.05)
-  if not ok then
-    io.stderr:write("host poll failed: " .. tostring(err) .. "\n")
-    break
+local run_task, run_task_err = h:spawn_task("example.autorelay_status", function(ctx)
+  local next_status_at = os.time() + (opts.status_interval or 30)
+  while running do
+    local slept, sleep_err = ctx:sleep(0.05)
+    if slept == nil and sleep_err then
+      return nil, sleep_err
+    end
+    local now = os.time()
+    if opts.status_interval and opts.status_interval > 0 and now >= next_status_at then
+      print_status(h)
+      next_status_at = now + opts.status_interval
+    end
   end
-  local now = os.time()
-  if opts.status_interval and opts.status_interval > 0 and now >= next_status_at then
-    print_status(h)
-    next_status_at = now + opts.status_interval
+  return true
+end, { service = "example" })
+if not run_task then
+  io.stderr:write("status task failed: " .. tostring(run_task_err) .. "\n")
+else
+  local _, run_err = wait_task(h, run_task, 0.05)
+  if run_err then
+    io.stderr:write("host run failed: " .. tostring(run_err) .. "\n")
   end
 end
 

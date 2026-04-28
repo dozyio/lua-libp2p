@@ -290,7 +290,7 @@ local function run()
   end
   function scheduler_host:spawn_task(_, fn)
     spawned = spawned + 1
-    local task = { id = spawned, status = "waiting" }
+    local task = { id = spawned, status = "waiting", result = { closer_peers = {} } }
     if spawned == 1 then
       local result, err = fn({})
       if result then
@@ -337,10 +337,13 @@ local function run()
     return nil, "scheduler lookup should terminate as soon as closest peer is queried"
   end
   if spawned ~= 2 or cancelled ~= 1 then
-    return nil, "scheduler lookup should cancel outstanding query tasks after completion"
+    return nil, "scheduler lookup should cancel outstanding query tasks after strict completion"
+  end
+  if scheduler_lookup.queried ~= 2 or scheduler_lookup.responses ~= 1 or scheduler_lookup.failed ~= 0 or scheduler_lookup.cancelled ~= 1 then
+    return nil, "scheduler lookup accounting should include cancelled active queries"
   end
   if checkpointed ~= 0 then
-    return nil, "scheduler lookup should not wait for timed-out active tasks after completion"
+    return nil, "scheduler lookup should not checkpoint-spin after strict completion"
   end
 
   dht._rpc = nil

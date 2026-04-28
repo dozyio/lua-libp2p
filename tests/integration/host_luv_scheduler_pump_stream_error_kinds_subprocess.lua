@@ -20,7 +20,6 @@ local function run()
     listen_addrs = { "/ip4/127.0.0.1/tcp/0" },
     accept_timeout = 0.05,
     io_timeout = 0.05,
-    scheduler_connection_pump = true,
   })
   if not host then
     return nil, host_err

@@ -371,7 +371,6 @@ local function run_client()
       mode = "client",
     },
     blocking = false,
-    scheduler_connection_pump = true,
     connect_timeout = 6,
     io_timeout = 10,
     accept_timeout = 0.05,

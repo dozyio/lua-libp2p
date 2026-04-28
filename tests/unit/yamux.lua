@@ -238,6 +238,108 @@ local function run()
     return nil, "yamux pump_ready should deliver stream data"
   end
 
+  local multi_writer = new_scripted_conn("")
+  assert(yamux.write_frame(multi_writer, {
+    type = yamux.TYPE.WINDOW_UPDATE,
+    flags = yamux.FLAG.SYN,
+    stream_id = 2,
+    length = yamux.INITIAL_STREAM_WINDOW,
+  }))
+  assert(yamux.write_frame(multi_writer, {
+    type = yamux.TYPE.DATA,
+    flags = 0,
+    stream_id = 2,
+    payload = "a",
+  }))
+  assert(yamux.write_frame(multi_writer, {
+    type = yamux.TYPE.WINDOW_UPDATE,
+    flags = yamux.FLAG.SYN,
+    stream_id = 4,
+    length = yamux.INITIAL_STREAM_WINDOW,
+  }))
+  assert(yamux.write_frame(multi_writer, {
+    type = yamux.TYPE.DATA,
+    flags = 0,
+    stream_id = 4,
+    payload = "b",
+  }))
+  local multi_session = yamux.new_session(new_scripted_conn(multi_writer:writes()), { is_client = true })
+  local multi_pumped, multi_pump_err = multi_session:pump_ready(4)
+  if not multi_pumped then
+    return nil, multi_pump_err
+  end
+  if multi_pumped ~= 4 then
+    return nil, "yamux pump_ready should drain multiple concurrent stream frames"
+  end
+  local multi_a = multi_session:accept_stream_now()
+  local multi_b = multi_session:accept_stream_now()
+  if not multi_a or not multi_b then
+    return nil, "yamux pump_ready should queue multiple inbound streams"
+  end
+  local by_id = {
+    [multi_a.id] = multi_a:read_now(),
+    [multi_b.id] = multi_b:read_now(),
+  }
+  if by_id[2] ~= "a" or by_id[4] ~= "b" then
+    return nil, "yamux concurrent streams should keep stream-local data isolated"
+  end
+
+  local concurrent_outbound = yamux.new_session(new_scripted_conn(""), {
+    is_client = true,
+    max_ack_backlog = 64,
+  })
+  local outbound_ids = {}
+  for _ = 1, 20 do
+    local outbound_stream, outbound_err = concurrent_outbound:open_stream()
+    if not outbound_stream then
+      return nil, outbound_err
+    end
+    if outbound_ids[outbound_stream.id] then
+      return nil, "yamux concurrent open_stream calls should allocate unique stream ids"
+    end
+    outbound_ids[outbound_stream.id] = true
+  end
+  for expected_id = 1, 39, 2 do
+    if not outbound_ids[expected_id] then
+      return nil, "yamux outbound stream ids should advance monotonically"
+    end
+  end
+
+  local reset_writer = new_scripted_conn("")
+  assert(yamux.write_frame(reset_writer, {
+    type = yamux.TYPE.WINDOW_UPDATE,
+    flags = yamux.FLAG.SYN,
+    stream_id = 2,
+    length = yamux.INITIAL_STREAM_WINDOW,
+  }))
+  assert(yamux.write_frame(reset_writer, {
+    type = yamux.TYPE.WINDOW_UPDATE,
+    flags = yamux.FLAG.RST,
+    stream_id = 2,
+    length = 0,
+  }))
+  local reset_session = yamux.new_session(new_scripted_conn(reset_writer:writes()), { is_client = true })
+  assert(reset_session:process_one())
+  local reset_stream = assert(reset_session:accept_stream_now())
+  reset_stream.send_window = 0
+  local reset_read_woken = 0
+  local reset_write_woken = 0
+  assert(reset_stream:watch_luv_readable(function()
+    reset_read_woken = reset_read_woken + 1
+  end))
+  assert(reset_stream:watch_luv_write(function()
+    reset_write_woken = reset_write_woken + 1
+  end))
+  reset_stream:_mark_read_waiter()
+  reset_stream:_mark_write_waiter()
+  assert(reset_session:process_one())
+  if reset_read_woken < 1 or reset_write_woken < 1 then
+    return nil, "yamux reset should wake read and write waiters"
+  end
+  if reset_session:has_stream_waiters() then
+    return nil, "yamux reset should clear stream waiter tracking"
+  end
+
   return true
 end
 

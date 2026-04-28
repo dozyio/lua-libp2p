@@ -8,7 +8,7 @@ local function run()
 
   local host, host_err = host_mod.new({
     identity = keypair,
-    scheduler_connection_pump = false,
+    runtime = "poll",
     on = {
       peer_connected = function(payload)
         if payload and payload.peer_id == "peer-a" then
@@ -314,6 +314,7 @@ local function run()
     read = false,
     dial = false,
     write = false,
+    task = false,
   }
   local cleanup_task = assert(host:spawn_task("test.cleanup_waiters", function()
     return true
@@ -327,14 +328,17 @@ local function run()
   cleanup_task.write_unwatch = function()
     cleanup.write = true
   end
+  cleanup_task.task_unwatch = function()
+    cleanup.task = true
+  end
   assert(host:_run_background_tasks({ max_resumes = 10 }))
-  if not (cleanup.read and cleanup.dial and cleanup.write) then
+  if not (cleanup.read and cleanup.dial and cleanup.write and cleanup.task) then
     return nil, "completed task should clean all watcher callbacks"
   end
 
   local wait_host = assert(host_mod.new({
     identity = keypair,
-    scheduler_connection_pump = false,
+    runtime = "poll",
   }))
   local run_task = assert(wait_host:spawn_task("test.run_until_task", function()
     return "run-result"
@@ -381,6 +385,161 @@ local function run()
   end
   if any_result ~= "completed" then
     return nil, "await_any_task should resume when any child task completes"
+  end
+
+  local empty_wait = assert(wait_host:spawn_task("test.await_any_empty", function(ctx)
+    local ok, err = ctx:await_any_task({})
+    if ok ~= nil or not err or err.kind ~= "input" then
+      return nil, "await_any_task should reject empty task lists"
+    end
+    return true
+  end))
+  local empty_result, empty_err = wait_host:run_until_task(empty_wait, { poll_interval = 0 })
+  if not empty_result then
+    return nil, empty_err
+  end
+
+  local parked_child = assert(wait_host:spawn_task("test.cancel_wait_child", function(ctx)
+    ctx:sleep(10)
+    return true
+  end))
+  local parked_parent = assert(wait_host:spawn_task("test.cancel_wait_parent", function(ctx)
+    return ctx:await_task(parked_child)
+  end))
+  assert(wait_host:_run_background_tasks({ max_resumes = 4 }))
+  if parked_parent.status ~= "waiting_task" then
+    return nil, "await_task parent should park on child completion"
+  end
+  if not wait_host._task_completion_waiters[parked_child.id]
+    or not wait_host._task_completion_waiters[parked_child.id][parked_parent.id]
+  then
+    return nil, "await_task should register task completion waiter"
+  end
+  assert(wait_host:cancel_task(parked_parent.id))
+  if wait_host._task_completion_waiters[parked_child.id] ~= nil then
+    return nil, "cancelling task waiting on child should clean completion waiter"
+  end
+
+  local many_children = {}
+  for i = 1, 20 do
+    many_children[i] = assert(wait_host:spawn_task("test.await_many_child", function(child_ctx)
+      child_ctx:sleep(i)
+      return i
+    end))
+  end
+  local many_parent = assert(wait_host:spawn_task("test.await_many_parent", function(ctx)
+    return ctx:await_any_task(many_children)
+  end))
+  assert(wait_host:_run_background_tasks({ max_resumes = 25 }))
+  if many_parent.status ~= "waiting_task" then
+    return nil, "await_any_task should park parent with many children"
+  end
+  assert(wait_host:cancel_task(many_parent.id))
+  for _, child in ipairs(many_children) do
+    if wait_host._task_completion_waiters[child.id] ~= nil then
+      return nil, "cancelling await_any_task parent should clean all child waiters"
+    end
+    wait_host:cancel_task(child.id)
+  end
+
+  local close_host = assert(host_mod.new({
+    identity = keypair,
+    runtime = "poll",
+  }))
+  local close_cleanup = { read = false, dial = false, write = false, task = false }
+  local close_readable = {}
+  function close_readable:watch_luv_readable()
+    return function()
+      close_cleanup.read = true
+    end
+  end
+  local close_writable = {}
+  function close_writable:watch_luv_write()
+    return function()
+      close_cleanup.write = true
+    end
+  end
+  local close_dialable = {}
+  function close_dialable:watch_luv_connect()
+    return function()
+      close_cleanup.dial = true
+    end
+  end
+  local close_child = assert(close_host:spawn_task("test.close_wait_child", function(ctx)
+    ctx:sleep(10)
+    return true
+  end))
+  local close_parent = assert(close_host:spawn_task("test.close_wait_parent", function(ctx)
+    return ctx:await_task(close_child)
+  end))
+  local close_read_task = assert(close_host:spawn_task("test.close_wait_read", function(ctx)
+    return ctx:wait_read(close_readable)
+  end))
+  local close_dial_task = assert(close_host:spawn_task("test.close_wait_dial", function(ctx)
+    return ctx:wait_dial(close_dialable)
+  end))
+  local close_write_task = assert(close_host:spawn_task("test.close_wait_write", function(ctx)
+    return ctx:wait_write(close_writable)
+  end))
+  assert(close_host:_run_background_tasks({ max_resumes = 10 }))
+  close_parent.task_unwatch = function()
+    close_cleanup.task = true
+  end
+  if close_parent.status ~= "waiting_task"
+    or close_read_task.status ~= "waiting_read"
+    or close_dial_task.status ~= "waiting_dial"
+    or close_write_task.status ~= "waiting_write"
+  then
+    return nil, "close stress tasks should be parked before host close"
+  end
+  assert(close_host:close())
+  if not (close_cleanup.read and close_cleanup.dial and close_cleanup.write and close_cleanup.task) then
+    return nil, "host close should clean waiters for parked tasks"
+  end
+
+  local fairness_host = assert(host_mod.new({
+    identity = keypair,
+    runtime = "poll",
+    task_resume_budget = 12,
+  }))
+  local fairness_readables = {}
+  local fairness_counts = { sleeping = 0, waiting = 0, checkpoint = 0 }
+  for i = 1, 30 do
+    assert(fairness_host:spawn_task("test.fair_sleep", function(ctx)
+      ctx:sleep(0)
+      fairness_counts.sleeping = fairness_counts.sleeping + 1
+      return true
+    end))
+    local watchable = {}
+    function watchable:watch_luv_readable(on_readable)
+      self.on_readable = on_readable
+      return function() return true end
+    end
+    fairness_readables[i] = watchable
+    assert(fairness_host:spawn_task("test.fair_wait_read", function(ctx)
+      ctx:wait_read(watchable)
+      fairness_counts.waiting = fairness_counts.waiting + 1
+      return true
+    end))
+    assert(fairness_host:spawn_task("test.fair_checkpoint", function(ctx)
+      ctx:checkpoint()
+      fairness_counts.checkpoint = fairness_counts.checkpoint + 1
+      return true
+    end))
+  end
+  for _ = 1, 12 do
+    assert(fairness_host:_run_background_tasks({ max_resumes = 12 }))
+  end
+  for _, watchable in ipairs(fairness_readables) do
+    if type(watchable.on_readable) == "function" then
+      watchable.on_readable()
+    end
+  end
+  for _ = 1, 12 do
+    assert(fairness_host:_run_background_tasks({ max_resumes = 12 }))
+  end
+  if fairness_counts.sleeping ~= 30 or fairness_counts.waiting ~= 30 or fairness_counts.checkpoint ~= 30 then
+    return nil, "scheduler should make progress across sleeping, io-waiting, and checkpoint tasks"
   end
   assert(host:unsubscribe(task_events))
 

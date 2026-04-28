@@ -31,6 +31,7 @@ local DEFAULT_IDENTIFY_PROTOCOL_VERSION = "/lua-libp2p/0.1.0"
 local DEFAULT_IDENTIFY_AGENT_VERSION = "lua-libp2p/0.1.0"
 local DEFAULT_EVENT_QUEUE_MAX = 256
 local DEFAULT_TASK_RESUME_BUDGET = 128
+local DEFAULT_DIAL_ADDR_LIMIT = 3
 local DEFAULT_BOOTSTRAPPERS = bootstrap.DEFAULT_BOOTSTRAPPERS
 
 local function now_seconds()
@@ -152,6 +153,9 @@ local function make_task_context(task)
     if type(child_task) ~= "table" then
       return nil, error_mod.new("input", "await_task requires task table")
     end
+    if task.cancelled then
+      return nil, error_mod.new("cancelled", "task cancelled", { task_id = task.id, name = task.name })
+    end
     if child_task.status ~= "completed" and child_task.status ~= "failed" and child_task.status ~= "cancelled" then
       local ok, err = coroutine.yield({ type = "task_wait", tasks = { child_task } })
       if ok == nil and err then
@@ -170,6 +174,12 @@ local function make_task_context(task)
   function ctx:await_any_task(child_tasks)
     if type(child_tasks) ~= "table" then
       return nil, error_mod.new("input", "await_any_task requires a task list")
+    end
+    if #child_tasks == 0 then
+      return nil, error_mod.new("input", "await_any_task requires at least one task")
+    end
+    if task.cancelled then
+      return nil, error_mod.new("cancelled", "task cancelled", { task_id = task.id, name = task.name })
     end
     for _, child_task in ipairs(child_tasks) do
       if type(child_task) == "table"
@@ -427,22 +437,39 @@ local function is_dialable_tcp_addr(addr)
   return true
 end
 
-local function first_dialable_tcp_addr(addrs)
+local function ordered_dial_addrs(addrs, limit)
+  local seen = {}
+  local public_tcp = {}
+  local other_tcp = {}
+  local relays = {}
   for _, addr in ipairs(addrs or {}) do
-    if is_dialable_tcp_addr(addr) then
-      return addr
+    if type(addr) == "string" and addr ~= "" and not seen[addr] then
+      seen[addr] = true
+      if is_dialable_tcp_addr(addr) then
+        if multiaddr.is_public_addr(addr) then
+          public_tcp[#public_tcp + 1] = addr
+        else
+          other_tcp[#other_tcp + 1] = addr
+        end
+      elseif multiaddr.is_relay_addr(addr) then
+        relays[#relays + 1] = addr
+      end
     end
   end
-  return nil
-end
 
-local function first_relay_addr(addrs)
-  for _, addr in ipairs(addrs or {}) do
-    if multiaddr.is_relay_addr(addr) then
-      return addr
+  local out = {}
+  local max = limit or DEFAULT_DIAL_ADDR_LIMIT
+  local function append(values)
+    for _, addr in ipairs(values) do
+      if max <= 0 or #out < max then
+        out[#out + 1] = addr
+      end
     end
   end
-  return nil
+  append(public_tcp)
+  append(other_tcp)
+  append(relays)
+  return out
 end
 
 local function contains_circuit_listen_addr(addrs)
@@ -519,13 +546,10 @@ local function resolve_target(target)
   end
 
   if type(target) == "table" then
-    local addr = target.addr
-    if not addr and type(target.addrs) == "table" then
-      addr = first_dialable_tcp_addr(target.addrs) or first_relay_addr(target.addrs)
-    end
     return {
       peer_id = target.peer_id,
-      addr = addr,
+      addr = target.addr,
+      addrs = target.addrs,
     }
   end
 
@@ -572,7 +596,6 @@ function Host:new(config)
     _bootstrap_discovery = nil,
     _bootstrap_discovery_due_at = nil,
     _bootstrap_discovery_done = false,
-    _pending_bootstrap_dials = {},
     address_manager = cfg.address_manager or address_manager.new({
       listen_addrs = cfg.listen_addrs or {},
       announce_addrs = cfg.announce_addrs or {},
@@ -596,10 +619,7 @@ function Host:new(config)
     _task_completion_waiters = {},
     _next_task_id = 1,
     _task_resume_budget = cfg.task_resume_budget or DEFAULT_TASK_RESUME_BUDGET,
-    _scheduler_connection_pump = cfg.scheduler_connection_pump == nil
-      and runtime_name == "luv"
-      and tcp_luv.BACKEND == "luv-native"
-      or cfg.scheduler_connection_pump == true,
+    _scheduler_connection_pump = runtime_name == "luv" and tcp_luv.BACKEND == "luv-native",
     _listeners = {},
     _connections = {},
     _connections_by_peer = {},
@@ -1450,6 +1470,68 @@ function Host:list_tasks()
   return out
 end
 
+function Host:task_stats()
+  local stats = {
+    total = 0,
+    queue_depth = #self._task_queue,
+    by_status = {},
+    by_name = {},
+    by_service = {},
+  }
+  for _, task in pairs(self._tasks) do
+    stats.total = stats.total + 1
+    local status = task.status or "unknown"
+    stats.by_status[status] = (stats.by_status[status] or 0) + 1
+    local name = task.name or "unknown"
+    stats.by_name[name] = (stats.by_name[name] or 0) + 1
+    local service = task.service or "unknown"
+    stats.by_service[service] = (stats.by_service[service] or 0) + 1
+  end
+  return stats
+end
+
+function Host:_cleanup_task_waiters(task)
+  if not task then
+    return false
+  end
+  local waiting_on = task.waiting_on
+  if waiting_on then
+    local waiter_maps = {
+      waiting_read = self._task_read_waiters,
+      waiting_dial = self._task_dial_waiters,
+      waiting_write = self._task_write_waiters,
+    }
+    local waiters = waiter_maps[task.status] and waiter_maps[task.status][waiting_on]
+    if waiters then
+      waiters[task.id] = nil
+      if next(waiters) == nil then
+        waiter_maps[task.status][waiting_on] = nil
+      end
+    end
+  end
+  if type(task.read_unwatch) == "function" then
+    pcall(task.read_unwatch)
+  end
+  if type(task.dial_unwatch) == "function" then
+    pcall(task.dial_unwatch)
+  end
+  if type(task.write_unwatch) == "function" then
+    pcall(task.write_unwatch)
+  end
+  if type(task.task_unwatch) == "function" then
+    pcall(task.task_unwatch)
+  end
+  task.read_unwatch = nil
+  task.dial_unwatch = nil
+  task.write_unwatch = nil
+  task.task_unwatch = nil
+  task.waiting_on = nil
+  task._read_woke_before_unwatch = nil
+  task._dial_woke_before_unwatch = nil
+  task._write_woke_before_unwatch = nil
+  return true
+end
+
 function Host:cancel_task(task_id)
   local task = self._tasks[task_id]
   if not task then
@@ -1458,22 +1540,7 @@ function Host:cancel_task(task_id)
   if task.status == "completed" or task.status == "failed" or task.status == "cancelled" then
     return false
   end
-  if type(task.read_unwatch) == "function" then
-    pcall(task.read_unwatch)
-    task.read_unwatch = nil
-  end
-  if type(task.dial_unwatch) == "function" then
-    pcall(task.dial_unwatch)
-    task.dial_unwatch = nil
-  end
-  if type(task.write_unwatch) == "function" then
-    pcall(task.write_unwatch)
-    task.write_unwatch = nil
-  end
-  if type(task.task_unwatch) == "function" then
-    pcall(task.task_unwatch)
-    task.task_unwatch = nil
-  end
+  self:_cleanup_task_waiters(task)
   task.cancelled = true
   task.status = "cancelled"
   task.updated_at = now_seconds()
@@ -1798,22 +1865,7 @@ function Host:_run_background_tasks(opts)
       goto continue_tasks
     end
     if task.cancelled then
-      if type(task.read_unwatch) == "function" then
-        pcall(task.read_unwatch)
-        task.read_unwatch = nil
-      end
-      if type(task.dial_unwatch) == "function" then
-        pcall(task.dial_unwatch)
-        task.dial_unwatch = nil
-      end
-      if type(task.write_unwatch) == "function" then
-        pcall(task.write_unwatch)
-        task.write_unwatch = nil
-      end
-      if type(task.task_unwatch) == "function" then
-        pcall(task.task_unwatch)
-        task.task_unwatch = nil
-      end
+      self:_cleanup_task_waiters(task)
       task.status = "cancelled"
       task.updated_at = now_seconds()
       goto continue_tasks
@@ -1825,22 +1877,7 @@ function Host:_run_background_tasks(opts)
     local ok, result_or_yield, extra = coroutine.resume(task.co)
     task.updated_at = now_seconds()
     if not ok then
-      if type(task.read_unwatch) == "function" then
-        pcall(task.read_unwatch)
-        task.read_unwatch = nil
-      end
-      if type(task.dial_unwatch) == "function" then
-        pcall(task.dial_unwatch)
-        task.dial_unwatch = nil
-      end
-      if type(task.write_unwatch) == "function" then
-        pcall(task.write_unwatch)
-        task.write_unwatch = nil
-      end
-      if type(task.task_unwatch) == "function" then
-        pcall(task.task_unwatch)
-        task.task_unwatch = nil
-      end
+      self:_cleanup_task_waiters(task)
       task.status = "failed"
       task.error = error_mod.new("protocol", "task panicked", {
         task_id = task.id,
@@ -1858,22 +1895,7 @@ function Host:_run_background_tasks(opts)
       goto continue_tasks
     end
     if coroutine.status(task.co) == "dead" then
-      if type(task.read_unwatch) == "function" then
-        pcall(task.read_unwatch)
-        task.read_unwatch = nil
-      end
-      if type(task.dial_unwatch) == "function" then
-        pcall(task.dial_unwatch)
-        task.dial_unwatch = nil
-      end
-      if type(task.write_unwatch) == "function" then
-        pcall(task.write_unwatch)
-        task.write_unwatch = nil
-      end
-      if type(task.task_unwatch) == "function" then
-        pcall(task.task_unwatch)
-        task.task_unwatch = nil
-      end
+      self:_cleanup_task_waiters(task)
       if result_or_yield == nil and extra then
         task.status = "failed"
         task.error = extra
@@ -2108,64 +2130,75 @@ function Host:dial(peer_or_addr, opts)
     return existing.conn, existing.state
   end
 
-  local addr = resolved.addr
-  if not addr then
-    local addrs = self.peerstore and self.peerstore:get_addrs(resolved.peer_id) or {}
-    addr = first_dialable_tcp_addr(addrs) or first_relay_addr(addrs)
+  local candidate_addrs
+  if resolved.addr then
+    candidate_addrs = { resolved.addr }
+  else
+    local addrs = resolved.addrs
+    if type(addrs) ~= "table" then
+      addrs = self.peerstore and self.peerstore:get_addrs(resolved.peer_id) or {}
+    end
+    candidate_addrs = ordered_dial_addrs(addrs, opts and opts.max_dial_addrs)
   end
-  if not addr then
+  if #candidate_addrs == 0 then
     return nil, nil, error_mod.new("input", "dial target must include an address when no connection exists")
   end
 
-  local raw_conn, dial_err, relay_state
-  if multiaddr.is_relay_addr(addr) then
-    raw_conn, relay_state, dial_err = self:_dial_relay_raw(addr, resolved.peer_id, opts)
-  else
-    local endpoint, endpoint_err = multiaddr.to_tcp_endpoint(addr)
-    if not endpoint then
-      return nil, nil, endpoint_err
+  local last_err
+  for _, addr in ipairs(candidate_addrs) do
+    local raw_conn, dial_err, relay_state
+    if multiaddr.is_relay_addr(addr) then
+      raw_conn, relay_state, dial_err = self:_dial_relay_raw(addr, resolved.peer_id, opts)
+    else
+      local endpoint, endpoint_err = multiaddr.to_tcp_endpoint(addr)
+      if not endpoint then
+        last_err = endpoint_err
+      else
+        raw_conn, dial_err = self._tcp_transport.dial({
+          host = endpoint.host,
+          port = endpoint.port,
+        }, {
+          timeout = (opts and opts.timeout) or self._connect_timeout,
+          io_timeout = (opts and opts.io_timeout) or self._io_timeout,
+          ctx = opts and opts.ctx,
+        })
+      end
     end
+    if raw_conn then
+      local expected_remote = resolved.peer_id or extract_peer_id_from_multiaddr(addr)
 
-    raw_conn, dial_err = self._tcp_transport.dial({
-      host = endpoint.host,
-      port = endpoint.port,
-    }, {
-      timeout = (opts and opts.timeout) or self._connect_timeout,
-      io_timeout = (opts and opts.io_timeout) or self._io_timeout,
-      ctx = opts and opts.ctx,
-    })
-  end
-  if not raw_conn then
-    return nil, nil, dial_err
-  end
-
-  local expected_remote = resolved.peer_id or extract_peer_id_from_multiaddr(addr)
-
-  local conn, state, up_err = upgrader.upgrade_outbound(raw_conn, {
-    local_keypair = self.identity,
-    expected_remote_peer_id = expected_remote,
-    security_protocols = self.security_transports,
-    muxer_protocols = self.muxers,
-    ctx = opts and opts.ctx,
-  })
-  if not conn then
-    if type(raw_conn.close) == "function" then
-      raw_conn:close()
+      local conn, state, up_err = upgrader.upgrade_outbound(raw_conn, {
+        local_keypair = self.identity,
+        expected_remote_peer_id = expected_remote,
+        security_protocols = self.security_transports,
+        muxer_protocols = self.muxers,
+        ctx = opts and opts.ctx,
+      })
+      if not conn then
+        if type(raw_conn.close) == "function" then
+          raw_conn:close()
+        end
+        last_err = up_err
+      else
+        if relay_state then
+          relay_state.limit = relay_state.limit or nil
+          relay_state.limit_kind = relay_proto.classify_limit(relay_state.limit)
+          relay_state.direction = "outbound"
+          state.relay = relay_state
+        end
+        local entry, register_err = self:_register_connection(conn, state)
+        if entry then
+          return entry.conn, entry.state
+        end
+        conn:close()
+        last_err = register_err
+      end
+    elseif dial_err then
+      last_err = dial_err
     end
-    return nil, nil, up_err
   end
-  if relay_state then
-    relay_state.limit = relay_state.limit or nil
-    relay_state.limit_kind = relay_proto.classify_limit(relay_state.limit)
-    relay_state.direction = "outbound"
-    state.relay = relay_state
-  end
-  local entry, register_err = self:_register_connection(conn, state)
-  if not entry then
-    conn:close()
-    return nil, nil, register_err
-  end
-  return entry.conn, entry.state
+
+  return nil, nil, last_err or error_mod.new("io", "all dial addresses failed")
 end
 
 function Host:new_stream(peer_or_addr, protocols, opts)
@@ -2503,33 +2536,26 @@ function Host:_run_bootstrap_discovery_if_due()
           ttl = cfg.tag_ttl,
         })
       end
-      self._pending_bootstrap_dials[#self._pending_bootstrap_dials + 1] = {
-        peer_id = peer.peer_id,
-        addrs = peer.addrs,
-      }
-    end
-  end
-  return true
-end
-
-function Host:_run_pending_bootstrap_dials(max_dials)
-  local limit = max_dials or 1
-  for _ = 1, limit do
-    local target = table.remove(self._pending_bootstrap_dials, 1)
-    if not target then
-      return true
-    end
-    local conn = self:_find_connection(target.peer_id)
-    if not conn then
-      local ok = pcall(function()
-        self:dial(target, {
-          timeout = self._connect_timeout,
-          io_timeout = self._io_timeout,
-        })
-      end)
-      if not ok then
+      self:spawn_task("host.bootstrap_dial", function(ctx)
+        if self:_find_connection(peer.peer_id) then
+          return true
+        end
+        local ok = pcall(function()
+          self:dial({
+            peer_id = peer.peer_id,
+            addrs = peer.addrs,
+          }, {
+            timeout = self._connect_timeout,
+            io_timeout = self._io_timeout,
+            ctx = ctx,
+          })
+        end)
         -- Bootstrap dials are opportunistic; DHT bootstrap can still query seeds explicitly.
-      end
+        return ok == true
+      end, {
+        service = "host",
+        peer_id = peer.peer_id,
+      })
     end
   end
   return true
@@ -2550,7 +2576,6 @@ function Host:poll_once(timeout)
   if not boot_ok then
     return nil, boot_err
   end
-  self:_run_pending_bootstrap_dials(1)
   if self._runtime_impl and self._runtime_impl.poll_once then
     return self._runtime_impl.poll_once(self, timeout)
   end
@@ -2639,6 +2664,9 @@ function Host:close()
   self._connections = {}
   self._connections_by_peer = {}
   self._connections_by_id = {}
+  for _, task in pairs(self._tasks) do
+    self:_cleanup_task_waiters(task)
+  end
   self._handler_tasks = {}
   self._tasks = {}
   self._task_queue = {}

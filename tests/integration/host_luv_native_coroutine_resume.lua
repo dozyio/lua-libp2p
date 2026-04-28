@@ -7,7 +7,7 @@ local function run()
 
   -- This subprocess path verifies the native luv host can resume inbound
   -- upgrade and stream negotiation coroutines while the uv loop is running.
-  local ping_subprocess = require("tests.integration.host_luv_runtime_ping_subprocess")
+  local ping_subprocess = require("tests.integration.host_luv_scheduler_pump_ping_subprocess")
   return ping_subprocess.run()
 end
 

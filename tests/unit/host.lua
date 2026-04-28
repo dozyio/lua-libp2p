@@ -2,6 +2,7 @@ local ed25519 = require("lua_libp2p.crypto.ed25519")
 local keys = require("lua_libp2p.crypto.keys")
 local host = require("lua_libp2p.host")
 local identify = require("lua_libp2p.protocol.identify")
+local upgrader = require("lua_libp2p.network.upgrader")
 local perf = require("lua_libp2p.protocol.perf")
 local ping = require("lua_libp2p.protocol.ping")
 
@@ -59,7 +60,10 @@ local function run()
     identity = keypair,
     peer_discovery = {
       bootstrap = {
-        list = { "/ip4/127.0.0.1/tcp/4001/p2p/12D3KooWCryG7Mon9orvQxcS1rYZjotPgpwoJNHHKcLLfE4Hf5mV" },
+        list = {
+          "/ip4/127.0.0.1/tcp/4001/p2p/12D3KooWCryG7Mon9orvQxcS1rYZjotPgpwoJNHHKcLLfE4Hf5mV",
+          "/ip4/127.0.0.1/tcp/4002/p2p/12D3KooWQWZLu9qXWPTDnF9rTRrAiVGZrXCbHAvkqYrsG8cW4UHg",
+        },
       },
     },
     services = { "kad_dht" },
@@ -75,9 +79,9 @@ local function run()
     return nil, "kad_dht service should default to host peer_discovery"
   end
 
-  local bootstrap_dialed = nil
+  local bootstrap_dialed = {}
   function discovery_host:dial(target)
-    bootstrap_dialed = target
+    bootstrap_dialed[#bootstrap_dialed + 1] = target
     return {}, { remote_peer_id = target.peer_id }
   end
   discovery_host._bootstrap_discovery.timeout = 0
@@ -89,14 +93,53 @@ local function run()
   if not discovery_polled then
     return nil, discovery_poll_err
   end
-  if not bootstrap_dialed or bootstrap_dialed.peer_id ~= "12D3KooWCryG7Mon9orvQxcS1rYZjotPgpwoJNHHKcLLfE4Hf5mV" then
-    return nil, "host should dial bootstrap peers after startup delay"
+  if #bootstrap_dialed ~= 2 then
+    return nil, "host should spawn scheduler dials for all bootstrap peers after startup delay"
   end
-  local bootstrap_tags = discovery_host.peerstore:get_tags(bootstrap_dialed.peer_id)
+  local bootstrap_tags = discovery_host.peerstore:get_tags(bootstrap_dialed[1].peer_id)
   if not bootstrap_tags.bootstrap or bootstrap_tags.bootstrap.value ~= 50 then
     return nil, "host should tag bootstrap peers"
   end
+  local bootstrap_stats = discovery_host:task_stats()
+  if bootstrap_stats.by_name["host.bootstrap_dial"] ~= 2 or bootstrap_stats.by_status.completed ~= 2 then
+    return nil, "host task stats should include completed bootstrap dial tasks"
+  end
   discovery_host:stop()
+
+  local multi_dial_host = assert(host.new({
+    runtime = "poll",
+    identity = keypair,
+    blocking = false,
+  }))
+  local dialed = {}
+  multi_dial_host._tcp_transport = {
+    dial = function(endpoint)
+      dialed[#dialed + 1] = endpoint.host .. ":" .. tostring(endpoint.port)
+      if #dialed == 1 then
+        return nil, require("lua_libp2p.error").new("timeout", "tcp connect timed out")
+      end
+      return { close = function() return true end }
+    end,
+  }
+  local original_upgrade_outbound = upgrader.upgrade_outbound
+  local multi_peer_id = "12D3KooWCryG7Mon9orvQxcS1rYZjotPgpwoJNHHKcLLfE4Hf5mV"
+  upgrader.upgrade_outbound = function()
+    return { close = function() return true end }, { remote_peer_id = multi_peer_id }
+  end
+  local multi_conn, _, multi_err = multi_dial_host:dial({
+    peer_id = multi_peer_id,
+    addrs = {
+      "/ip4/203.0.113.10/tcp/4001/p2p/" .. multi_peer_id,
+      "/ip4/198.51.100.20/tcp/4001/p2p/" .. multi_peer_id,
+    },
+  })
+  upgrader.upgrade_outbound = original_upgrade_outbound
+  if not multi_conn then
+    return nil, multi_err
+  end
+  if #dialed ~= 2 or dialed[1] ~= "203.0.113.10:4001" or dialed[2] ~= "198.51.100.20:4001" then
+    return nil, "host should try the next peer address when the first dial fails"
+  end
 
   for _, key_type in ipairs({ "rsa", "ecdsa", "secp256k1" }) do
     local identity, identity_err = keys.generate_keypair(key_type)
