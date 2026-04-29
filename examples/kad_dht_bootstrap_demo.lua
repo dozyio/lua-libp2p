@@ -422,34 +422,16 @@ local function run_client()
 
   local dht = host.kad_dht
 
-  local bootstrap_task, bootstrap_task_err = dht:bootstrap()
-  if not bootstrap_task then
-    io.stderr:write("bootstrap failed: " .. tostring(bootstrap_task_err) .. "\n")
-    os.exit(1)
+  local seed_deadline = os.time() + 30
+  while #dht.routing_table:all_peers() == 0 and os.time() < seed_deadline do
+    local pumped, pump_err = scheduler_sleep(0.25)
+    if not pumped then
+      io.stderr:write("host pump failed: " .. tostring(pump_err) .. "\n")
+      break
+    end
   end
-  local report, bootstrap_err = wait_task(bootstrap_task)
-  if not report then
-    io.stderr:write("bootstrap failed: " .. tostring(bootstrap_err) .. "\n")
-    os.exit(1)
-  end
-
-  io.stdout:write("bootstrap report:\n")
-  io.stdout:write("  attempted: " .. tostring(report.attempted) .. "\n")
-  io.stdout:write("  connected: " .. tostring(report.connected) .. "\n")
-  io.stdout:write("  added: " .. tostring(report.added) .. "\n")
-  io.stdout:write("  skipped: " .. tostring(report.skipped or 0) .. "\n")
-  io.stdout:write("  failed: " .. tostring(report.failed) .. "\n")
-  if #report.errors > 0 then
-    io.stdout:write("  errors:\n")
-    print_error_summary(report.errors)
-  end
-
-  local pumped, pump_err = scheduler_sleep(0.1)
-  if not pumped then
-    io.stderr:write("host pump failed: " .. tostring(pump_err) .. "\n")
-  end
-  if report.attempted == 0 then
-    io.stdout:write("  hint: no dialable peers discovered from bootstrap input\n")
+  if #dht.routing_table:all_peers() == 0 then
+    io.stdout:write("  hint: no KAD-capable peers discovered from bootstrap input\n")
   end
 
   local peers = dht.routing_table:all_peers()
@@ -472,9 +454,13 @@ local function run_client()
 
   if bootstrap_peer_id then
     io.stdout:write("running one FIND_NODE query against bootstrap peer...\n")
-    local lookup, lookup_err = run_task("example.find_node", function(ctx)
-      return dht:find_node(bootstrap_addrs[1], host:peer_id().id, { ctx = ctx })
-    end)
+    local lookup_op, lookup_op_err = dht:find_node(bootstrap_addrs[1], host:peer_id().id)
+    local lookup, lookup_err
+    if lookup_op then
+      lookup, lookup_err = lookup_op:result()
+    else
+      lookup_err = lookup_op_err
+    end
     if not lookup then
       io.stderr:write("FIND_NODE failed: " .. tostring(lookup_err) .. "\n")
     else
@@ -486,16 +472,15 @@ local function run_client()
 
     io.stdout:write("running one random-walk refresh (target=self peer id)...\n")
     local walk_started_at = os.time()
-    local walk_task, walk_task_err = dht:random_walk({
+    local walk_op, walk_op_err = dht:random_walk({
       alpha = 10,
       disjoint_paths = 10,
-      bootstrap_if_empty = true,
     })
     local walk, walk_err
-    if walk_task then
-      walk, walk_err = wait_task(walk_task)
+    if walk_op then
+      walk, walk_err = walk_op:result()
     else
-      walk_err = walk_task_err
+      walk_err = walk_op_err
     end
     if not walk then
       io.stderr:write("random walk failed: " .. tostring(walk_err) .. "\n")

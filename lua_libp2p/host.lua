@@ -50,6 +50,17 @@ local function list_copy(values)
   return out
 end
 
+local function pack_returns(...)
+  return { n = select("#", ...), ... }
+end
+
+local function unpack_returns(values)
+  if type(values) ~= "table" then
+    return nil
+  end
+  return table.unpack(values, 1, values.n or #values)
+end
+
 local function list_equal(a, b)
   if #a ~= #b then
     return false
@@ -168,6 +179,9 @@ local function make_task_context(task)
         name = child_task.name,
         status = child_task.status,
       })
+    end
+    if child_task.results then
+      return unpack_returns(child_task.results)
     end
     return child_task.result
   end
@@ -1645,6 +1659,9 @@ function Host:run_until_task(task, opts)
       status = task.status,
     })
   end
+  if task.results then
+    return unpack_returns(task.results)
+  end
   return task.result
 end
 
@@ -1927,7 +1944,10 @@ function Host:_run_background_tasks(opts)
     resumes = resumes + 1
     task.status = "running"
     task.updated_at = now_seconds()
-    local ok, result_or_yield, extra = coroutine.resume(task.co)
+    local resumed = pack_returns(coroutine.resume(task.co))
+    local ok = resumed[1]
+    local result_or_yield = resumed[2]
+    local extra = resumed[3]
     task.updated_at = now_seconds()
     if not ok then
       self:_cleanup_task_waiters(task)
@@ -1962,6 +1982,10 @@ function Host:_run_background_tasks(opts)
       else
         task.status = "completed"
         task.result = result_or_yield
+        task.results = { n = math.max((resumed.n or 1) - 1, 0) }
+        for result_index = 2, resumed.n or 1 do
+          task.results[result_index - 1] = resumed[result_index]
+        end
         emit_event(self, "task:completed", {
           task_id = task.id,
           name = task.name,
@@ -2674,7 +2698,7 @@ function Host:_run_bootstrap_discovery_if_due()
             ctx = ctx,
           })
         end)
-        -- Bootstrap dials are opportunistic; DHT bootstrap can still query seeds explicitly.
+        -- Bootstrap dials are opportunistic; identify events seed interested services.
         return ok == true
       end, {
         service = "host",

@@ -634,11 +634,13 @@ local function run()
   if type(protocol_handlers) ~= "table" or type(protocol_handlers[1]) ~= "function" then
     return nil, "expected protocol update handler"
   end
-  protocol_handlers[1]({
-    peer_id = "peer-relay",
-    protocols = { "/relay/test/1.0.0" },
-    added_protocols = { "/relay/test/1.0.0" },
-  })
+  for _, handler_fn in ipairs(protocol_handlers) do
+    handler_fn({
+      peer_id = "peer-relay",
+      protocols = { "/relay/test/1.0.0" },
+      added_protocols = { "/relay/test/1.0.0" },
+    })
+  end
   if matched_peer ~= "peer-relay" then
     return nil, "on_protocol should match protocol update events"
   end

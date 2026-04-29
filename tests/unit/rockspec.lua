@@ -25,6 +25,7 @@ local function run()
     "lua_libp2p.kbucket",
     "lua_libp2p.kad_dht",
     "lua_libp2p.kad_dht.protocol",
+    "lua_libp2p.operation",
     "lua_libp2p.peerstore",
     "lua_libp2p.protocol.circuit_relay_v2",
     "lua_libp2p.protocol.identify",

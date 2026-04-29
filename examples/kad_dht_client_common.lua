@@ -94,12 +94,12 @@ local function bootstrap_config(opts)
       list = opts.bootstrappers,
       dialable_only = true,
       ignore_resolve_errors = true,
-      dial_on_start = false,
+      dial_on_start = true,
     }
   end
   return {
     ignore_resolve_errors = true,
-    dial_on_start = false,
+    dial_on_start = true,
   }
 end
 
@@ -150,6 +150,25 @@ function M.run_task(host, name, fn)
   return M.wait_task(host, task)
 end
 
+function M.wait_for_routing_table(host, dht, opts)
+  local options = opts or {}
+  local timeout = options.timeout or 30
+  local min_peers = options.min_peers or 1
+  local started_at = os.time()
+  while os.time() - started_at < timeout do
+    if #(dht.routing_table:all_peers()) >= min_peers then
+      return true
+    end
+    local ok, err = M.run_task(host, "example.wait_for_dht_peer", function(ctx)
+      return ctx:sleep(0.25)
+    end)
+    if ok == nil and err then
+      return nil, err
+    end
+  end
+  return nil, "timed out waiting for DHT routing table peers"
+end
+
 function M.new_client(opts)
   local host, host_err = host_mod.new({
     runtime = "luv",
@@ -180,21 +199,15 @@ function M.new_client(opts)
 
   local dht = host.kad_dht
 
-  local bootstrap_task, bootstrap_task_err = dht:bootstrap()
-  if not bootstrap_task then
-    host:stop()
-    return nil, bootstrap_task_err
-  end
-  local bootstrap_report, bootstrap_err = M.wait_task(host, bootstrap_task)
-  if not bootstrap_report then
+  local seeded, bootstrap_err = M.wait_for_routing_table(host, dht, {
+    timeout = opts.bootstrap_timeout or 30,
+  })
+  if not seeded then
     host:stop()
     return nil, bootstrap_err
   end
 
-  io.stdout:write("bootstrap: attempted=" .. tostring(bootstrap_report.attempted)
-    .. " connected=" .. tostring(bootstrap_report.connected)
-    .. " added=" .. tostring(bootstrap_report.added)
-    .. " failed=" .. tostring(bootstrap_report.failed) .. "\n")
+  io.stdout:write("routing table seeded: peers=" .. tostring(#(dht.routing_table:all_peers())) .. "\n")
 
   return {
     host = host,

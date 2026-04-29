@@ -280,28 +280,22 @@ local function discover_autonat_servers(host, limit, ctx)
     end
   end
 
-  print("AutoNAT discovery: bootstrapping DHT")
+  print("AutoNAT discovery: waiting for DHT peers")
   sleep_poll(host, 1, ctx)
-  local boot_task = assert(host.kad_dht:bootstrap({
-    count = 20,
-    alpha = 10,
-    disjoint_paths = 10,
-  }))
-  local boot_report = wait_child_task(ctx, boot_task)
-  sleep_poll(host, 1, ctx)
-  if boot_report then
-    print("  bootstrap queried=" .. tostring(boot_report.queried or 0)
-      .. " responses=" .. tostring(boot_report.responses or 0)
-      .. " added=" .. tostring(boot_report.added or 0))
+  local seed_deadline = os.time() + 30
+  while #host.kad_dht.routing_table:all_peers() == 0 and os.time() < seed_deadline do
+    sleep_poll(host, 0.25, ctx)
   end
+  sleep_poll(host, 1, ctx)
+  print("  routing_table_peers=" .. tostring(#host.kad_dht.routing_table:all_peers()))
 
   print("AutoNAT discovery: random walk")
-  local walk_task = assert(host.kad_dht:random_walk({
+  local walk_op = assert(host.kad_dht:random_walk({
     count = 20,
     alpha = 10,
     disjoint_paths = 10,
   }))
-  local walk_report = wait_child_task(ctx, walk_task)
+  local walk_report = walk_op:result({ ctx = ctx })
   sleep_poll(host, 1, ctx)
   if walk_report then
     print("  walk queried=" .. tostring(walk_report.queried or 0)
@@ -354,7 +348,7 @@ local function check_discovered_autonat_servers(host, opts)
       print("AutoNAT discovery: target responses not met; continuing random walk")
       if host.kad_dht then
         local extra = assert(host.kad_dht:random_walk({ count = 20, alpha = 10, disjoint_paths = 10 }))
-        wait_task(host, extra)
+        extra:result({ timeout = 60 })
       else
         break
       end

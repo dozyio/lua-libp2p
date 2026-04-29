@@ -205,19 +205,14 @@ local function start_dht_discovery(host, opts)
   end
   local options = opts or {}
   return host:spawn_task("example.dht_discovery", function(ctx)
-    local bootstrap_task, bootstrap_task_err = host.kad_dht:bootstrap({
-      max_success = options.dht_bootstrap_peers or 2,
-    })
-    if not bootstrap_task then
-      io.stderr:write("dht bootstrap failed to start: " .. tostring(bootstrap_task_err) .. "\n")
-      return nil, bootstrap_task_err
+    local deadline = os.time() + (options.dht_seed_timeout or 30)
+    while #host.kad_dht.routing_table:all_peers() < (options.dht_bootstrap_peers or 2) and os.time() < deadline do
+      local slept, sleep_err = ctx:sleep(0.25)
+      if slept == nil and sleep_err then
+        return nil, sleep_err
+      end
     end
-    local bootstrap_report, bootstrap_err = ctx:await_task(bootstrap_task)
-    if not bootstrap_report then
-      io.stderr:write("dht bootstrap failed: " .. tostring(bootstrap_err) .. "\n")
-    else
-      print_dht_report("dht bootstrap", bootstrap_report)
-    end
+    io.stdout:write("dht seeded peers: " .. tostring(#host.kad_dht.routing_table:all_peers()) .. "\n")
 
     if not options.dht_walk then
       return true
@@ -229,16 +224,15 @@ local function start_dht_discovery(host, opts)
       end
     end
 
-    local walk_task, walk_task_err = host.kad_dht:random_walk({
+    local walk_op, walk_task_err = host.kad_dht:random_walk({
       alpha = options.dht_alpha or 3,
       disjoint_paths = options.dht_paths or 2,
-      bootstrap_if_empty = true,
     })
-    if not walk_task then
+    if not walk_op then
       io.stderr:write("dht random walk failed to start: " .. tostring(walk_task_err) .. "\n")
       return nil, walk_task_err
     end
-    local walk_report, walk_err = ctx:await_task(walk_task)
+    local walk_report, walk_err = walk_op:result({ ctx = ctx })
     if not walk_report then
       io.stderr:write("dht random walk failed: " .. tostring(walk_err) .. "\n")
     else
@@ -263,13 +257,13 @@ end
 
 local peer_discovery = {
   bootstrap = {
-    dial_on_start = false,
+    dial_on_start = true,
   },
 }
 if #opts.bootstrap_addrs > 0 then
   peer_discovery.bootstrap = {
     list = opts.bootstrap_addrs,
-    dial_on_start = false,
+    dial_on_start = true,
   }
 end
 

@@ -153,6 +153,55 @@ local function run()
     return nil, "client-mode dht should not register protocol handler"
   end
 
+  local protocol_callback = nil
+  local event_host = {
+    _peer = { id = "local" },
+    peerstore = {
+      get_addrs = function(_, peer_id)
+        if peer_id == "peer-a" then
+          return { "/ip4/127.0.0.1/tcp/4001" }
+        end
+        return {}
+      end,
+    },
+  }
+  function event_host:peer_id()
+    return self._peer
+  end
+  function event_host:on(event, cb)
+    if event == "peer_protocols_updated" then
+      protocol_callback = cb
+    end
+    return true
+  end
+  function event_host:off(event, cb)
+    if event == "peer_protocols_updated" and protocol_callback == cb then
+      protocol_callback = nil
+    end
+    return true
+  end
+  local event_dht = assert(kad_dht.new(event_host, {
+    hash_function = fake_hash,
+    address_filter = "all",
+  }))
+  if not protocol_callback then
+    return nil, "dht should subscribe to peer protocol updates"
+  end
+  local event_ok, event_err = protocol_callback({
+    peer_id = "peer-a",
+    protocols = { kad_dht.PROTOCOL_ID },
+  })
+  if not event_ok then
+    return nil, event_err
+  end
+  if not event_dht:find_peer("peer-a") then
+    return nil, "dht should add KAD-capable peers from protocol update events"
+  end
+  event_dht:stop()
+  if protocol_callback ~= nil then
+    return nil, "dht stop should unsubscribe from protocol update events"
+  end
+
   local invalid_dht, invalid_filter_err = kad_dht.new(host, {
     hash_function = fake_hash,
     address_filter = "invalid",
@@ -278,6 +327,61 @@ local function run()
   end
   if closest_lookup.termination ~= "starvation" and closest_lookup.termination ~= "closest_queried" then
     return nil, "get_closest_peers should include lookup termination"
+  end
+
+  local op_host = {
+    _peer = { id = "local" },
+  }
+  function op_host:peer_id()
+    return self._peer
+  end
+  function op_host:spawn_task(_, fn)
+    local task = { id = 1 }
+    local function pack(...)
+      return { n = select("#", ...), ... }
+    end
+    local ctx = {
+      checkpoint = function() return true end,
+      await_task = function(_, child)
+        return table.unpack(child.results, 1, child.results.n)
+      end,
+    }
+    local results = pack(fn(ctx))
+    if results[1] == nil and results[2] ~= nil then
+      task.status = "failed"
+      task.error = results[2]
+    else
+      task.status = "completed"
+      task.result = results[1]
+      task.results = results
+    end
+    return task
+  end
+  function op_host:run_until_task(task)
+    if task.status ~= "completed" then
+      return nil, task.error
+    end
+    return table.unpack(task.results, 1, task.results.n)
+  end
+  local op_dht = assert(kad_dht.new(op_host, {
+    local_peer_id = "local",
+    hash_function = fake_hash,
+    address_filter = "all",
+  }))
+  op_dht._rpc = dht._rpc
+  local closest_op, closest_op_err = op_dht:get_closest_peers("target", {
+    peers = { { peer_id = "peer-a", addr = "peer-a" } },
+    count = 1,
+  })
+  if not closest_op then
+    return nil, closest_op_err
+  end
+  local op_peers, op_report, op_err = closest_op:result({ timeout = 1 })
+  if not op_peers then
+    return nil, op_err
+  end
+  if not op_report or #op_peers ~= 1 or op_peers[1].peer_id ~= "closest-a" then
+    return nil, "public DHT operation should return result values and a separate error slot"
   end
 
   local spawned = 0

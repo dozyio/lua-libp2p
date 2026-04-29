@@ -5,6 +5,7 @@ local discovery = require("lua_libp2p.discovery")
 local discovery_bootstrap = require("lua_libp2p.discovery.bootstrap")
 local kbucket = require("lua_libp2p.kbucket")
 local multiaddr = require("lua_libp2p.multiaddr")
+local operation = require("lua_libp2p.operation")
 local peerid = require("lua_libp2p.peerid")
 local protocol = require("lua_libp2p.kad_dht.protocol")
 
@@ -96,11 +97,8 @@ end
 
 function DHT:stop()
   if self.host and type(self.host.off) == "function" then
-    if self._host_on_connected then
-      self.host:off("peer_connected", self._host_on_connected)
-    end
-    if self._host_on_disconnected then
-      self.host:off("peer_disconnected", self._host_on_disconnected)
+    if self._host_on_protocols_updated then
+      self.host:off("peer_protocols_updated", self._host_on_protocols_updated)
     end
   end
   self._running = false
@@ -1031,13 +1029,17 @@ function DHT:_find_providers(key, opts)
   return { providers = providers, provider_peers = providers, closer_peers = lookup.closest_peers, lookup = lookup, errors = lookup.errors }
 end
 
-function DHT:_spawn_query_task(task_name, fn)
+function DHT:_spawn_query_task(task_name, fn, opts)
   if not (self.host and type(self.host.spawn_task) == "function") then
     return nil, error_mod.new("state", "kad_dht requires host task scheduler")
   end
-  return self.host:spawn_task(task_name, fn, {
+  local task, task_err = self.host:spawn_task(task_name, fn, {
     service = "kad_dht",
   })
+  if not task then
+    return nil, task_err
+  end
+  return operation.new(self.host, task, opts)
 end
 
 function DHT:find_node(peer_or_addr, target_key, opts)
@@ -1105,7 +1107,7 @@ function DHT:get_closest_peers(key, opts)
       return ctx:checkpoint()
     end
     return self:_get_closest_peers(key, task_opts)
-  end)
+  end, { result_count = 2 })
 end
 
 function DHT:find_providers(key, opts)
@@ -1167,30 +1169,41 @@ function DHT:discover_peers(opts)
   return discoverer:discover(options)
 end
 
-function DHT:_on_peer_connected(payload)
+function DHT:_on_peer_protocols_updated(payload)
   local peer_id = payload and payload.peer_id
   if type(peer_id) ~= "string" or peer_id == "" then
     return true
   end
+  local protocols = payload.protocols or {}
+  local supports_kad = false
+  for _, protocol_id in ipairs(protocols) do
+    if protocol_id == self.protocol_id then
+      supports_kad = true
+      break
+    end
+  end
+  if not supports_kad then
+    return true
+  end
 
-  local now = os.time()
+  local addrs = nil
+  if self.host and self.host.peerstore then
+    addrs = self:_filter_addrs(self.host.peerstore:get_addrs(peer_id), {
+      peer_id = peer_id,
+      purpose = "protocol_update",
+    })
+  end
+  local added, add_err = self:add_peer(peer_id, {
+    addrs = addrs,
+    allow_replace = true,
+  })
   local health = self._peer_health[peer_id] or {}
-  health.last_connected_at = now
+  health.last_verified_at = os.time()
   health.stale = false
   self._peer_health[peer_id] = health
-  return true
-end
-
-function DHT:_on_peer_disconnected(payload)
-  local peer_id = payload and payload.peer_id
-  if type(peer_id) ~= "string" or peer_id == "" then
-    return true
+  if not added and add_err and not is_capacity_error(add_err) then
+    return nil, add_err
   end
-
-  local health = self._peer_health[peer_id] or {}
-  health.last_disconnected_at = os.time()
-  health.stale = true
-  self._peer_health[peer_id] = health
   return true
 end
 
@@ -1347,29 +1360,6 @@ function DHT:_bootstrap(opts)
   return result
 end
 
-function DHT:bootstrap(opts)
-  if not (self.host and type(self.host.spawn_task) == "function") then
-    return nil, error_mod.new("state", "kad_dht bootstrap requires host task scheduler")
-  end
-  local options = opts or {}
-  return self.host:spawn_task("kad.bootstrap", function(ctx)
-    local task_opts = {}
-    for k, v in pairs(options) do
-      task_opts[k] = v
-    end
-    task_opts.yield = task_opts.yield or function()
-      return ctx:checkpoint()
-    end
-    task_opts.dial_opts = task_opts.dial_opts or {}
-    task_opts.dial_opts.ctx = task_opts.dial_opts.ctx or ctx
-    task_opts.protocol_check_opts = task_opts.protocol_check_opts or {}
-    task_opts.protocol_check_opts.ctx = task_opts.protocol_check_opts.ctx or ctx
-    return self:_bootstrap(task_opts)
-  end, {
-    service = "kad_dht",
-  })
-end
-
 function DHT:refresh_once(opts)
   local options = opts or {}
   local yield = type(options.yield) == "function" and options.yield or nil
@@ -1509,21 +1499,6 @@ function DHT:_random_walk(opts)
   end
 
   local initial_peers = self.routing_table:all_peers()
-  if #initial_peers == 0 and options.bootstrap_if_empty then
-    local bootstrap_report, bootstrap_err = self:_bootstrap({
-      peer_discovery = options.peer_discovery,
-      dnsaddr_resolver = options.dnsaddr_resolver,
-      ignore_discovery_errors = options.ignore_discovery_errors,
-      allow_replace = options.allow_replace,
-      fail_fast = options.fail_fast,
-      max_success = options.max_success,
-    })
-    if not bootstrap_report then
-      return nil, bootstrap_err
-    end
-    initial_peers = self.routing_table:all_peers()
-  end
-
   if options.legacy_walker ~= true then
     local seeds = {}
     local initial_peer_ids = {}
@@ -1779,7 +1754,7 @@ function DHT:random_walk(opts)
     return nil, error_mod.new("state", "kad_dht random_walk requires host task scheduler")
   end
   local options = opts or {}
-  return self.host:spawn_task("kad.random_walk", function(ctx)
+  local task, task_err = self.host:spawn_task("kad.random_walk", function(ctx)
     local task_opts = {}
     for k, v in pairs(options) do
       task_opts[k] = v
@@ -1795,6 +1770,10 @@ function DHT:random_walk(opts)
   end, {
     service = "kad_dht",
   })
+  if not task then
+    return nil, task_err
+  end
+  return operation.new(self.host, task)
 end
 
 function M.new(host, opts)
@@ -1843,27 +1822,16 @@ function M.new(host, opts)
     routing_table = rt,
     _peer_health = {},
     _dnsaddr_resolver = options.dnsaddr_resolver,
-    _host_on_connected = nil,
-    _host_on_disconnected = nil,
+    _host_on_protocols_updated = nil,
     _running = false,
   }, DHT)
 
   if host and type(host.on) == "function" then
-    self_obj._host_on_connected = function(payload)
-      return self_obj:_on_peer_connected(payload)
+    self_obj._host_on_protocols_updated = function(payload)
+      return self_obj:_on_peer_protocols_updated(payload)
     end
-    self_obj._host_on_disconnected = function(payload)
-      return self_obj:_on_peer_disconnected(payload)
-    end
-    local ok, on_err = host:on("peer_connected", self_obj._host_on_connected)
+    local ok, on_err = host:on("peer_protocols_updated", self_obj._host_on_protocols_updated)
     if not ok then
-      return nil, on_err
-    end
-    ok, on_err = host:on("peer_disconnected", self_obj._host_on_disconnected)
-    if not ok then
-      if type(host.off) == "function" then
-        host:off("peer_connected", self_obj._host_on_connected)
-      end
       return nil, on_err
     end
   end
