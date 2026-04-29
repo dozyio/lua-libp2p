@@ -374,6 +374,10 @@ function AutoRelay:_process_queue(now, limit)
   local processed = 0
   local max = limit or self.reservation_concurrency
   while processed < max and #self._queue > 0 do
+    if self.max_reservations and self.reservation_count >= self.max_reservations then
+      self.need_more_relays = false
+      break
+    end
     local item = table.remove(self._queue, 1)
     self._queued[item.key] = nil
     local backoff_until = self._backoff_until[item.key]
@@ -399,7 +403,7 @@ function AutoRelay:start()
   if self.host and type(self.host.handle) == "function" and type(self.host._handle_relay_stop) == "function" then
     local ok, err = self.host:handle(relay_proto.STOP_ID, function(stream, ctx)
       return self.host:_handle_relay_stop(stream, ctx)
-    end)
+    end, { run_on_limited_connection = true })
     if not ok then
       return nil, err
     end

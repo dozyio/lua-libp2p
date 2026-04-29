@@ -104,6 +104,13 @@ local function run()
   if bootstrap_stats.by_name["host.bootstrap_dial"] ~= 2 or bootstrap_stats.by_status.completed ~= 2 then
     return nil, "host task stats should include completed bootstrap dial tasks"
   end
+  local host_stats = discovery_host:stats()
+  if host_stats.runtime ~= "poll" or host_stats.tasks.total ~= bootstrap_stats.total then
+    return nil, "host stats should expose runtime and task stats"
+  end
+  if not host_stats.connections or host_stats.connections.max_parallel_dials == nil then
+    return nil, "host stats should expose connection manager stats"
+  end
   discovery_host._identify_inflight["peer-a"] = true
   discovery_host._identify_inflight["peer-b"] = true
   if discovery_host:task_stats().identify_inflight ~= 2 then
@@ -111,6 +118,44 @@ local function run()
   end
   discovery_host._identify_inflight = {}
   discovery_host:stop()
+
+  local limited_host = assert(host.new({
+    runtime = "poll",
+    identity = keypair,
+    blocking = false,
+  }))
+  local opened_streams = {}
+  local limited_conn = {
+    new_stream = function(_, protocols)
+      opened_streams[#opened_streams + 1] = protocols[1]
+      return {}, protocols[1]
+    end,
+  }
+  function limited_host:dial()
+    return limited_conn, { relay = { limit_kind = "limited" } }
+  end
+  local app_stream, _, _, app_err = limited_host:new_stream("peer-a", { "/app/1.0.0" })
+  if app_stream or not app_err or app_err.kind ~= "permission" or #opened_streams ~= 0 then
+    return nil, "limited connections should reject protocols without handler opt-in before opening streams"
+  end
+  local handled_ok, handled_err = limited_host:handle("/app/allowed/1.0.0", function() return true end, {
+    run_on_limited_connection = true,
+  })
+  if not handled_ok then
+    return nil, handled_err
+  end
+  local allowed_stream, allowed_selected, _, allowed_err = limited_host:new_stream("peer-a", { "/app/allowed/1.0.0" })
+  if not allowed_stream or allowed_selected ~= "/app/allowed/1.0.0" then
+    return nil, allowed_err or "limited connections should allow protocols opted in at handler registration"
+  end
+  local ping_ok, ping_service_err = limited_host:add_service("ping")
+  if not ping_ok then
+    return nil, ping_service_err
+  end
+  local ping_stream, ping_selected, _, ping_stream_err = limited_host:new_stream("peer-a", { ping.ID })
+  if not ping_stream or ping_selected ~= ping.ID then
+    return nil, ping_stream_err or "ping service should opt into limited connections at handler registration"
+  end
 
   local multi_dial_host = assert(host.new({
     runtime = "poll",
@@ -151,6 +196,56 @@ local function run()
   end
   if dial_timeouts[1] ~= 2 or dial_timeouts[2] ~= 2 then
     return nil, "connection manager should apply per-address dial timeout"
+  end
+
+  local selection_host = assert(host.new({
+    runtime = "poll",
+    identity = keypair,
+    blocking = false,
+  }))
+  local limited_stream_opened = false
+  assert(selection_host:_register_connection({
+    new_stream = function()
+      limited_stream_opened = true
+      return {}, "/app/1.0.0"
+    end,
+    close = function()
+      return true
+    end,
+  }, {
+    remote_peer_id = multi_peer_id,
+    direction = "outbound",
+    relay = { limit_kind = "limited" },
+  }))
+  local direct_dialed = false
+  selection_host._tcp_transport = {
+    dial = function()
+      direct_dialed = true
+      return { close = function() return true end }
+    end,
+  }
+  local original_selection_upgrade = upgrader.upgrade_outbound
+  local direct_conn = {
+    new_stream = function(_, protocols)
+      return { direct = true }, protocols[1]
+    end,
+    close = function()
+      return true
+    end,
+  }
+  upgrader.upgrade_outbound = function()
+    return direct_conn, { remote_peer_id = multi_peer_id, direction = "outbound" }
+  end
+  local direct_stream, direct_selected, direct_stream_conn, direct_state_or_err = selection_host:new_stream({
+    peer_id = multi_peer_id,
+    addrs = { "/ip4/8.8.8.8/tcp/4001/p2p/" .. multi_peer_id },
+  }, { "/app/1.0.0" })
+  upgrader.upgrade_outbound = original_selection_upgrade
+  if not direct_stream then
+    return nil, direct_state_or_err
+  end
+  if not direct_dialed or limited_stream_opened or direct_selected ~= "/app/1.0.0" or direct_stream_conn ~= direct_conn then
+    return nil, "new_stream should prefer dialing an unlimited connection over reusing a limited one"
   end
 
   local prune_host = assert(host.new({

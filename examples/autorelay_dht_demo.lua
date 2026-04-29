@@ -7,38 +7,47 @@ package.path = table.concat({
 local host_mod = require("lua_libp2p.host")
 local ed25519 = require("lua_libp2p.crypto.ed25519")
 
-local DEFAULT_RELAY = "/ip4/54.38.47.166/tcp/4001/p2p/QmbLHAnMoJPWSCR5Zhtx6BHJX9KiKNN6tpvbUcqanj75Nb"
 local DEFAULT_KEY_PATH = "examples/.autorelay_dht_demo.ed25519.key"
 
 local function usage()
   io.stderr:write([[
 Usage:
-  lua examples/autorelay_dht_demo.lua [--relay <multiaddr>] [--max-reservations 1] [--status-interval 30] [--key <path>]
+  lua examples/autorelay_dht_demo.lua [--bootstrap <multiaddr>] [--relay <multiaddr>] [--no-dht-walk] [--dht-walk-delay 0] [--dht-alpha 3] [--dht-paths 2] [--dht-bootstrap-peers 2] [--max-reservations 2] [--status-interval 30] [--key <path>]
 
-Reserves a static circuit relay without DHT crawling. The node keeps running so
-relay reservations remain valid. Press Ctrl-C to stop.
+Bootstraps the public DHT, discovers relay-capable peers, and keeps AutoRelay
+reservations active. Pass --relay to add configured relay candidates. Press
+Ctrl-C to stop.
 ]])
 end
 
 local function parse_args(args)
   local opts = {
-    relays = { DEFAULT_RELAY },
-    max_reservations = 1,
+    bootstrap_addrs = {},
+    relays = {},
+    max_reservations = 2,
     status_interval = 30,
     key_path = DEFAULT_KEY_PATH,
+    dht_walk = true,
+    dht_walk_delay = 0,
+    dht_alpha = 3,
+    dht_paths = 2,
+    dht_bootstrap_peers = 2,
   }
   local i = 1
   while i <= #args do
     local name = args[i]
     local value = args[i + 1]
-    if name == "--relay" or name == "--bootstrap" then
+    if name == "--relay" then
       if not value then
         return nil, name .. " requires a multiaddr"
       end
-      if name == "--relay" and #opts.relays == 1 and opts.relays[1] == DEFAULT_RELAY then
-        opts.relays = {}
-      end
       opts.relays[#opts.relays + 1] = value
+      i = i + 2
+    elseif name == "--bootstrap" then
+      if not value then
+        return nil, "--bootstrap requires a multiaddr"
+      end
+      opts.bootstrap_addrs[#opts.bootstrap_addrs + 1] = value
       i = i + 2
     elseif name == "--max-reservations" then
       opts.max_reservations = tonumber(value)
@@ -51,6 +60,21 @@ local function parse_args(args)
         return nil, "--key requires a path"
       end
       opts.key_path = value
+      i = i + 2
+    elseif name == "--no-dht-walk" then
+      opts.dht_walk = false
+      i = i + 1
+    elseif name == "--dht-alpha" then
+      opts.dht_alpha = tonumber(value)
+      i = i + 2
+    elseif name == "--dht-walk-delay" then
+      opts.dht_walk_delay = tonumber(value)
+      i = i + 2
+    elseif name == "--dht-paths" then
+      opts.dht_paths = tonumber(value)
+      i = i + 2
+    elseif name == "--dht-bootstrap-peers" then
+      opts.dht_bootstrap_peers = tonumber(value)
       i = i + 2
     else
       return nil, "unknown argument: " .. tostring(name)
@@ -105,6 +129,8 @@ local function print_status(host)
   local now = os.time()
   local reservations = host.autorelay and host.autorelay:get_reservations() or {}
   local relay_status = host.autorelay and host.autorelay:status() or {}
+  local dht_peers = host.kad_dht and host.kad_dht.routing_table and host.kad_dht.routing_table:all_peers() or {}
+  io.stdout:write("dht: routing_table_peers=" .. tostring(#dht_peers) .. "\n")
   io.stdout:write("autorelay: reservations=" .. tostring(relay_status.reservations or 0)
     .. " queued=" .. tostring(relay_status.queued or 0)
     .. " failed=" .. tostring(relay_status.failed or 0)
@@ -148,6 +174,78 @@ local function print_status(host)
   for _, addr in ipairs(host:get_multiaddrs()) do
     io.stdout:write("  " .. tostring(addr) .. "\n")
   end
+  io.stdout:flush()
+end
+
+local function print_local_identify_addrs(host)
+  io.stdout:write("local identify addrs:\n")
+  for _, addr in ipairs(host:get_multiaddrs()) do
+    if addr:match("^/ip4/127%.0%.0%.1/tcp/") then
+      io.stdout:write("  " .. tostring(addr) .. "\n")
+    end
+  end
+  io.stdout:flush()
+end
+
+local function print_dht_report(label, report)
+  if not report then
+    return
+  end
+  io.stdout:write(label .. " report:\n")
+  for _, key in ipairs({ "attempted", "connected", "queried", "responses", "added", "skipped", "failed", "cancelled", "active_peak", "termination" }) do
+    if report[key] ~= nil then
+      io.stdout:write("  " .. key .. ": " .. tostring(report[key]) .. "\n")
+    end
+  end
+end
+
+local function start_dht_discovery(host, opts)
+  if not host.kad_dht then
+    return nil
+  end
+  local options = opts or {}
+  return host:spawn_task("example.dht_discovery", function(ctx)
+    local bootstrap_task, bootstrap_task_err = host.kad_dht:start_bootstrap({
+      max_success = options.dht_bootstrap_peers or 2,
+    })
+    if not bootstrap_task then
+      io.stderr:write("dht bootstrap failed to start: " .. tostring(bootstrap_task_err) .. "\n")
+      return nil, bootstrap_task_err
+    end
+    local bootstrap_report, bootstrap_err = ctx:await_task(bootstrap_task)
+    if not bootstrap_report then
+      io.stderr:write("dht bootstrap failed: " .. tostring(bootstrap_err) .. "\n")
+    else
+      print_dht_report("dht bootstrap", bootstrap_report)
+    end
+
+    if not options.dht_walk then
+      return true
+    end
+    if options.dht_walk_delay and options.dht_walk_delay > 0 then
+      local slept, sleep_err = ctx:sleep(options.dht_walk_delay)
+      if slept == nil and sleep_err then
+        return nil, sleep_err
+      end
+    end
+
+    local walk_task, walk_task_err = host.kad_dht:start_random_walk({
+      alpha = options.dht_alpha or 3,
+      disjoint_paths = options.dht_paths or 2,
+      bootstrap_if_empty = true,
+    })
+    if not walk_task then
+      io.stderr:write("dht random walk failed to start: " .. tostring(walk_task_err) .. "\n")
+      return nil, walk_task_err
+    end
+    local walk_report, walk_err = ctx:await_task(walk_task)
+    if not walk_report then
+      io.stderr:write("dht random walk failed: " .. tostring(walk_err) .. "\n")
+    else
+      print_dht_report("dht random walk", walk_report)
+    end
+    return true
+  end, { service = "example" })
 end
 
 local opts, opts_err = parse_args(arg)
@@ -163,18 +261,33 @@ if not identity then
   os.exit(1)
 end
 
+local peer_discovery = {
+  bootstrap = {
+    dial_on_start = false,
+  },
+}
+if #opts.bootstrap_addrs > 0 then
+  peer_discovery.bootstrap = {
+    list = opts.bootstrap_addrs,
+    dial_on_start = false,
+  }
+end
+
 local h, host_err = host_mod.new({
   runtime = "luv",
   identity = identity,
+  peer_discovery = peer_discovery,
   listen_addrs = {
     "/ip4/127.0.0.1/tcp/0",
     "/p2p-circuit",
   },
-  services = { "identify", "ping", "autorelay" },
+  services = { "identify", "ping", "kad_dht", "autorelay" },
+  kad_dht = {
+    mode = "client",
+  },
   autorelay = {
     relays = opts.relays,
     max_reservations = opts.max_reservations,
-    discover = false,
   },
   blocking = false,
   connect_timeout = 6,
@@ -192,13 +305,41 @@ if not started then
   os.exit(1)
 end
 
-io.stdout:write("autorelay is active with static relay(s); DHT crawl is disabled\n")
+io.stdout:write("autorelay is active with DHT relay discovery\n")
 io.stdout:write("identity key: " .. tostring(opts.key_path) .. "\n")
 io.stdout:write("peer id: " .. tostring(h:peer_id().id) .. "\n")
-for _, relay in ipairs(opts.relays) do
-  io.stdout:write("static relay: " .. tostring(relay) .. "\n")
+print_local_identify_addrs(h)
+if #opts.bootstrap_addrs > 0 then
+  for _, bootstrap in ipairs(opts.bootstrap_addrs) do
+    io.stdout:write("bootstrap: " .. tostring(bootstrap) .. "\n")
+  end
+else
+  io.stdout:write("bootstrap: default public libp2p bootstrappers\n")
 end
+if opts.dht_walk then
+  io.stdout:write("dht walk: enabled alpha=" .. tostring(opts.dht_alpha)
+    .. " paths=" .. tostring(opts.dht_paths)
+    .. " bootstrap_peers=" .. tostring(opts.dht_bootstrap_peers) .. "\n")
+  io.stdout:write("dht walk delay: " .. tostring(opts.dht_walk_delay) .. "s\n")
+else
+  io.stdout:write("dht walk: disabled\n")
+end
+for _, relay in ipairs(opts.relays) do
+  io.stdout:write("configured relay: " .. tostring(relay) .. "\n")
+end
+io.stdout:flush()
 print_status(h)
+
+local dht_task, dht_task_err = start_dht_discovery(h, {
+  dht_walk = opts.dht_walk,
+  dht_alpha = opts.dht_alpha,
+  dht_paths = opts.dht_paths,
+  dht_bootstrap_peers = opts.dht_bootstrap_peers,
+  dht_walk_delay = opts.dht_walk_delay,
+})
+if not dht_task then
+  io.stderr:write("dht discovery task failed: " .. tostring(dht_task_err) .. "\n")
+end
 
 local pumped, pump_err = scheduler_sleep(h, 1)
 if not pumped then

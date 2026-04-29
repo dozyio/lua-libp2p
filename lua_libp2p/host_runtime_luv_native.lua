@@ -51,7 +51,7 @@ function M.resume_inbound_upgrade(host, pending_entry, is_nonfatal_stream_error)
           return nil, register_err
         end
         return true
-      end, { service = "host" })
+      end, { service = "host", priority = "front" })
       if not task then
         raw_conn:close()
         return "error", nil, task_err, pending_entry
@@ -161,7 +161,7 @@ function M.process_connection(host, entry, router, is_nonfatal_stream_error)
     end)
   end
 
-  local ok, stream, protocol_id, handler, stream_err = coroutine.resume(entry.process_co)
+  local ok, stream, protocol_id, handler, handler_options, stream_err = coroutine.resume(entry.process_co)
   if not ok then
     entry.process_co = nil
     return nil, error_mod.new("protocol", "connection processing coroutine failed", { cause = stream })
@@ -178,6 +178,16 @@ function M.process_connection(host, entry, router, is_nonfatal_stream_error)
     return nil, stream_err
   end
   if stream and handler then
+    if host:_connection_is_limited(entry.state)
+      and not host:_protocol_allowed_on_limited_connection(protocol_id, handler_options)
+    then
+      if type(stream.reset_now) == "function" then
+        pcall(function() stream:reset_now() end)
+      elseif type(stream.close) == "function" then
+        pcall(function() stream:close() end)
+      end
+      return true
+    end
     host:_spawn_handler_task(handler, {
       stream = stream,
       host = host,

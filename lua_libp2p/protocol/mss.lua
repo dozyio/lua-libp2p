@@ -179,28 +179,31 @@ function Router:new()
   }, self)
 end
 
-function Router:register(protocol_id, handler)
+function Router:register(protocol_id, handler, opts)
   if type(protocol_id) ~= "string" or protocol_id == "" then
     return nil, error_mod.new("input", "protocol id must be a non-empty string")
   end
   if type(handler) ~= "function" then
     return nil, error_mod.new("input", "handler must be a function")
   end
-  self._handlers[protocol_id] = handler
+  self._handlers[protocol_id] = {
+    handler = handler,
+    options = opts or {},
+  }
   return true
 end
 
 function Router:negotiate(conn)
   local first, first_err = M.read_frame(conn)
   if not first then
-    return nil, nil, first_err
+    return nil, nil, nil, first_err
   end
 
   local requested
   if first == M.PROTOCOL_ID then
     local ok, err = M.write_frame(conn, M.PROTOCOL_ID)
     if not ok then
-      return nil, nil, err
+      return nil, nil, nil, err
     end
   else
     requested = first
@@ -211,23 +214,24 @@ function Router:negotiate(conn)
       local request_err
       requested, request_err = M.read_frame(conn)
       if not requested then
-        return nil, nil, request_err
+        return nil, nil, nil, request_err
       end
     end
 
-    local handler = self._handlers[requested]
+    local record = self._handlers[requested]
+    local handler = record and record.handler or nil
     local ok, err
     if handler then
       ok, err = M.write_frame(conn, requested)
       if not ok then
-        return nil, nil, err
+        return nil, nil, nil, err
       end
-      return requested, handler
+      return requested, handler, record.options
     end
 
     ok, err = M.write_frame(conn, M.NA)
     if not ok then
-      return nil, nil, err
+      return nil, nil, nil, err
     end
 
     requested = nil

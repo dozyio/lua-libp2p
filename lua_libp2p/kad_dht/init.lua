@@ -1454,6 +1454,8 @@ function DHT:random_walk(opts)
       alpha = alpha,
       disjoint_paths = disjoint_paths,
       count = self.k,
+      scheduler_task = options.scheduler_task,
+      ctx = options.ctx,
     })
     if not closest then
       return nil, lookup
@@ -1690,6 +1692,7 @@ function DHT:start_random_walk(opts)
       task_opts[k] = v
     end
     task_opts.scheduler_task = true
+    task_opts.ctx = task_opts.ctx or ctx
     task_opts.yield = task_opts.yield or function()
       return ctx:checkpoint()
     end

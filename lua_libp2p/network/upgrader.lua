@@ -72,7 +72,7 @@ local function negotiate_inbound(conn, supported)
     end
   end
 
-  local protocol_id, _, neg_err = router:negotiate(conn)
+  local protocol_id, _, _, neg_err = router:negotiate(conn)
   if not protocol_id then
     return nil, neg_err
   end

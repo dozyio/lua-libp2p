@@ -348,6 +348,9 @@ function NativeConnection:write(payload)
   end)
 
   while not done do
+    if yield_if_possible({ type = "write", connection = self }, self._ctx) then
+      goto continue_write_wait
+    end
     local _, step_err = run_once_or_loop_running()
     if step_err == "loop_running" then
       if yield_if_possible({ type = "write", connection = self }, self._ctx) then
@@ -438,6 +441,10 @@ function NativeConnection:read(length)
       self._read_error = nil
       done = true
       break
+    end
+    if yield_if_possible({ type = "read", connection = self }, self._ctx) then
+      self:_ensure_read_pump()
+      goto continue_read_wait
     end
     local _, step_err = run_once_or_loop_running()
     if step_err == "loop_running" then
@@ -766,6 +773,9 @@ function M.dial(target, opts)
   end)
 
   while not done do
+    if yield_if_possible({ type = "dial", connection = dial_wait }, options.ctx) then
+      goto continue_dial_wait
+    end
     local _, step_err = run_once_or_loop_running()
     if step_err == "loop_running" then
       if yield_if_possible({ type = "dial", connection = dial_wait }, options.ctx) then

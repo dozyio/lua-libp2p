@@ -303,12 +303,20 @@ local function run_listener(cfg)
     fatal("failed to publish listener multiaddr to redis: " .. tostring(push_err))
   end
 
-  while true do
-    local polled, poll_err = h:poll_once(0.1)
-    if not polled then
-      fatal(poll_err)
+  local run_task, run_task_err = h:spawn_task("interop.transport.listener", function(ctx)
+    while true do
+      local slept, sleep_err = ctx:sleep(0.1)
+      if slept == nil and sleep_err then
+        return nil, sleep_err
+      end
     end
-    sleep_seconds(0.01)
+  end, { service = "interop" })
+  if not run_task then
+    fatal(run_task_err)
+  end
+  local _, run_err = h:run_until_task(run_task, { poll_interval = 0.05 })
+  if run_err then
+    fatal(run_err)
   end
 end
 

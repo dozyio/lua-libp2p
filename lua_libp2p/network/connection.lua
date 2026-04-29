@@ -134,11 +134,11 @@ function Connection:accept_stream(router)
   if not router then
     return stream
   end
-  local protocol_id, handler, neg_err = router:negotiate(stream)
+  local protocol_id, handler, options, neg_err = router:negotiate(stream)
   if not protocol_id then
     return nil, nil, nil, neg_err
   end
-  return stream, protocol_id, handler
+  return stream, protocol_id, handler, options
 end
 
 function Connection:close()

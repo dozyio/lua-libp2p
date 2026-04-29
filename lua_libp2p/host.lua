@@ -306,6 +306,13 @@ local function list_set(values)
   return out
 end
 
+local function normalize_protocol_list(protocols)
+  if type(protocols) == "string" then
+    return { protocols }
+  end
+  return protocols
+end
+
 local function protocol_delta(before, after)
   local before_set = list_set(before)
   local added = {}
@@ -552,6 +559,7 @@ function Host:new(config)
     security_transports = list_copy(cfg.security_transports or {}),
     muxers = list_copy(cfg.muxers or {}),
     _handlers = {},
+    _handler_options = {},
     _services = {},
     _handler_tasks = {},
     _tasks = {},
@@ -659,14 +667,54 @@ function Host:is_running()
   return self._running
 end
 
-function Host:handle(protocol_id, handler)
+function Host:handle(protocol_id, handler, opts)
   if type(protocol_id) ~= "string" or protocol_id == "" then
     return nil, error_mod.new("input", "protocol id must be non-empty")
   end
   if type(handler) ~= "function" then
     return nil, error_mod.new("input", "handler must be a function")
   end
+  local options = opts or {}
   self._handlers[protocol_id] = handler
+  self._handler_options[protocol_id] = options
+  return true
+end
+
+function Host:_connection_is_limited(state)
+  if type(state) ~= "table" then
+    return false
+  end
+  if state.limited == true then
+    return true
+  end
+  return type(state.relay) == "table" and state.relay.limit_kind == "limited"
+end
+
+function Host:_protocol_allowed_on_limited_connection(protocol_id, opts)
+  if type(protocol_id) ~= "string" or protocol_id == "" then
+    return false
+  end
+  local options = opts or {}
+  if options.allow_limited_connection == true
+    or options.run_on_limited_connection == true
+  then
+    return true
+  end
+  local handler_options = self._handler_options[protocol_id]
+  if type(handler_options) == "table" and handler_options.run_on_limited_connection == true then
+    return true
+  end
+  return false
+end
+
+function Host:_protocols_allowed_on_limited_connection(protocols, opts)
+  for _, protocol_id in ipairs(normalize_protocol_list(protocols) or {}) do
+    if not self:_protocol_allowed_on_limited_connection(protocol_id, opts) then
+      return nil, error_mod.new("permission", "protocol is not allowed over limited connection", {
+        protocol = protocol_id,
+      })
+    end
+  end
   return true
 end
 
@@ -725,9 +773,19 @@ function Host:_spawn_stream_negotiation_task(stream, conn, entry)
     if not router then
       return nil, router_err
     end
-    local protocol_id, handler, neg_err = router:negotiate(stream)
+    local protocol_id, handler, handler_options, neg_err = router:negotiate(stream)
     if not protocol_id then
       return nil, neg_err
+    end
+    if self:_connection_is_limited(entry.state)
+      and not self:_protocol_allowed_on_limited_connection(protocol_id, handler_options)
+    then
+      if type(stream.reset_now) == "function" then
+        pcall(function() stream:reset_now() end)
+      elseif type(stream.close) == "function" then
+        pcall(function() stream:close() end)
+      end
+      return true
     end
     if handler then
       self:_spawn_handler_task(handler, {
@@ -1010,7 +1068,7 @@ function Host:add_service(name)
   if name == "identify" then
     local ok, err = self:handle(identify.ID, function(stream, ctx)
       return self:_handle_identify(stream, ctx)
-    end)
+    end, { run_on_limited_connection = true })
     if not ok then
       return nil, err
     end
@@ -1025,7 +1083,7 @@ function Host:add_service(name)
     if identify_opts.include_push ~= false then
       ok, err = self:handle(identify.PUSH_ID, function(stream, ctx)
         return self:_handle_identify(stream, ctx)
-      end)
+      end, { run_on_limited_connection = true })
       if not ok then
         return nil, err
       end
@@ -1038,7 +1096,7 @@ function Host:add_service(name)
   if name == "ping" then
     local ok, err = self:handle(ping.ID, function(stream)
       return ping.handle(stream)
-    end)
+    end, { run_on_limited_connection = true })
     if not ok then
       return nil, err
     end
@@ -1167,7 +1225,7 @@ end
 function Host:_build_router()
   local router = require("lua_libp2p.protocol.mss").new_router()
   for protocol_id, handler in pairs(self._handlers) do
-    local ok, err = router:register(protocol_id, handler)
+    local ok, err = router:register(protocol_id, handler, self._handler_options[protocol_id])
     if not ok then
       return nil, err
     end
@@ -1424,7 +1482,11 @@ function Host:spawn_task(name, fn, opts)
     return fn(ctx)
   end)
   self._tasks[id] = task
-  self._task_queue[#self._task_queue + 1] = id
+  if options.priority == "front" then
+    table.insert(self._task_queue, 1, id)
+  else
+    self._task_queue[#self._task_queue + 1] = id
+  end
   emit_event(self, "task:started", {
     task_id = id,
     name = name,
@@ -1465,6 +1527,20 @@ function Host:task_stats()
     stats.by_service[service] = (stats.by_service[service] or 0) + 1
   end
   return stats
+end
+
+function Host:stats()
+  local connection_stats = nil
+  if self.connection_manager and type(self.connection_manager.stats) == "function" then
+    connection_stats = self.connection_manager:stats()
+  end
+  return {
+    runtime = self._runtime,
+    running = self._running == true,
+    peer_id = self:peer_id().id,
+    tasks = self:task_stats(),
+    connections = connection_stats,
+  }
 end
 
 function Host:_cleanup_task_waiters(task)
@@ -2036,18 +2112,27 @@ function Host:_set_runtime_error(runtime_name, err)
   end
 end
 
-function Host:_find_connection(peer_id)
+function Host:_find_connection(peer_id, opts)
   if not peer_id then
     return nil
   end
+  local options = opts or {}
   local by_peer = self._connections_by_peer[peer_id]
   if not by_peer then
     return nil
   end
+  local limited = nil
   for _, entry in pairs(by_peer) do
-    return entry
+    if self:_connection_is_limited(entry.state) then
+      limited = limited or entry
+    else
+      return entry
+    end
   end
-  return nil
+  if options.require_unlimited_connection then
+    return nil
+  end
+  return limited
 end
 
 function Host:_find_connection_by_id(connection_id)
@@ -2103,7 +2188,7 @@ function Host:_dial_direct(peer_or_addr, opts)
     resolved.peer_id = extract_peer_id_from_multiaddr(resolved.addr)
   end
 
-  local existing = self:_find_connection(resolved.peer_id)
+  local existing = self:_find_connection(resolved.peer_id, opts)
   if existing then
     return existing.conn, existing.state
   end
@@ -2203,9 +2288,27 @@ function Host:dial(peer_or_addr, opts)
 end
 
 function Host:new_stream(peer_or_addr, protocols, opts)
-  local conn, state, dial_err = self:dial(peer_or_addr, opts)
+  local stream_opts = {}
+  for k, v in pairs(opts or {}) do
+    stream_opts[k] = v
+  end
+  if stream_opts.allow_limited_connection ~= true then
+    local limited_allowed = self:_protocols_allowed_on_limited_connection(protocols, stream_opts)
+    if not limited_allowed then
+      stream_opts.require_unlimited_connection = true
+    end
+  end
+
+  local conn, state, dial_err = self:dial(peer_or_addr, stream_opts)
   if not conn then
     return nil, nil, nil, dial_err
+  end
+
+  if self:_connection_is_limited(state) then
+    local allowed, allow_err = self:_protocols_allowed_on_limited_connection(protocols, stream_opts)
+    if not allowed then
+      return nil, nil, nil, allow_err
+    end
   end
 
   local stream, selected, stream_err = conn:new_stream(protocols)
@@ -2336,6 +2439,9 @@ function Host:_poll_once_with_ready_map(timeout, ready_map)
     local should_accept = true
     if ready_map then
       should_accept = ready_map[listener] == true
+      if not should_accept and host_runtime_luv_native.is_native_host(self) then
+        should_accept = true
+      end
     end
 
     local raw_conn, accept_err
@@ -2454,7 +2560,11 @@ function Host:_poll_once_with_ready_map(timeout, ready_map)
       end
     end
 
-    local stream, protocol_id, handler, stream_err = conn:accept_stream(router)
+    if not should_process then
+      goto continue_connections
+    end
+
+    local stream, protocol_id, handler, handler_options, stream_err = conn:accept_stream(router)
     if stream_err then
       if is_nonfatal_stream_error(stream_err) then
         goto continue_connections
@@ -2462,6 +2572,16 @@ function Host:_poll_once_with_ready_map(timeout, ready_map)
       return nil, stream_err
     end
     if stream and handler then
+      if self:_connection_is_limited(entry.state)
+        and not self:_protocol_allowed_on_limited_connection(protocol_id, handler_options)
+      then
+        if type(stream.reset_now) == "function" then
+          pcall(function() stream:reset_now() end)
+        elseif type(stream.close) == "function" then
+          pcall(function() stream:close() end)
+        end
+        goto continue_connections
+      end
       self:_spawn_handler_task(handler, {
         stream = stream,
         host = self,
