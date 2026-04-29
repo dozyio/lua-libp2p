@@ -118,7 +118,7 @@ local function run()
     return nil, dht_err
   end
 
-  local report, bootstrap_err = dht:bootstrap()
+  local report, bootstrap_err = dht:_bootstrap()
   if not report then
     return nil, bootstrap_err
   end
@@ -157,7 +157,7 @@ local function run()
     end,
   }
 
-  local fast_ok, fast_err = dht:bootstrap({
+  local fast_ok, fast_err = dht:_bootstrap({
     peer_discovery = fail_fast_discovery,
     fail_fast = true,
   })
@@ -165,7 +165,7 @@ local function run()
     return nil, "expected fail_fast bootstrap to return first dial error"
   end
 
-  local walk, walk_err = dht:random_walk({
+  local walk, walk_err = dht:_random_walk({
     max_queries = 2,
   })
   if not walk then

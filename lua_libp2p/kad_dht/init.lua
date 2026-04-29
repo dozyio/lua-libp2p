@@ -373,7 +373,7 @@ function DHT:_handle_rpc(stream)
   return true
 end
 
-function DHT:find_node(peer_or_addr, target_key, opts)
+function DHT:_find_node(peer_or_addr, target_key, opts)
   if not self.host or type(self.host.new_stream) ~= "function" then
     return nil, error_mod.new("state", "find_node requires host with new_stream")
   end
@@ -506,7 +506,7 @@ function DHT:_rpc(peer_or_addr, request, expected_type, opts)
   return response
 end
 
-function DHT:get_value(peer_or_addr, key, opts)
+function DHT:_get_value(peer_or_addr, key, opts)
   if type(key) ~= "string" or key == "" then
     return nil, error_mod.new("input", "GET_VALUE key must be non-empty bytes")
   end
@@ -525,7 +525,7 @@ function DHT:get_value(peer_or_addr, key, opts)
   }
 end
 
-function DHT:get_providers(peer_or_addr, key, opts)
+function DHT:_get_providers(peer_or_addr, key, opts)
   if type(key) ~= "string" or key == "" then
     return nil, error_mod.new("input", "GET_PROVIDERS key must be non-empty bytes")
   end
@@ -924,7 +924,7 @@ function DHT:_run_client_lookup(key, seed_peers, query_func, opts)
   return result
 end
 
-function DHT:find_value(key, opts)
+function DHT:_find_value(key, opts)
   local options = opts or {}
   local found
   local lookup, lookup_err = self:_run_client_lookup(key, options.peers or seed_candidates_from_routing_table(self, key, self.k), function(peer, ctx)
@@ -936,7 +936,7 @@ function DHT:find_value(key, opts)
       end
       query_options.ctx = ctx
     end
-    local result, err = self:get_value(peer.addr or (peer.addrs and peer.addrs[1]) or { peer_id = peer.peer_id, addrs = peer.addrs }, key, query_options)
+    local result, err = self:_get_value(peer.addr or (peer.addrs and peer.addrs[1]) or { peer_id = peer.peer_id, addrs = peer.addrs }, key, query_options)
     if not result then
       return nil, err
     end
@@ -956,7 +956,7 @@ function DHT:find_value(key, opts)
   return { record = nil, closer_peers = lookup.closest_peers, lookup = lookup, errors = lookup.errors }
 end
 
-function DHT:get_closest_peers(key, opts)
+function DHT:_get_closest_peers(key, opts)
   local options = opts or {}
   local lookup, lookup_err = self:_run_client_lookup(key, options.peers or seed_candidates_from_routing_table(self, key, self.k), function(peer, ctx)
     local query_options = options
@@ -1001,7 +1001,7 @@ function DHT:get_closest_peers(key, opts)
   return out, lookup
 end
 
-function DHT:find_providers(key, opts)
+function DHT:_find_providers(key, opts)
   local options = opts or {}
   local providers = {}
   local lookup, lookup_err = self:_run_client_lookup(key, options.peers or seed_candidates_from_routing_table(self, key, self.k), function(peer, ctx)
@@ -1013,7 +1013,7 @@ function DHT:find_providers(key, opts)
       end
       query_options.ctx = ctx
     end
-    local result, err = self:get_providers(peer.addr or (peer.addrs and peer.addrs[1]) or { peer_id = peer.peer_id, addrs = peer.addrs }, key, query_options)
+    local result, err = self:_get_providers(peer.addr or (peer.addrs and peer.addrs[1]) or { peer_id = peer.peer_id, addrs = peer.addrs }, key, query_options)
     if not result then
       return nil, err
     end
@@ -1029,6 +1029,99 @@ function DHT:find_providers(key, opts)
     return nil, lookup_err
   end
   return { providers = providers, provider_peers = providers, closer_peers = lookup.closest_peers, lookup = lookup, errors = lookup.errors }
+end
+
+function DHT:_spawn_query_task(task_name, fn)
+  if not (self.host and type(self.host.spawn_task) == "function") then
+    return nil, error_mod.new("state", "kad_dht requires host task scheduler")
+  end
+  return self.host:spawn_task(task_name, fn, {
+    service = "kad_dht",
+  })
+end
+
+function DHT:find_node(peer_or_addr, target_key, opts)
+  local options = opts or {}
+  return self:_spawn_query_task("kad.find_node", function(ctx)
+    local task_opts = {}
+    for k, v in pairs(options) do
+      task_opts[k] = v
+    end
+    task_opts.ctx = task_opts.ctx or ctx
+    return self:_find_node(peer_or_addr, target_key, task_opts)
+  end)
+end
+
+function DHT:get_value(peer_or_addr, key, opts)
+  local options = opts or {}
+  return self:_spawn_query_task("kad.get_value", function(ctx)
+    local task_opts = {}
+    for k, v in pairs(options) do
+      task_opts[k] = v
+    end
+    task_opts.ctx = task_opts.ctx or ctx
+    return self:_get_value(peer_or_addr, key, task_opts)
+  end)
+end
+
+function DHT:get_providers(peer_or_addr, key, opts)
+  local options = opts or {}
+  return self:_spawn_query_task("kad.get_providers", function(ctx)
+    local task_opts = {}
+    for k, v in pairs(options) do
+      task_opts[k] = v
+    end
+    task_opts.ctx = task_opts.ctx or ctx
+    return self:_get_providers(peer_or_addr, key, task_opts)
+  end)
+end
+
+function DHT:find_value(key, opts)
+  local options = opts or {}
+  return self:_spawn_query_task("kad.find_value", function(ctx)
+    local task_opts = {}
+    for k, v in pairs(options) do
+      task_opts[k] = v
+    end
+    task_opts.scheduler_task = true
+    task_opts.ctx = task_opts.ctx or ctx
+    task_opts.yield = task_opts.yield or function()
+      return ctx:checkpoint()
+    end
+    return self:_find_value(key, task_opts)
+  end)
+end
+
+function DHT:get_closest_peers(key, opts)
+  local options = opts or {}
+  return self:_spawn_query_task("kad.get_closest_peers", function(ctx)
+    local task_opts = {}
+    for k, v in pairs(options) do
+      task_opts[k] = v
+    end
+    task_opts.scheduler_task = true
+    task_opts.ctx = task_opts.ctx or ctx
+    task_opts.yield = task_opts.yield or function()
+      return ctx:checkpoint()
+    end
+    return self:_get_closest_peers(key, task_opts)
+  end)
+end
+
+function DHT:find_providers(key, opts)
+  local options = opts or {}
+  return self:_spawn_query_task("kad.find_providers", function(ctx)
+    local task_opts = {}
+    for k, v in pairs(options) do
+      task_opts[k] = v
+    end
+    task_opts.scheduler_task = true
+    task_opts.ctx = task_opts.ctx or ctx
+    task_opts.yield = task_opts.yield or function()
+      return ctx:checkpoint()
+    end
+    return self:_find_providers(key, task_opts)
+  end)
 end
 
 function DHT:bootstrap_targets(opts)
@@ -1129,7 +1222,7 @@ function DHT:_supports_kad_protocol(peer_or_addr, opts)
   return true
 end
 
-function DHT:bootstrap(opts)
+function DHT:_bootstrap(opts)
   local options = opts or {}
   if not self.host or type(self.host.dial) ~= "function" then
     return nil, error_mod.new("state", "bootstrap requires host with dial")
@@ -1254,9 +1347,9 @@ function DHT:bootstrap(opts)
   return result
 end
 
-function DHT:start_bootstrap(opts)
+function DHT:bootstrap(opts)
   if not (self.host and type(self.host.spawn_task) == "function") then
-    return nil, error_mod.new("state", "kad_dht start_bootstrap requires host task scheduler")
+    return nil, error_mod.new("state", "kad_dht bootstrap requires host task scheduler")
   end
   local options = opts or {}
   return self.host:spawn_task("kad.bootstrap", function(ctx)
@@ -1271,7 +1364,7 @@ function DHT:start_bootstrap(opts)
     task_opts.dial_opts.ctx = task_opts.dial_opts.ctx or ctx
     task_opts.protocol_check_opts = task_opts.protocol_check_opts or {}
     task_opts.protocol_check_opts.ctx = task_opts.protocol_check_opts.ctx or ctx
-    return self:bootstrap(task_opts)
+    return self:_bootstrap(task_opts)
   end, {
     service = "kad_dht",
   })
@@ -1384,7 +1477,7 @@ function DHT:_distance_to_target(peer_id, target_hash)
   return xor_distance(target_hash, hashed)
 end
 
-function DHT:random_walk(opts)
+function DHT:_random_walk(opts)
   local options = opts or {}
   local report = {
     queried = 0,
@@ -1417,7 +1510,7 @@ function DHT:random_walk(opts)
 
   local initial_peers = self.routing_table:all_peers()
   if #initial_peers == 0 and options.bootstrap_if_empty then
-    local bootstrap_report, bootstrap_err = self:bootstrap({
+    local bootstrap_report, bootstrap_err = self:_bootstrap({
       peer_discovery = options.peer_discovery,
       dnsaddr_resolver = options.dnsaddr_resolver,
       ignore_discovery_errors = options.ignore_discovery_errors,
@@ -1449,7 +1542,7 @@ function DHT:random_walk(opts)
         seeds[#seeds + 1] = { peer_id = entry.peer_id }
       end
     end
-    local closest, lookup = self:get_closest_peers(target_key, {
+    local closest, lookup = self:_get_closest_peers(target_key, {
       peers = seeds,
       alpha = alpha,
       disjoint_paths = disjoint_paths,
@@ -1637,7 +1730,7 @@ function DHT:random_walk(opts)
             query_target = entry.peer_id
           end
 
-          local closest, closest_err = self:find_node(query_target, target_key, options.find_node_opts)
+          local closest, closest_err = self:_find_node(query_target, target_key, options.find_node_opts)
           if yield then
             local yield_ok, yield_err = yield()
             if yield_ok == nil and yield_err then
@@ -1681,9 +1774,9 @@ function DHT:random_walk(opts)
   return report
 end
 
-function DHT:start_random_walk(opts)
+function DHT:random_walk(opts)
   if not (self.host and type(self.host.spawn_task) == "function") then
-    return nil, error_mod.new("state", "kad_dht start_random_walk requires host task scheduler")
+    return nil, error_mod.new("state", "kad_dht random_walk requires host task scheduler")
   end
   local options = opts or {}
   return self.host:spawn_task("kad.random_walk", function(ctx)
@@ -1698,7 +1791,7 @@ function DHT:start_random_walk(opts)
     end
     task_opts.find_node_opts = task_opts.find_node_opts or {}
     task_opts.find_node_opts.ctx = task_opts.find_node_opts.ctx or ctx
-    return self:random_walk(task_opts)
+    return self:_random_walk(task_opts)
   end, {
     service = "kad_dht",
   })

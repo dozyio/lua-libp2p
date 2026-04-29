@@ -205,7 +205,7 @@ local function start_dht_discovery(host, opts)
   end
   local options = opts or {}
   return host:spawn_task("example.dht_discovery", function(ctx)
-    local bootstrap_task, bootstrap_task_err = host.kad_dht:start_bootstrap({
+    local bootstrap_task, bootstrap_task_err = host.kad_dht:bootstrap({
       max_success = options.dht_bootstrap_peers or 2,
     })
     if not bootstrap_task then
@@ -229,7 +229,7 @@ local function start_dht_discovery(host, opts)
       end
     end
 
-    local walk_task, walk_task_err = host.kad_dht:start_random_walk({
+    local walk_task, walk_task_err = host.kad_dht:random_walk({
       alpha = options.dht_alpha or 3,
       disjoint_paths = options.dht_paths or 2,
       bootstrap_if_empty = true,

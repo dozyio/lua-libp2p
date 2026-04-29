@@ -422,7 +422,7 @@ local function run_client()
 
   local dht = host.kad_dht
 
-  local bootstrap_task, bootstrap_task_err = dht:start_bootstrap()
+  local bootstrap_task, bootstrap_task_err = dht:bootstrap()
   if not bootstrap_task then
     io.stderr:write("bootstrap failed: " .. tostring(bootstrap_task_err) .. "\n")
     os.exit(1)
@@ -486,7 +486,7 @@ local function run_client()
 
     io.stdout:write("running one random-walk refresh (target=self peer id)...\n")
     local walk_started_at = os.time()
-    local walk_task, walk_task_err = dht:start_random_walk({
+    local walk_task, walk_task_err = dht:random_walk({
       alpha = 10,
       disjoint_paths = 10,
       bootstrap_if_empty = true,

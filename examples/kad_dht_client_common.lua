@@ -180,7 +180,7 @@ function M.new_client(opts)
 
   local dht = host.kad_dht
 
-  local bootstrap_task, bootstrap_task_err = dht:start_bootstrap()
+  local bootstrap_task, bootstrap_task_err = dht:bootstrap()
   if not bootstrap_task then
     host:stop()
     return nil, bootstrap_task_err

@@ -282,7 +282,7 @@ local function discover_autonat_servers(host, limit, ctx)
 
   print("AutoNAT discovery: bootstrapping DHT")
   sleep_poll(host, 1, ctx)
-  local boot_task = assert(host.kad_dht:start_bootstrap({
+  local boot_task = assert(host.kad_dht:bootstrap({
     count = 20,
     alpha = 10,
     disjoint_paths = 10,
@@ -296,7 +296,7 @@ local function discover_autonat_servers(host, limit, ctx)
   end
 
   print("AutoNAT discovery: random walk")
-  local walk_task = assert(host.kad_dht:start_random_walk({
+  local walk_task = assert(host.kad_dht:random_walk({
     count = 20,
     alpha = 10,
     disjoint_paths = 10,
@@ -353,7 +353,7 @@ local function check_discovered_autonat_servers(host, opts)
     if real_responses < opts.target_autonat_responses then
       print("AutoNAT discovery: target responses not met; continuing random walk")
       if host.kad_dht then
-        local extra = assert(host.kad_dht:start_random_walk({ count = 20, alpha = 10, disjoint_paths = 10 }))
+        local extra = assert(host.kad_dht:random_walk({ count = 20, alpha = 10, disjoint_paths = 10 }))
         wait_task(host, extra)
       else
         break

@@ -200,7 +200,7 @@ local function run()
     return nil, "find_closest_peers returned unexpected ordering"
   end
 
-  local outbound_peers, outbound_err = dht:find_node("/ip4/127.0.0.1/tcp/1", "target")
+  local outbound_peers, outbound_err = dht:_find_node("/ip4/127.0.0.1/tcp/1", "target")
   if not outbound_peers then
     return nil, outbound_err
   end
@@ -237,7 +237,7 @@ local function run()
     return nil, "unexpected rpc"
   end
 
-  local value_result, value_err = dht:get_value("peer-a", "key-a")
+  local value_result, value_err = dht:_get_value("peer-a", "key-a")
   if not value_result then
     return nil, value_err
   end
@@ -245,7 +245,7 @@ local function run()
     return nil, "get_value should return record value"
   end
 
-  local providers_result, providers_err = dht:get_providers("peer-a", "cid-key")
+  local providers_result, providers_err = dht:_get_providers("peer-a", "cid-key")
   if not providers_result then
     return nil, providers_err
   end
@@ -253,7 +253,7 @@ local function run()
     return nil, "get_providers should return provider peers"
   end
 
-  local found_value, find_value_err = dht:find_value("key-a", { peers = { { peer_id = "peer-a", addr = "peer-a" } } })
+  local found_value, find_value_err = dht:_find_value("key-a", { peers = { { peer_id = "peer-a", addr = "peer-a" } } })
   if not found_value then
     return nil, find_value_err
   end
@@ -261,7 +261,7 @@ local function run()
     return nil, "find_value should return first found record"
   end
 
-  local found_providers, find_providers_err = dht:find_providers("cid-key", { peers = { { peer_id = "peer-a", addr = "peer-a" } } })
+  local found_providers, find_providers_err = dht:_find_providers("cid-key", { peers = { { peer_id = "peer-a", addr = "peer-a" } } })
   if not found_providers then
     return nil, find_providers_err
   end
@@ -269,7 +269,7 @@ local function run()
     return nil, "find_providers should return discovered providers"
   end
 
-  local closest_peers, closest_lookup = dht:get_closest_peers("target", { peers = { { peer_id = "peer-a", addr = "peer-a" } }, count = 1 })
+  local closest_peers, closest_lookup = dht:_get_closest_peers("target", { peers = { { peer_id = "peer-a", addr = "peer-a" } }, count = 1 })
   if not closest_peers then
     return nil, closest_lookup
   end
