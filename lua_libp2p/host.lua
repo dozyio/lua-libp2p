@@ -1,6 +1,7 @@
 local address_manager = require("lua_libp2p.address_manager")
 local autonat_client = require("lua_libp2p.autonat.client")
 local bootstrap = require("lua_libp2p.bootstrap")
+local connection_manager = require("lua_libp2p.connection_manager")
 local keys = require("lua_libp2p.crypto.keys")
 local discovery = require("lua_libp2p.discovery")
 local discovery_bootstrap = require("lua_libp2p.discovery.bootstrap")
@@ -31,7 +32,6 @@ local DEFAULT_IDENTIFY_PROTOCOL_VERSION = "/lua-libp2p/0.1.0"
 local DEFAULT_IDENTIFY_AGENT_VERSION = "lua-libp2p/0.1.0"
 local DEFAULT_EVENT_QUEUE_MAX = 256
 local DEFAULT_TASK_RESUME_BUDGET = 128
-local DEFAULT_DIAL_ADDR_LIMIT = 3
 local DEFAULT_BOOTSTRAPPERS = bootstrap.DEFAULT_BOOTSTRAPPERS
 
 local function now_seconds()
@@ -415,63 +415,6 @@ local function has_terminal_peer_id(addr)
   return last.protocol == "p2p" and type(last.value) == "string" and last.value ~= ""
 end
 
-local function is_dialable_tcp_addr(addr)
-  local parsed = multiaddr.parse(addr)
-  if not parsed or type(parsed.components) ~= "table" or #parsed.components < 2 then
-    return false
-  end
-  local host_part = parsed.components[1]
-  local tcp_part = parsed.components[2]
-  if host_part.protocol ~= "ip4" and host_part.protocol ~= "dns" and host_part.protocol ~= "dns4" and host_part.protocol ~= "dns6" then
-    return false
-  end
-  if tcp_part.protocol ~= "tcp" then
-    return false
-  end
-  for i = 3, #parsed.components do
-    local protocol = parsed.components[i].protocol
-    if protocol ~= "p2p" then
-      return false
-    end
-  end
-  return true
-end
-
-local function ordered_dial_addrs(addrs, limit)
-  local seen = {}
-  local public_tcp = {}
-  local other_tcp = {}
-  local relays = {}
-  for _, addr in ipairs(addrs or {}) do
-    if type(addr) == "string" and addr ~= "" and not seen[addr] then
-      seen[addr] = true
-      if is_dialable_tcp_addr(addr) then
-        if multiaddr.is_public_addr(addr) then
-          public_tcp[#public_tcp + 1] = addr
-        else
-          other_tcp[#other_tcp + 1] = addr
-        end
-      elseif multiaddr.is_relay_addr(addr) then
-        relays[#relays + 1] = addr
-      end
-    end
-  end
-
-  local out = {}
-  local max = limit or DEFAULT_DIAL_ADDR_LIMIT
-  local function append(values)
-    for _, addr in ipairs(values) do
-      if max <= 0 or #out < max then
-        out[#out + 1] = addr
-      end
-    end
-  end
-  append(public_tcp)
-  append(other_tcp)
-  append(relays)
-  return out
-end
-
 local function contains_circuit_listen_addr(addrs)
   for _, addr in ipairs(addrs or {}) do
     if addr == "/p2p-circuit" then
@@ -658,6 +601,8 @@ function Host:new(config)
       upnp_nat = cfg.upnp_nat or {},
     },
   }, self)
+  self_obj.connection_manager = cfg.connection_manager
+    or connection_manager.new(self_obj, cfg.dial_queue or cfg.connection_manager_options or {})
 
   local peer_discovery, bootstrap_config, peer_discovery_err = build_peer_discovery(cfg.peer_discovery)
   if peer_discovery_err then
@@ -817,7 +762,7 @@ function Host:_run_handler_tasks()
           peer_id = task.peer_id,
           cause = tostring(identify_err),
           panic = tostring(result),
-          queue_size = map_count(self._identify_inflight),
+          inflight = map_count(self._identify_inflight),
         })
         local emit_ok, emit_err = emit_event(self, "peer_identify_failed", {
           peer_id = task.peer_id,
@@ -992,7 +937,7 @@ function Host:_schedule_identify_for_peer(peer_id)
   log.debug("identify on connect scheduled", {
     subsystem = "identify",
     peer_id = peer_id,
-    queue_size = map_count(self._identify_inflight),
+    inflight = map_count(self._identify_inflight),
   })
 
   self:_spawn_handler_task(function(_, ctx)
@@ -1000,7 +945,7 @@ function Host:_schedule_identify_for_peer(peer_id)
     log.info("identify on connect running", {
       subsystem = "identify",
       peer_id = pid,
-      queue_size = map_count(self._identify_inflight),
+      inflight = map_count(self._identify_inflight),
     })
     local call_ok, result, identify_err = pcall(function()
       return self:_request_identify(pid)
@@ -1017,7 +962,7 @@ function Host:_schedule_identify_for_peer(peer_id)
         subsystem = "identify",
         peer_id = pid,
         cause = tostring(identify_err),
-        queue_size = map_count(self._identify_inflight),
+        inflight = map_count(self._identify_inflight),
       })
       local ok, emit_err = emit_event(self, "peer_identify_failed", {
         peer_id = pid,
@@ -1032,7 +977,7 @@ function Host:_schedule_identify_for_peer(peer_id)
     log.debug("identify on connect completed", {
       subsystem = "identify",
       peer_id = pid,
-      queue_size = map_count(self._identify_inflight),
+      inflight = map_count(self._identify_inflight),
     })
 
     local ok, emit_err = emit_event(self, "peer_identified", {
@@ -1192,17 +1137,30 @@ function Host:_handle_relay_stop(stream, ctx)
   if not accepted then
     return nil, accept_err
   end
-  self._pending_relay_inbound[#self._pending_relay_inbound + 1] = {
-    raw_conn = stream,
-    relay = {
-      relay_peer_id = ctx and ctx.state and ctx.state.remote_peer_id or nil,
-      initiator_peer_id_bytes = accepted.initiator_peer_id_bytes,
-      initiator_addrs = accepted.initiator_addrs,
-      limit = accepted.limit,
-      limit_kind = accepted.limit_kind,
-      direction = "inbound",
-    },
+  local relay_state = {
+    relay_peer_id = ctx and ctx.state and ctx.state.remote_peer_id or nil,
+    initiator_peer_id_bytes = accepted.initiator_peer_id_bytes,
+    initiator_addrs = accepted.initiator_addrs,
+    limit = accepted.limit,
+    limit_kind = accepted.limit_kind,
+    direction = "inbound",
   }
+  local conn, state, up_err = upgrader.upgrade_inbound(stream, {
+    local_keypair = self.identity,
+    security_protocols = self.security_transports,
+    muxer_protocols = self.muxers,
+    ctx = ctx,
+  })
+  if not conn then
+    return nil, up_err
+  end
+  state.direction = state.direction or "inbound"
+  state.relay = relay_state
+  local entry, register_err = self:_register_connection(conn, state)
+  if not entry then
+    conn:close()
+    return nil, register_err
+  end
   return true
 end
 
@@ -1273,12 +1231,20 @@ function Host:get_multiaddrs()
 end
 
 function Host:_register_connection(conn, state)
+  state = state or {}
+  state.direction = state.direction or "unknown"
+  if self.connection_manager and type(self.connection_manager.can_open_connection) == "function" then
+    local can_open, limit_err = self.connection_manager:can_open_connection(state)
+    if not can_open then
+      return nil, limit_err
+    end
+  end
   local connection_id = self._next_connection_id
   self._next_connection_id = self._next_connection_id + 1
   local entry = {
     id = connection_id,
     conn = conn,
-    state = state or {},
+    state = state,
     opened_at = os.time(),
   }
   entry.state.connection_id = connection_id
@@ -1325,6 +1291,13 @@ function Host:_register_connection(conn, state)
     end
   end
 
+  if self.connection_manager and type(self.connection_manager.on_connection_opened) == "function" then
+    local tracked, track_err = self.connection_manager:on_connection_opened(entry)
+    if not tracked then
+      return nil, track_err
+    end
+  end
+
   return entry
 end
 
@@ -1359,6 +1332,9 @@ function Host:_unregister_connection(index, entry, cause)
     if next(self._connections_by_peer[peer_id]) == nil then
       self._connections_by_peer[peer_id] = nil
     end
+  end
+  if self.connection_manager and type(self.connection_manager.on_connection_closed) == "function" then
+    self.connection_manager:on_connection_closed(entry)
   end
   local peer_ok, peer_err = emit_event(self, "peer_disconnected", {
     connection = entry.conn,
@@ -1474,6 +1450,7 @@ function Host:task_stats()
   local stats = {
     total = 0,
     queue_depth = #self._task_queue,
+    identify_inflight = map_count(self._identify_inflight),
     by_status = {},
     by_name = {},
     by_service = {},
@@ -2115,7 +2092,8 @@ function Host:_dial_relay_raw(addr, destination_peer_id, opts)
   }
 end
 
-function Host:dial(peer_or_addr, opts)
+function Host:_dial_direct(peer_or_addr, opts)
+  opts = opts or {}
   local resolved = resolve_target(peer_or_addr)
   if not resolved then
     return nil, nil, error_mod.new("input", "dial target must be peer id, multiaddr, or target table")
@@ -2138,14 +2116,24 @@ function Host:dial(peer_or_addr, opts)
     if type(addrs) ~= "table" then
       addrs = self.peerstore and self.peerstore:get_addrs(resolved.peer_id) or {}
     end
-    candidate_addrs = ordered_dial_addrs(addrs, opts and opts.max_dial_addrs)
+    if opts and type(opts.candidate_addrs) == "table" then
+      candidate_addrs = opts.candidate_addrs
+    elseif self.connection_manager and type(self.connection_manager.rank_addrs) == "function" then
+      candidate_addrs = self.connection_manager:rank_addrs(addrs, opts)
+    else
+      candidate_addrs = addrs
+    end
   end
   if #candidate_addrs == 0 then
     return nil, nil, error_mod.new("input", "dial target must include an address when no connection exists")
   end
 
+  local deadline = opts.dial_timeout and (now_seconds() + opts.dial_timeout) or nil
   local last_err
   for _, addr in ipairs(candidate_addrs) do
+    if deadline and now_seconds() >= deadline then
+      return nil, nil, error_mod.new("timeout", "dial timed out", { peer_id = resolved.peer_id })
+    end
     local raw_conn, dial_err, relay_state
     if multiaddr.is_relay_addr(addr) then
       raw_conn, relay_state, dial_err = self:_dial_relay_raw(addr, resolved.peer_id, opts)
@@ -2154,13 +2142,17 @@ function Host:dial(peer_or_addr, opts)
       if not endpoint then
         last_err = endpoint_err
       else
+        local timeout = opts.address_dial_timeout or opts.timeout or self._connect_timeout
+        if deadline then
+          timeout = math.max(0, math.min(timeout, deadline - now_seconds()))
+        end
         raw_conn, dial_err = self._tcp_transport.dial({
           host = endpoint.host,
           port = endpoint.port,
         }, {
-          timeout = (opts and opts.timeout) or self._connect_timeout,
-          io_timeout = (opts and opts.io_timeout) or self._io_timeout,
-          ctx = opts and opts.ctx,
+          timeout = timeout,
+          io_timeout = opts.io_timeout or self._io_timeout,
+          ctx = opts.ctx,
         })
       end
     end
@@ -2172,7 +2164,7 @@ function Host:dial(peer_or_addr, opts)
         expected_remote_peer_id = expected_remote,
         security_protocols = self.security_transports,
         muxer_protocols = self.muxers,
-        ctx = opts and opts.ctx,
+        ctx = opts.ctx,
       })
       if not conn then
         if type(raw_conn.close) == "function" then
@@ -2180,6 +2172,7 @@ function Host:dial(peer_or_addr, opts)
         end
         last_err = up_err
       else
+        state.direction = state.direction or "outbound"
         if relay_state then
           relay_state.limit = relay_state.limit or nil
           relay_state.limit_kind = relay_proto.classify_limit(relay_state.limit)
@@ -2199,6 +2192,14 @@ function Host:dial(peer_or_addr, opts)
   end
 
   return nil, nil, last_err or error_mod.new("io", "all dial addresses failed")
+end
+
+function Host:dial(peer_or_addr, opts)
+  local options = opts or {}
+  if options.bypass_connection_manager or not self.connection_manager then
+    return self:_dial_direct(peer_or_addr, options)
+  end
+  return self.connection_manager:open_connection(peer_or_addr, options)
 end
 
 function Host:new_stream(peer_or_addr, protocols, opts)
@@ -2244,6 +2245,7 @@ function Host:_poll_once_with_ready_map(timeout, ready_map)
     })
     if conn then
       remove_pending_relay_inbound(i, pending)
+      state.direction = state.direction or "inbound"
       state.relay = pending.relay
       local entry, register_err = self:_register_connection(conn, state)
       if not entry then
@@ -2300,6 +2302,7 @@ function Host:_poll_once_with_ready_map(timeout, ready_map)
       if raw_conn and type(raw_conn.commit_read_tx) == "function" then
         raw_conn:commit_read_tx()
       end
+      state.direction = state.direction or "inbound"
       table.remove(self._pending_inbound, i)
       local entry, register_err = self:_register_connection(conn, state)
       if not entry then
@@ -2383,6 +2386,7 @@ function Host:_poll_once_with_ready_map(timeout, ready_map)
       if raw_conn and type(raw_conn.commit_read_tx) == "function" then
         raw_conn:commit_read_tx()
       end
+      state.direction = state.direction or "inbound"
       local entry, register_err = self:_register_connection(conn, state)
       if not entry then
         conn:close()

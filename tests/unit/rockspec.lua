@@ -20,6 +20,7 @@ local function run()
   local required = {
     "lua_libp2p.address_manager",
     "lua_libp2p.bootstrap",
+    "lua_libp2p.connection_manager",
     "lua_libp2p.host",
     "lua_libp2p.kbucket",
     "lua_libp2p.kad_dht",

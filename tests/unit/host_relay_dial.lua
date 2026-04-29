@@ -1,4 +1,5 @@
 local host_mod = require("lua_libp2p.host")
+local upgrader = require("lua_libp2p.network.upgrader")
 local relay_proto = require("lua_libp2p.protocol.circuit_relay_v2")
 local varint = require("lua_libp2p.multiformats.varint")
 
@@ -105,21 +106,29 @@ local function run()
     input = assert(varint.encode_u64(#stop_payload)) .. stop_payload,
     writes = {},
   }, Stream)
+  local original_upgrade_inbound = upgrader.upgrade_inbound
+  local upgraded_stream, upgraded_opts
+  upgrader.upgrade_inbound = function(raw_conn, opts)
+    upgraded_stream = raw_conn
+    upgraded_opts = opts
+    return { close = function() return true end }, { remote_peer_id = dst_peer }
+  end
   local handled, handle_err = h:_handle_relay_stop(stop_stream, {
     state = { remote_peer_id = relay_peer },
   })
+  upgrader.upgrade_inbound = original_upgrade_inbound
   if not handled then
     return nil, handle_err
   end
-  if #h._pending_relay_inbound ~= 1 then
-    return nil, "relay stop handler should queue inbound relayed connection"
+  if upgraded_stream ~= stop_stream then
+    return nil, "relay stop handler should upgrade the stop stream as raw connection"
   end
-  local pending = h._pending_relay_inbound[1]
-  if pending.raw_conn ~= stop_stream then
-    return nil, "relay stop handler should keep stop stream as raw connection"
+  if not upgraded_opts or upgraded_opts.local_keypair ~= h.identity then
+    return nil, "relay stop handler should pass host identity into inbound upgrade"
   end
-  if pending.relay.relay_peer_id ~= relay_peer or pending.relay.limit_kind ~= "limited" then
-    return nil, "relay stop handler should tag inbound relay metadata"
+  local entry = h:_find_connection(dst_peer)
+  if not entry or entry.state.relay.relay_peer_id ~= relay_peer or entry.state.relay.limit_kind ~= "limited" then
+    return nil, "relay stop handler should register inbound relay metadata"
   end
 
   return true

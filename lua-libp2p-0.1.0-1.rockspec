@@ -25,6 +25,7 @@ build = {
     ["lua_libp2p.autonat"] = "lua_libp2p/autonat/init.lua",
     ["lua_libp2p.autonat.client"] = "lua_libp2p/autonat/client.lua",
     ["lua_libp2p.bootstrap"] = "lua_libp2p/bootstrap.lua",
+    ["lua_libp2p.connection_manager"] = "lua_libp2p/connection_manager.lua",
     ["lua_libp2p.error"] = "lua_libp2p/error.lua",
     ["lua_libp2p.discovery"] = "lua_libp2p/discovery/init.lua",
     ["lua_libp2p.discovery.bootstrap"] = "lua_libp2p/discovery/bootstrap.lua",

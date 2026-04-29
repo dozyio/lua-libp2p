@@ -7,6 +7,7 @@ local relay_proto = require("lua_libp2p.protocol.circuit_relay_v2")
 
 local M = {}
 M.KEEP_ALIVE_TAG = "relay-keep-alive"
+M.DEFAULT_KEEPALIVE_INTERVAL = 30
 
 local AutoRelay = {}
 AutoRelay.__index = AutoRelay
@@ -193,12 +194,24 @@ function AutoRelay:_reserve_target(target, opts)
   self._failed[key] = nil
   self._backoff_until[key] = nil
   reservation.next_refresh_at = next_refresh_at(reservation, now, self.refresh_timeout, self.refresh_timeout_min)
+  if self.keepalive_interval ~= nil and self.keepalive_interval ~= false then
+    reservation.next_keepalive_at = now + self.keepalive_interval
+  end
   if self.host and self.host.peerstore then
     local expire_at = reservation_expire_at(reservation)
     self.host.peerstore:tag(reservation.relay_peer_id or key, M.KEEP_ALIVE_TAG, {
       value = 1,
       ttl = expire_at and math.max(expire_at - now, 1) or math.huge,
     })
+  end
+  if self.host and self.host.connection_manager then
+    local relay_peer_id = reservation.relay_peer_id or key
+    if type(self.host.connection_manager.protect) == "function" then
+      self.host.connection_manager:protect(relay_peer_id, M.KEEP_ALIVE_TAG)
+    end
+    if type(self.host.connection_manager.tag_peer) == "function" then
+      self.host.connection_manager:tag_peer(relay_peer_id, M.KEEP_ALIVE_TAG, 100)
+    end
   end
   if not (opts and opts.force_refresh) then
     self.reservation_count = self.reservation_count + 1
@@ -236,9 +249,19 @@ function AutoRelay:_remove_reservation(key, opts)
   if self.host and self.host.peerstore and type(self.host.peerstore.untag) == "function" then
     self.host.peerstore:untag(reservation.relay_peer_id or key, M.KEEP_ALIVE_TAG)
   end
+  if self.host and self.host.connection_manager then
+    local relay_peer_id = reservation.relay_peer_id or key
+    if type(self.host.connection_manager.unprotect) == "function" then
+      self.host.connection_manager:unprotect(relay_peer_id, M.KEEP_ALIVE_TAG)
+    end
+    if type(self.host.connection_manager.tag_peer) == "function" then
+      self.host.connection_manager:tag_peer(relay_peer_id, M.KEEP_ALIVE_TAG, 0)
+    end
+  end
   log.info("autorelay reservation removed", {
     relay_peer_id = reservation.relay_peer_id or key,
     relay_addrs = #(reservation.relay_addrs or {}),
+    reason = options.reason,
   })
   emit_event(self.host, "relay:reservation:removed", {
     relay_peer_id = reservation.relay_peer_id or key,
@@ -263,21 +286,51 @@ function AutoRelay:_keepalive(key, reservation, now)
     return true
   end
   reservation.next_keepalive_at = now + self.keepalive_interval
-  local stream, _, _, stream_err = self.host:new_stream(relay_peer_id, { ping.ID }, {
-    timeout = self.keepalive_timeout,
-    io_timeout = self.keepalive_timeout,
-  })
-  if not stream then
-    return nil, stream_err
+  if reservation.keepalive_task
+    and reservation.keepalive_task.status ~= "completed"
+    and reservation.keepalive_task.status ~= "failed"
+    and reservation.keepalive_task.status ~= "cancelled"
+  then
+    return true
   end
-  local ok, ping_err = ping.ping_once(stream)
-  if type(stream.close) == "function" then
-    pcall(function()
-      stream:close()
-    end)
-  end
-  if not ok then
-    return nil, ping_err
+  if self.host and type(self.host.spawn_task) == "function" then
+    local task, task_err = self.host:spawn_task("autorelay.keepalive", function(ctx)
+      log.info("autorelay keepalive ping running", {
+        relay_peer_id = relay_peer_id,
+        connection_id = reservation.connection_id,
+      })
+      local stream, _, _, stream_err = self.host:new_stream(relay_peer_id, { ping.ID }, {
+        timeout = self.keepalive_timeout,
+        io_timeout = self.keepalive_timeout,
+        ctx = ctx,
+      })
+      if not stream then
+        return nil, stream_err
+      end
+      local ok, ping_err = ping.ping_once(stream)
+      if type(stream.close) == "function" then
+        pcall(function()
+          stream:close()
+        end)
+      end
+      if not ok then
+        return nil, ping_err
+      end
+      log.info("autorelay keepalive ping completed", {
+        relay_peer_id = relay_peer_id,
+        connection_id = reservation.connection_id,
+        rtt = ok.rtt_seconds,
+      })
+      return true
+    end, {
+      service = "autorelay",
+      peer_id = relay_peer_id,
+    })
+    if not task then
+      return nil, task_err
+    end
+    reservation.keepalive_task = task
+    return true
   end
   return true
 end
@@ -480,8 +533,23 @@ function AutoRelay:tick(now)
   for key, reservation in pairs(self._reserved) do
     local keepalive_ok = self:_keepalive(key, reservation, current)
     if not keepalive_ok then
-      self:_remove_reservation(key, { reason = "keepalive_failed" })
-      goto continue_reserved
+      self._failed[key] = error_mod.new("io", "relay keepalive failed")
+      log.warn("autorelay keepalive failed", {
+        relay_peer_id = reservation.relay_peer_id or key,
+        connection_id = reservation.connection_id,
+      })
+    end
+    local keepalive_task = reservation.keepalive_task
+    if keepalive_task and keepalive_task.status == "failed" then
+      self._failed[key] = keepalive_task.error
+      log.warn("autorelay keepalive failed", {
+        relay_peer_id = reservation.relay_peer_id or key,
+        connection_id = reservation.connection_id,
+        cause = tostring(keepalive_task.error),
+      })
+      reservation.keepalive_task = nil
+    elseif keepalive_task and (keepalive_task.status == "completed" or keepalive_task.status == "cancelled") then
+      reservation.keepalive_task = nil
     end
     if should_refresh(reservation, current, self.refresh_margin) then
       local target = self._targets[key]
@@ -520,7 +588,7 @@ function M.new(host, opts)
     max_queue_length = options.max_queue_length or 32,
     reservation_concurrency = options.reservation_concurrency or 1,
     backoff_seconds = options.backoff_seconds or 60,
-    keepalive_interval = options.keepalive_interval,
+    keepalive_interval = options.keepalive_interval == nil and M.DEFAULT_KEEPALIVE_INTERVAL or options.keepalive_interval,
     keepalive_timeout = options.keepalive_timeout or 5,
     fail_fast = options.fail_fast == true,
     discover = options.discover,

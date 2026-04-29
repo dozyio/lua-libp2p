@@ -5,33 +5,40 @@ package.path = table.concat({
 }, ";")
 
 local host_mod = require("lua_libp2p.host")
+local ed25519 = require("lua_libp2p.crypto.ed25519")
+
+local DEFAULT_RELAY = "/ip4/54.38.47.166/tcp/4001/p2p/QmbLHAnMoJPWSCR5Zhtx6BHJX9KiKNN6tpvbUcqanj75Nb"
+local DEFAULT_KEY_PATH = "examples/.autorelay_dht_demo.ed25519.key"
 
 local function usage()
   io.stderr:write([[
 Usage:
-  lua examples/autorelay_dht_demo.lua [--bootstrap <multiaddr>] [--max-reservations 2] [--status-interval 30]
+  lua examples/autorelay_dht_demo.lua [--relay <multiaddr>] [--max-reservations 1] [--status-interval 30] [--key <path>]
 
-Bootstraps the DHT, lets identify surface relay-hop protocol support, and lets
-AutoRelay reserve discovered relay candidates. The node keeps running so relay
-reservations remain valid. Press Ctrl-C to stop.
+Reserves a static circuit relay without DHT crawling. The node keeps running so
+relay reservations remain valid. Press Ctrl-C to stop.
 ]])
 end
 
 local function parse_args(args)
   local opts = {
-    bootstrappers = {},
-    max_reservations = 2,
+    relays = { DEFAULT_RELAY },
+    max_reservations = 1,
     status_interval = 30,
+    key_path = DEFAULT_KEY_PATH,
   }
   local i = 1
   while i <= #args do
     local name = args[i]
     local value = args[i + 1]
-    if name == "--bootstrap" then
+    if name == "--relay" or name == "--bootstrap" then
       if not value then
-        return nil, "--bootstrap requires a multiaddr"
+        return nil, name .. " requires a multiaddr"
       end
-      opts.bootstrappers[#opts.bootstrappers + 1] = value
+      if name == "--relay" and #opts.relays == 1 and opts.relays[1] == DEFAULT_RELAY then
+        opts.relays = {}
+      end
+      opts.relays[#opts.relays + 1] = value
       i = i + 2
     elseif name == "--max-reservations" then
       opts.max_reservations = tonumber(value)
@@ -39,11 +46,41 @@ local function parse_args(args)
     elseif name == "--status-interval" then
       opts.status_interval = tonumber(value)
       i = i + 2
+    elseif name == "--key" then
+      if not value then
+        return nil, "--key requires a path"
+      end
+      opts.key_path = value
+      i = i + 2
     else
       return nil, "unknown argument: " .. tostring(name)
     end
   end
   return opts
+end
+
+local function file_exists(path)
+  local f = io.open(path, "rb")
+  if not f then
+    return false
+  end
+  f:close()
+  return true
+end
+
+local function load_or_create_identity(path)
+  if file_exists(path) then
+    return ed25519.load_private_key(path)
+  end
+  local keypair, key_err = ed25519.generate_keypair()
+  if not keypair then
+    return nil, key_err
+  end
+  local saved, save_err = ed25519.save_private_key(path, keypair)
+  if not saved then
+    return nil, save_err
+  end
+  return keypair
 end
 
 local function wait_task(host, task, interval)
@@ -62,19 +99,6 @@ local function scheduler_sleep(host, seconds)
     return nil, task_err
   end
   return wait_task(host, task)
-end
-
-local function bootstrap_config(opts)
-  if #opts.bootstrappers > 0 then
-    return {
-      list = opts.bootstrappers,
-      dialable_only = true,
-      ignore_resolve_errors = true,
-    }
-  end
-  return {
-    ignore_resolve_errors = true,
-  }
 end
 
 local function print_status(host)
@@ -133,23 +157,24 @@ if not opts then
   os.exit(2)
 end
 
+local identity, identity_err = load_or_create_identity(opts.key_path)
+if not identity then
+  io.stderr:write("identity init failed: " .. tostring(identity_err) .. "\n")
+  os.exit(1)
+end
+
 local h, host_err = host_mod.new({
   runtime = "luv",
-  peer_discovery = {
-    bootstrap = bootstrap_config(opts),
-  },
+  identity = identity,
   listen_addrs = {
     "/ip4/127.0.0.1/tcp/0",
     "/p2p-circuit",
   },
-  services = { "identify", "kad_dht", "autorelay" },
-  kad_dht = {
-    mode = "client",
-    alpha = 10,
-    disjoint_paths = 10,
-  },
+  services = { "identify", "ping", "autorelay" },
   autorelay = {
+    relays = opts.relays,
     max_reservations = opts.max_reservations,
+    discover = false,
   },
   blocking = false,
   connect_timeout = 6,
@@ -167,62 +192,18 @@ if not started then
   os.exit(1)
 end
 
-local dht = h.kad_dht
-
-io.stdout:write("autorelay is active before DHT walk; reservations are created as identify discovers relay-hop peers\n")
+io.stdout:write("autorelay is active with static relay(s); DHT crawl is disabled\n")
+io.stdout:write("identity key: " .. tostring(opts.key_path) .. "\n")
+io.stdout:write("peer id: " .. tostring(h:peer_id().id) .. "\n")
+for _, relay in ipairs(opts.relays) do
+  io.stdout:write("static relay: " .. tostring(relay) .. "\n")
+end
 print_status(h)
-
-local bootstrap_task, bootstrap_task_err = dht:start_bootstrap()
-if not bootstrap_task then
-  io.stderr:write("dht bootstrap failed: " .. tostring(bootstrap_task_err) .. "\n")
-  h:stop()
-  os.exit(1)
-end
-local report, bootstrap_err = wait_task(h, bootstrap_task)
-if not report then
-  io.stderr:write("dht bootstrap failed: " .. tostring(bootstrap_err) .. "\n")
-  h:stop()
-  os.exit(1)
-end
-io.stdout:write("bootstrap: attempted=" .. tostring(report.attempted)
-  .. " connected=" .. tostring(report.connected)
-  .. " added=" .. tostring(report.added)
-  .. " failed=" .. tostring(report.failed) .. "\n")
-
-local walk_started_at = os.time()
-local walk_task, walk_task_err = dht:start_random_walk({
-  alpha = 10,
-  disjoint_paths = 10,
-  bootstrap_if_empty = true,
-})
-local walk, walk_err
-if walk_task then
-  walk, walk_err = wait_task(h, walk_task)
-else
-  walk_err = walk_task_err
-end
-if not walk then
-  io.stderr:write("dht random walk failed: " .. tostring(walk_err) .. "\n")
-else
-  io.stdout:write("dht walk: queried=" .. tostring(walk.queried)
-    .. " responses=" .. tostring(walk.responses)
-    .. " added=" .. tostring(walk.added)
-    .. " failed=" .. tostring(walk.failed)
-    .. " termination=" .. tostring(walk.termination)
-    .. " duration=" .. tostring(os.time() - walk_started_at) .. "s\n")
-end
 
 local pumped, pump_err = scheduler_sleep(h, 1)
 if not pumped then
   io.stderr:write("host pump failed: " .. tostring(pump_err) .. "\n")
 end
-if h.autorelay then
-  local added = h.autorelay:scan_peerstore()
-  if added > 0 then
-    io.stdout:write("autorelay peerstore scan queued=" .. tostring(added) .. "\n")
-  end
-end
-
 print_status(h)
 
 local running = true

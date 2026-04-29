@@ -44,6 +44,7 @@ function M.resume_inbound_upgrade(host, pending_entry, is_nonfatal_stream_error)
         if not conn then
           return nil, up_err
         end
+        state.direction = state.direction or "inbound"
         local entry, register_err = host:_register_connection(conn, state)
         if not entry then
           conn:close()
@@ -92,6 +93,7 @@ function M.resume_inbound_upgrade(host, pending_entry, is_nonfatal_stream_error)
     return "pending", nil, nil, pending_entry
   end
   if conn then
+    state.direction = state.direction or "inbound"
     local entry, register_err = host:_register_connection(conn, state)
     if not entry then
       conn:close()

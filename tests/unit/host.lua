@@ -104,6 +104,12 @@ local function run()
   if bootstrap_stats.by_name["host.bootstrap_dial"] ~= 2 or bootstrap_stats.by_status.completed ~= 2 then
     return nil, "host task stats should include completed bootstrap dial tasks"
   end
+  discovery_host._identify_inflight["peer-a"] = true
+  discovery_host._identify_inflight["peer-b"] = true
+  if discovery_host:task_stats().identify_inflight ~= 2 then
+    return nil, "host task stats should expose identify inflight count"
+  end
+  discovery_host._identify_inflight = {}
   discovery_host:stop()
 
   local multi_dial_host = assert(host.new({
@@ -112,9 +118,11 @@ local function run()
     blocking = false,
   }))
   local dialed = {}
+  local dial_timeouts = {}
   multi_dial_host._tcp_transport = {
-    dial = function(endpoint)
+    dial = function(endpoint, opts)
       dialed[#dialed + 1] = endpoint.host .. ":" .. tostring(endpoint.port)
+      dial_timeouts[#dial_timeouts + 1] = opts and opts.timeout
       if #dialed == 1 then
         return nil, require("lua_libp2p.error").new("timeout", "tcp connect timed out")
       end
@@ -129,16 +137,250 @@ local function run()
   local multi_conn, _, multi_err = multi_dial_host:dial({
     peer_id = multi_peer_id,
     addrs = {
-      "/ip4/203.0.113.10/tcp/4001/p2p/" .. multi_peer_id,
-      "/ip4/198.51.100.20/tcp/4001/p2p/" .. multi_peer_id,
+      "/ip4/127.0.0.1/tcp/4001/p2p/" .. multi_peer_id,
+      "/ip4/8.8.8.8/tcp/4001/p2p/" .. multi_peer_id,
+      "/ip4/1.1.1.1/tcp/4001/p2p/" .. multi_peer_id,
     },
-  })
+  }, { address_dial_timeout = 2, dial_timeout = 5 })
   upgrader.upgrade_outbound = original_upgrade_outbound
   if not multi_conn then
     return nil, multi_err
   end
-  if #dialed ~= 2 or dialed[1] ~= "203.0.113.10:4001" or dialed[2] ~= "198.51.100.20:4001" then
-    return nil, "host should try the next peer address when the first dial fails"
+  if #dialed ~= 2 or dialed[1] ~= "8.8.8.8:4001" or dialed[2] ~= "1.1.1.1:4001" then
+    return nil, "connection manager should rank public peer addresses before other addresses"
+  end
+  if dial_timeouts[1] ~= 2 or dial_timeouts[2] ~= 2 then
+    return nil, "connection manager should apply per-address dial timeout"
+  end
+
+  local prune_host = assert(host.new({
+    runtime = "poll",
+    identity = keypair,
+    blocking = false,
+    dial_queue = {
+      max_connections = 2,
+      low_water = 1,
+    },
+  }))
+  local closed = {}
+  local function fake_conn(label)
+    return {
+      close = function()
+        closed[label] = true
+        return true
+      end,
+    }
+  end
+  assert(prune_host.connection_manager:protect("peer-protected"))
+  assert(prune_host:_register_connection(fake_conn("protected"), { remote_peer_id = "peer-protected" }))
+  assert(prune_host:_register_connection(fake_conn("old"), { remote_peer_id = "peer-old" }))
+  assert(prune_host:_register_connection(fake_conn("new"), { remote_peer_id = "peer-new" }))
+  if not closed.old or closed.protected or closed.new then
+    return nil, "connection manager should prune unprotected old connections before protected ones"
+  end
+  local prune_stats = prune_host.connection_manager:stats()
+  if prune_stats.connections ~= 2 or prune_stats.pruned ~= 1 then
+    return nil, "connection manager should track open and pruned connections"
+  end
+
+  local weighted_host = assert(host.new({
+    runtime = "poll",
+    identity = keypair,
+    blocking = false,
+    dial_queue = {
+      max_connections = 3,
+      low_water = 2,
+    },
+  }))
+  local weighted_closed = {}
+  local function weighted_conn(label)
+    return {
+      close = function()
+        weighted_closed[label] = true
+        return true
+      end,
+    }
+  end
+  assert(weighted_host.connection_manager:tag_peer("peer-low", "test", 1))
+  assert(weighted_host.connection_manager:tag_peer("peer-mid", "test", 10))
+  assert(weighted_host.connection_manager:tag_peer("peer-high", "test", 100))
+  assert(weighted_host:_register_connection(weighted_conn("low"), { remote_peer_id = "peer-low" }))
+  assert(weighted_host:_register_connection(weighted_conn("mid"), { remote_peer_id = "peer-mid" }))
+  assert(weighted_host:_register_connection(weighted_conn("high"), { remote_peer_id = "peer-high" }))
+  assert(weighted_host:_register_connection(weighted_conn("new"), { remote_peer_id = "peer-new" }))
+  if not weighted_closed.low or weighted_closed.new or weighted_closed.mid or weighted_closed.high then
+    return nil, "connection manager should prune lowest-value existing peer before admitting at max_connections"
+  end
+  if weighted_host.connection_manager:stats().connections ~= 3 then
+    return nil, "connection manager should admit new connection after pruning below max_connections"
+  end
+
+  local watermark_host = assert(host.new({
+    runtime = "poll",
+    identity = keypair,
+    blocking = false,
+    dial_queue = {
+      high_water = 3,
+      low_water = 2,
+    },
+  }))
+  local watermark_closed = {}
+  local function watermark_conn(label)
+    return {
+      close = function()
+        watermark_closed[label] = true
+        return true
+      end,
+    }
+  end
+  assert(watermark_host.connection_manager:tag_peer("peer-low", "test", 1))
+  assert(watermark_host.connection_manager:tag_peer("peer-mid", "test", 10))
+  assert(watermark_host.connection_manager:tag_peer("peer-high", "test", 100))
+  assert(watermark_host:_register_connection(watermark_conn("low"), { remote_peer_id = "peer-low" }))
+  assert(watermark_host:_register_connection(watermark_conn("mid"), { remote_peer_id = "peer-mid" }))
+  assert(watermark_host:_register_connection(watermark_conn("high"), { remote_peer_id = "peer-high" }))
+  assert(watermark_host:_register_connection(watermark_conn("new"), { remote_peer_id = "peer-new" }))
+  if not watermark_closed.new or not watermark_closed.low or watermark_closed.mid or watermark_closed.high then
+    return nil, "connection manager should prune lowest-value peers down to low_water after high_water"
+  end
+  if watermark_host.connection_manager:stats().connections ~= 2 then
+    return nil, "connection manager should prune high_water overflow down to low_water"
+  end
+
+  local all_protected_host = assert(host.new({
+    runtime = "poll",
+    identity = keypair,
+    blocking = false,
+    dial_queue = {
+      max_connections = 1,
+      low_water = 0,
+    },
+  }))
+  assert(all_protected_host.connection_manager:protect("peer-protected-a"))
+  assert(all_protected_host:_register_connection(fake_conn("protected-a"), { remote_peer_id = "peer-protected-a" }))
+  local rejected_entry, rejected_err = all_protected_host:_register_connection(fake_conn("rejected"), {
+    remote_peer_id = "peer-rejected",
+  })
+  if rejected_entry ~= nil or not rejected_err or rejected_err.kind ~= "resource" then
+    return nil, "connection manager should reject new connection when all existing peers are protected"
+  end
+  if all_protected_host.connection_manager:stats().connections ~= 1 then
+    return nil, "connection manager should not track rejected connections"
+  end
+
+  local cleanup_host = assert(host.new({
+    runtime = "poll",
+    identity = keypair,
+    blocking = false,
+  }))
+  local cleanup_entry = assert(cleanup_host:_register_connection(fake_conn("cleanup"), { remote_peer_id = "peer-cleanup" }))
+  if cleanup_host.connection_manager:stats().connections ~= 1 then
+    return nil, "connection manager should track registered connection"
+  end
+  assert(cleanup_host:_unregister_connection(nil, cleanup_entry, require("lua_libp2p.error").new("closed", "test close")))
+  if cleanup_host.connection_manager:stats().connections ~= 0
+    or cleanup_host.connection_manager.connections_by_peer["peer-cleanup"] ~= nil
+  then
+    return nil, "connection manager should clean tracking on unregister"
+  end
+
+  local direction_host = assert(host.new({
+    runtime = "poll",
+    identity = keypair,
+    blocking = false,
+    dial_queue = {
+      max_inbound_connections = 1,
+      max_outbound_connections = 1,
+    },
+  }))
+  local direction_closed = {}
+  local function direction_conn(label)
+    return {
+      close = function()
+        direction_closed[label] = true
+        return true
+      end,
+    }
+  end
+  assert(direction_host:_register_connection(direction_conn("in-a"), {
+    remote_peer_id = "peer-in-a",
+    direction = "inbound",
+  }))
+  assert(direction_host:_register_connection(direction_conn("out-a"), {
+    remote_peer_id = "peer-out-a",
+    direction = "outbound",
+  }))
+  assert(direction_host:_register_connection(direction_conn("in-b"), {
+    remote_peer_id = "peer-in-b",
+    direction = "inbound",
+  }))
+  if not direction_closed["in-a"] or direction_closed["out-a"] or direction_closed["in-b"] then
+    return nil, "inbound limit should prune inbound connections without pruning outbound ones"
+  end
+  local direction_stats = direction_host.connection_manager:stats()
+  if direction_stats.inbound_connections ~= 1 or direction_stats.outbound_connections ~= 1 then
+    return nil, "connection manager should track inbound and outbound connection counts"
+  end
+
+  local per_peer_host = assert(host.new({
+    runtime = "poll",
+    identity = keypair,
+    blocking = false,
+    dial_queue = {
+      max_connections_per_peer = 1,
+    },
+  }))
+  assert(per_peer_host:_register_connection(fake_conn("per-peer-a"), {
+    remote_peer_id = "peer-same",
+    direction = "inbound",
+  }))
+  local per_peer_entry, per_peer_err = per_peer_host:_register_connection(fake_conn("per-peer-b"), {
+    remote_peer_id = "peer-same",
+    direction = "outbound",
+  })
+  if per_peer_entry ~= nil or not per_peer_err or per_peer_err.kind ~= "resource" then
+    return nil, "connection manager should reject connections over per-peer limit"
+  end
+
+  local protected_inbound_host = assert(host.new({
+    runtime = "poll",
+    identity = keypair,
+    blocking = false,
+    dial_queue = {
+      max_inbound_connections = 1,
+    },
+  }))
+  assert(protected_inbound_host.connection_manager:protect("peer-in-protected"))
+  assert(protected_inbound_host:_register_connection(fake_conn("in-protected"), {
+    remote_peer_id = "peer-in-protected",
+    direction = "inbound",
+  }))
+  local protected_inbound_entry, protected_inbound_err = protected_inbound_host:_register_connection(fake_conn("in-rejected"), {
+    remote_peer_id = "peer-in-rejected",
+    direction = "inbound",
+  })
+  if protected_inbound_entry ~= nil or not protected_inbound_err or protected_inbound_err.kind ~= "resource" then
+    return nil, "inbound limit should reject when only protected inbound connections exist"
+  end
+
+  local total_timeout_host = assert(host.new({
+    runtime = "poll",
+    identity = keypair,
+    blocking = false,
+  }))
+  local observed_timeout
+  total_timeout_host._tcp_transport = {
+    dial = function(_, opts)
+      observed_timeout = opts and opts.timeout
+      return nil, require("lua_libp2p.error").new("timeout", "tcp connect timed out")
+    end,
+  }
+  total_timeout_host:dial({
+    peer_id = multi_peer_id,
+    addrs = { "/ip4/8.8.4.4/tcp/4001/p2p/" .. multi_peer_id },
+  }, { address_dial_timeout = 6, dial_timeout = 1 })
+  if type(observed_timeout) ~= "number" or observed_timeout > 1 or observed_timeout <= 0 then
+    return nil, "connection manager should cap address timeout by total dial timeout"
   end
 
   for _, key_type in ipairs({ "rsa", "ecdsa", "secp256k1" }) do

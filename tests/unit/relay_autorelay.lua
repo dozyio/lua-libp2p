@@ -10,6 +10,25 @@ local function fake_host(reserve_log)
   local host = {
     address_manager = address_manager.new(),
     _event_handlers = handlers,
+    connection_manager = {
+      protected = {},
+      tags = {},
+      protect = function(self, peer_id, tag)
+        self.protected[peer_id] = tag
+        return true
+      end,
+      unprotect = function(self, peer_id, tag)
+        if self.protected[peer_id] == tag then
+          self.protected[peer_id] = nil
+        end
+        return true
+      end,
+      tag_peer = function(self, peer_id, tag, value)
+        self.tags[peer_id] = self.tags[peer_id] or {}
+        self.tags[peer_id][tag] = value
+        return true
+      end,
+    },
   }
   function host:on(event_name, handler)
     handlers[event_name] = handlers[event_name] or {}
@@ -93,6 +112,93 @@ local function run()
   if not ar then
     return nil, ar_err
   end
+  local default_keepalive_host = fake_host({})
+  default_keepalive_host.peerstore = require("lua_libp2p.peerstore").new()
+  default_keepalive_host._connections_by_peer = {}
+  local default_keepalive = assert(autorelay_mod.new(default_keepalive_host, {
+    relays = { relay_a },
+    min_reservation_ttl = 0,
+  }))
+  if default_keepalive.keepalive_interval ~= autorelay_mod.DEFAULT_KEEPALIVE_INTERVAL then
+    return nil, "autorelay should enable relay keepalive by default"
+  end
+  function default_keepalive.client:reserve(target)
+    local relay_peer_id = type(target) == "table" and target.peer_id or target
+    return {
+      relay_peer_id = relay_peer_id,
+      reservation = { expire = os.time() + 30 },
+      relay_addrs = {},
+      connection = {},
+      connection_id = 100,
+    }
+  end
+  local default_report, default_report_err = default_keepalive:start()
+  if not default_report then
+    return nil, default_report_err
+  end
+  local default_reservation = default_keepalive._reserved[relay_a]
+  if not default_reservation or not default_reservation.next_keepalive_at then
+    return nil, "autorelay should schedule first keepalive after reservation activation"
+  end
+  local keepalive_due_at = default_reservation.next_keepalive_at
+  local default_ticked, default_tick_err = default_keepalive:tick(os.time())
+  if not default_ticked then
+    return nil, default_tick_err
+  end
+  if default_keepalive._reserved[relay_a] == nil or default_reservation.next_keepalive_at ~= keepalive_due_at then
+    return nil, "autorelay should not run keepalive immediately after reservation activation"
+  end
+  default_keepalive:stop()
+
+  local keepalive_failure_host = fake_host({})
+  keepalive_failure_host.peerstore = require("lua_libp2p.peerstore").new()
+  keepalive_failure_host._connections_by_peer = {}
+  local keepalive_failure = assert(autorelay_mod.new(keepalive_failure_host, {
+    relays = { relay_a },
+    keepalive_interval = 1,
+    min_reservation_ttl = 0,
+  }))
+  function keepalive_failure.client:reserve(target)
+    local relay_peer_id = type(target) == "table" and target.peer_id or target
+    return {
+      relay_peer_id = relay_peer_id,
+      reservation = { expire = os.time() + 30 },
+      relay_addrs = {},
+      connection = {},
+      connection_id = 101,
+    }
+  end
+  function keepalive_failure_host:new_stream()
+    return nil, nil, nil, "keepalive failed"
+  end
+  function keepalive_failure_host:spawn_task(name, fn, opts)
+    local task = {
+      id = 1,
+      name = name,
+      service = opts and opts.service,
+      status = "ready",
+    }
+    local ok, result, err = pcall(fn, {})
+    if not ok then
+      task.status = "failed"
+      task.error = result
+    elseif result == nil and err then
+      task.status = "failed"
+      task.error = err
+    else
+      task.status = "completed"
+      task.result = result
+    end
+    return task
+  end
+  assert(keepalive_failure:start())
+  local keepalive_reservation = keepalive_failure._reserved[relay_a]
+  keepalive_reservation.next_keepalive_at = os.time() - 1
+  assert(keepalive_failure:tick(os.time()))
+  if keepalive_failure._reserved[relay_a] == nil then
+    return nil, "autorelay should not remove reservation on keepalive ping failure alone"
+  end
+  keepalive_failure:stop()
   function ar.client:reserve(target)
     reserve_log[#reserve_log + 1] = target
     local relay_peer_id = type(target) == "table" and target.peer_id or target
@@ -156,6 +262,14 @@ local function run()
   if not relay_tags[autorelay_mod.KEEP_ALIVE_TAG] then
     return nil, "autorelay should tag reserved relays to keep connections alive"
   end
+  if host.connection_manager.protected[relay_a] ~= autorelay_mod.KEEP_ALIVE_TAG then
+    return nil, "autorelay should protect relay backing connections in connection manager"
+  end
+  if not host.connection_manager.tags[relay_a]
+    or host.connection_manager.tags[relay_a][autorelay_mod.KEEP_ALIVE_TAG] ~= 100
+  then
+    return nil, "autorelay should tag relay peer in connection manager"
+  end
 
   local connection_handlers = host._event_handlers.connection_closed
   if type(connection_handlers) ~= "table" or type(connection_handlers[1]) ~= "function" then
@@ -189,6 +303,12 @@ local function run()
   end
   if host.peerstore:get_tags(relay_a)[autorelay_mod.KEEP_ALIVE_TAG] ~= nil then
     return nil, "autorelay should remove relay keepalive tag on reservation removal"
+  end
+  if host.connection_manager.protected[relay_a] ~= nil then
+    return nil, "autorelay should unprotect relay peer on reservation removal"
+  end
+  if host.connection_manager.tags[relay_a][autorelay_mod.KEEP_ALIVE_TAG] ~= 0 then
+    return nil, "autorelay should clear relay connection-manager tag on reservation removal"
   end
   local saw_failed = false
   local saw_refresh_removed = false

@@ -541,6 +541,103 @@ local function run()
   if fairness_counts.sleeping ~= 30 or fairness_counts.waiting ~= 30 or fairness_counts.checkpoint ~= 30 then
     return nil, "scheduler should make progress across sleeping, io-waiting, and checkpoint tasks"
   end
+
+  local dial_queue_host = assert(host_mod.new({
+    identity = keypair,
+    runtime = "poll",
+    dial_queue = {
+      max_parallel_dials = 1,
+    },
+  }))
+  local direct_started = 0
+  local active_direct = 0
+  local active_peak = 0
+  function dial_queue_host:_dial_direct(target, opts)
+    direct_started = direct_started + 1
+    active_direct = active_direct + 1
+    if active_direct > active_peak then
+      active_peak = active_direct
+    end
+    active_direct = active_direct - 1
+    return { peer = target.peer_id }, { remote_peer_id = target.peer_id }
+  end
+  local peer_a = "12D3KooWCryG7Mon9orvQxcS1rYZjotPgpwoJNHHKcLLfE4Hf5mV"
+  local peer_b = "12D3KooWQWZLu9qXWPTDnF9rTRrAiVGZrXCbHAvkqYrsG8cW4UHg"
+  local dial_results = {}
+  local function spawn_dial(name, peer_id)
+    return assert(dial_queue_host:spawn_task(name, function(ctx)
+      local conn, _, dial_err = dial_queue_host:dial({
+        peer_id = peer_id,
+        addrs = { "/ip4/127.0.0.1/tcp/4001/p2p/" .. peer_id },
+      }, { ctx = ctx })
+      if not conn then
+        return nil, dial_err
+      end
+      dial_results[#dial_results + 1] = peer_id
+      return true
+    end))
+  end
+  local dial_a1 = spawn_dial("test.dial_queue_a1", peer_a)
+  local dial_a2 = spawn_dial("test.dial_queue_a2", peer_a)
+  local dial_b = spawn_dial("test.dial_queue_b", peer_b)
+  for _ = 1, 100 do
+    assert(dial_queue_host:poll_once(0.02))
+    if dial_a1.status == "completed" and dial_a2.status == "completed" and dial_b.status == "completed" then
+      break
+    end
+  end
+  if dial_a1.status ~= "completed" or dial_a2.status ~= "completed" or dial_b.status ~= "completed" then
+    return nil, "dial queue tasks should complete"
+  end
+  if direct_started > 3 then
+    return nil, "connection manager should not start more dials than requested"
+  end
+  if active_peak > 1 then
+    return nil, "connection manager should respect max_parallel_dials"
+  end
+  local dial_stats = dial_queue_host.connection_manager:stats()
+  if dial_stats.dialed ~= direct_started then
+    return nil, "connection manager stats should track executed dials"
+  end
+
+  local full_queue_host = assert(host_mod.new({
+    identity = keypair,
+    runtime = "poll",
+    dial_queue = {
+      max_parallel_dials = 0,
+      max_dial_queue_length = 1,
+    },
+  }))
+  function full_queue_host:_dial_direct()
+    return { close = function() return true end }, {}
+  end
+  local full_peer_a = peer_a
+  local full_peer_b = peer_b
+  local queued = assert(full_queue_host:spawn_task("test.full_queue_first", function(ctx)
+    return full_queue_host:dial({
+      peer_id = full_peer_a,
+      addrs = { "/ip4/127.0.0.1/tcp/4001/p2p/" .. full_peer_a },
+    }, { ctx = ctx })
+  end))
+  assert(full_queue_host:poll_once(0.01))
+  if queued.status ~= "waiting_task" and queued.status ~= "ready" then
+    return nil, "first queued dial should remain pending when no dial slots are available"
+  end
+  local queue_full = assert(full_queue_host:spawn_task("test.full_queue_second", function(ctx)
+    local conn, _, dial_err = full_queue_host:dial({
+      peer_id = full_peer_b,
+      addrs = { "/ip4/127.0.0.1/tcp/4001/p2p/" .. full_peer_b },
+    }, { ctx = ctx })
+    if conn ~= nil or not dial_err or dial_err.kind ~= "resource" then
+      return nil, "expected dial queue full resource error"
+    end
+    return true
+  end))
+  assert(full_queue_host:poll_once(0.01))
+  if queue_full.status ~= "completed" then
+    return nil, "dial queue should reject new dials when queue is full"
+  end
+  full_queue_host:cancel_task(queued.id)
   assert(host:unsubscribe(task_events))
 
   return true
