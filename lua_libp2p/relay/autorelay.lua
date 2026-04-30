@@ -106,12 +106,56 @@ local function emit_event(host, name, payload)
   return true
 end
 
+local function is_transient_contention(err)
+  if not error_mod.is_error(err) then
+    return false
+  end
+  if err.kind ~= "timeout" then
+    if err.kind == "busy" then
+      local busy_message = tostring(err.message or err)
+      if string.find(busy_message, "yamux read pump is already active", 1, true) then
+        return true
+      end
+    end
+    return false
+  end
+  local message = tostring(err.message or err)
+  if string.find(message, "yamux read pump is already active", 1, true) then
+    return true
+  end
+  return false
+end
+
 function AutoRelay:_active_or_queued_count()
   local queued = 0
   for _ in pairs(self._queued) do
     queued = queued + 1
   end
   return (self.reservation_count or 0) + queued
+end
+
+function AutoRelay:_set_need_more_relays(need_more, reason)
+  local next_value = need_more == true
+  if self.need_more_relays == next_value then
+    return false
+  end
+  self.need_more_relays = next_value
+  if next_value then
+    emit_event(self.host, "relay:not-enough-relays", {
+      reason = reason or "capacity_below_target",
+      reservations = self.reservation_count or 0,
+      queued = #self._queue,
+      max_reservations = self.max_reservations,
+    })
+  else
+    emit_event(self.host, "relay:found-enough-relays", {
+      reason = reason or "capacity_reached",
+      reservations = self.reservation_count or 0,
+      queued = #self._queue,
+      max_reservations = self.max_reservations,
+    })
+  end
+  return true
 end
 
 function AutoRelay:_enqueue_target(target, opts)
@@ -156,6 +200,10 @@ function AutoRelay:_reserve_target(target, opts)
 
   local reservation, err = self.client:reserve(target, opts or self.reserve_opts)
   if not reservation then
+    if is_transient_contention(err) then
+      self._backoff_until[key] = os.time() + math.max(1, math.floor(self.backoff_seconds / 6))
+      return nil, err
+    end
     self._failed[key] = err
     self._backoff_until[key] = os.time() + self.backoff_seconds
     if error_mod.is_error(err) and (err.kind == "unsupported" or err.kind == "protocol") then
@@ -342,7 +390,7 @@ function AutoRelay:_maybe_request_replacement()
   if self.max_reservations and self:_active_or_queued_count() >= self.max_reservations then
     return false
   end
-  self.need_more_relays = true
+  self:_set_need_more_relays(true, "reservation_removed")
   return true
 end
 
@@ -375,7 +423,7 @@ function AutoRelay:_process_queue(now, limit)
   local max = limit or self.reservation_concurrency
   while processed < max and #self._queue > 0 do
     if self.max_reservations and self.reservation_count >= self.max_reservations then
-      self.need_more_relays = false
+      self:_set_need_more_relays(false, "capacity_reached")
       break
     end
     local item = table.remove(self._queue, 1)
@@ -389,7 +437,7 @@ function AutoRelay:_process_queue(now, limit)
     end
   end
   if self.max_reservations and self.reservation_count >= self.max_reservations then
-    self.need_more_relays = false
+    self:_set_need_more_relays(false, "capacity_reached")
   end
   return processed
 end
@@ -473,6 +521,7 @@ function AutoRelay:start()
     end
   end
   self.start_report = report
+  self:_maybe_request_replacement()
   return report
 end
 

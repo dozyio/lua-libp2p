@@ -85,12 +85,9 @@ local function run()
       return nil, poll_err
     end
 
-    if not stop_sent then
-      local phase = subprocess.read_file(child_phase)
-      if phase == "timeout_ok" then
-        stop_sent = true
-        host:stop()
-      end
+    if not stop_sent and handled_stream ~= nil then
+      stop_sent = true
+      host:stop()
     end
 
     local content = subprocess.read_file(child_out)

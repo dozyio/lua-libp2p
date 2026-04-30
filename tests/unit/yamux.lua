@@ -166,6 +166,16 @@ local function run()
     return nil, "yamux session should track stream-local waiters"
   end
 
+  local _, nonyield_read_err = stream:read(1)
+  if not nonyield_read_err or nonyield_read_err.kind ~= "busy" then
+    return nil, "yamux non-yieldable reads should require waiter context"
+  end
+  stream.send_window = 0
+  local _, nonyield_write_err = stream:write("x")
+  if not nonyield_write_err or nonyield_write_err.kind ~= "busy" then
+    return nil, "yamux non-yieldable writes should require waiter context"
+  end
+
   local notify_writer = new_scripted_conn("")
   assert(yamux.write_frame(notify_writer, {
     type = yamux.TYPE.WINDOW_UPDATE,

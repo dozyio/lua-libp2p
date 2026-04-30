@@ -287,6 +287,7 @@ local function is_nonfatal_stream_error(err)
     return false
   end
   return err.kind == "timeout"
+    or err.kind == "busy"
     or err.kind == "closed"
     or err.kind == "decode"
     or err.kind == "protocol"
@@ -560,6 +561,13 @@ function Host:new(config)
     _bootstrap_discovery = nil,
     _bootstrap_discovery_due_at = nil,
     _bootstrap_discovery_done = false,
+    _relay_candidate_replenish = {
+      pending = false,
+      cooldown_seconds = 30,
+      next_allowed_at = 0,
+      walk_task = nil,
+      walk_inflight = false,
+    },
     address_manager = cfg.address_manager or address_manager.new({
       listen_addrs = cfg.listen_addrs or {},
       announce_addrs = cfg.announce_addrs or {},
@@ -574,6 +582,7 @@ function Host:new(config)
     muxers = list_copy(cfg.muxers or {}),
     _handlers = {},
     _handler_options = {},
+    _autorelay_not_enough_relays = nil,
     _services = {},
     _handler_tasks = {},
     _tasks = {},
@@ -734,7 +743,6 @@ end
 
 function Host:_spawn_handler_task(handler, ctx)
   if self._scheduler_connection_pump
-    and ctx.protocol ~= "identify_connect"
     and type(self.spawn_task) == "function"
   then
     return self:spawn_task("handler." .. tostring(ctx.protocol or "unknown"), function(task_ctx)
@@ -1144,6 +1152,16 @@ function Host:add_service(name)
       return nil, start_err
     end
     self.autorelay = svc
+    if type(self.on) == "function" then
+      self._autorelay_not_enough_relays = function(payload)
+        self:_request_relay_candidate_replenish(payload and payload.reason or "relay_not_enough")
+        return true
+      end
+      local token, on_err = self:on("relay:not-enough-relays", self._autorelay_not_enough_relays)
+      if not token then
+        return nil, on_err
+      end
+    end
     self._services[name] = true
     return true
   end
@@ -2530,9 +2548,13 @@ function Host:_poll_once_with_ready_map(timeout, ready_map)
     ::continue_listeners::
   end
 
-  local router, router_err = self:_build_router()
-  if not router then
-    return nil, router_err
+  local router = nil
+  if host_runtime_luv_native.is_native_host(self) then
+    local router_err
+    router, router_err = self:_build_router()
+    if not router then
+      return nil, router_err
+    end
   end
 
   for i = #self._connections, 1, -1 do
@@ -2584,35 +2606,49 @@ function Host:_poll_once_with_ready_map(timeout, ready_map)
       end
     end
 
-    if not should_process then
-      goto continue_connections
-    end
-
-    local stream, protocol_id, handler, handler_options, stream_err = conn:accept_stream(router)
-    if stream_err then
-      if is_nonfatal_stream_error(stream_err) then
-        goto continue_connections
-      end
-      return nil, stream_err
-    end
-    if stream and handler then
-      if self:_connection_is_limited(entry.state)
-        and not self:_protocol_allowed_on_limited_connection(protocol_id, handler_options)
-      then
-        if type(stream.reset_now) == "function" then
-          pcall(function() stream:reset_now() end)
-        elseif type(stream.close) == "function" then
-          pcall(function() stream:close() end)
+    local stream, stream_err
+    if type(conn.accept_stream_raw) == "function" then
+      stream, stream_err = conn:accept_stream_raw()
+      if stream_err then
+        if is_nonfatal_stream_error(stream_err) then
+          goto continue_connections
         end
-        goto continue_connections
+        return nil, stream_err
       end
-      self:_spawn_handler_task(handler, {
-        stream = stream,
-        host = self,
-        connection = conn,
-        state = entry.state,
-        protocol = protocol_id,
-      })
+      if stream then
+        local _, neg_task_err = self:_spawn_stream_negotiation_task(stream, conn, entry)
+        if neg_task_err then
+          return nil, neg_task_err
+        end
+      end
+    else
+      local protocol_id, handler, handler_options
+      stream, protocol_id, handler, handler_options, stream_err = conn:accept_stream(router)
+      if stream_err then
+        if is_nonfatal_stream_error(stream_err) then
+          goto continue_connections
+        end
+        return nil, stream_err
+      end
+      if stream and handler then
+        if self:_connection_is_limited(entry.state)
+          and not self:_protocol_allowed_on_limited_connection(protocol_id, handler_options)
+        then
+          if type(stream.reset_now) == "function" then
+            pcall(function() stream:reset_now() end)
+          elseif type(stream.close) == "function" then
+            pcall(function() stream:close() end)
+          end
+          goto continue_connections
+        end
+        self:_spawn_handler_task(handler, {
+          stream = stream,
+          host = self,
+          connection = conn,
+          state = entry.state,
+          protocol = protocol_id,
+        })
+      end
     end
 
     ::continue_connections::
@@ -2709,6 +2745,61 @@ function Host:_run_bootstrap_discovery_if_due()
   return true
 end
 
+function Host:_request_relay_candidate_replenish(reason)
+  if not self._relay_candidate_replenish then
+    return false
+  end
+  self._relay_candidate_replenish.pending = true
+  self._relay_candidate_replenish.reason = reason
+  return true
+end
+
+function Host:_run_relay_candidate_replenish_if_due(now)
+  local state = self._relay_candidate_replenish
+  if not state or not state.pending then
+    return true
+  end
+  local current = now or os.time()
+  if current < (state.next_allowed_at or 0) then
+    return true
+  end
+
+  local ktable_peers = 0
+  if self.kad_dht and self.kad_dht.routing_table and type(self.kad_dht.routing_table.all_peers) == "function" then
+    ktable_peers = #(self.kad_dht.routing_table:all_peers() or {})
+  end
+
+  if ktable_peers == 0 and self._bootstrap_discovery and self._bootstrap_discovery.dial_on_start ~= false then
+    self._bootstrap_discovery_done = false
+    self._bootstrap_discovery_due_at = current
+    state.pending = false
+    state.next_allowed_at = current + (state.cooldown_seconds or 30)
+    return true
+  end
+
+  if self.kad_dht and type(self.kad_dht.random_walk) == "function" then
+    local walk = state.walk_task
+    if walk and walk.status ~= "completed" and walk.status ~= "failed" and walk.status ~= "cancelled" then
+      return true
+    end
+    local walk_op, walk_err = self.kad_dht:random_walk({
+      alpha = self.kad_dht.alpha,
+      disjoint_paths = self.kad_dht.disjoint_paths,
+    })
+    if not walk_op then
+      return nil, walk_err
+    end
+    state.walk_task = walk_op:task()
+    state.pending = false
+    state.next_allowed_at = current + (state.cooldown_seconds or 30)
+    return true
+  end
+
+  state.pending = false
+  state.next_allowed_at = current + (state.cooldown_seconds or 30)
+  return true
+end
+
 function Host:poll_once(timeout)
   local self_update_ok, self_update_err = self:_emit_self_peer_update_if_changed()
   if not self_update_ok then
@@ -2723,6 +2814,10 @@ function Host:poll_once(timeout)
   local boot_ok, boot_err = self:_run_bootstrap_discovery_if_due()
   if not boot_ok then
     return nil, boot_err
+  end
+  local replenish_ok, replenish_err = self:_run_relay_candidate_replenish_if_due(os.time())
+  if not replenish_ok then
+    return nil, replenish_err
   end
   if self._runtime_impl and self._runtime_impl.poll_once then
     return self._runtime_impl.poll_once(self, timeout)
@@ -2793,6 +2888,10 @@ end
 
 function Host:close()
   self._running = false
+  if self._autorelay_not_enough_relays and type(self.off) == "function" then
+    self:off("relay:not-enough-relays", self._autorelay_not_enough_relays)
+    self._autorelay_not_enough_relays = nil
+  end
   if self._runtime_impl and self._runtime_impl.stop then
     self._runtime_impl.stop(self)
   end
@@ -2823,8 +2922,11 @@ function Host:close()
   self._task_write_waiters = {}
   self._task_completion_waiters = {}
 
-  for _, raw_conn in ipairs(self._pending_inbound) do
-    raw_conn:close()
+  for _, pending_entry in ipairs(self._pending_inbound) do
+    local raw_conn = host_runtime_luv_native.pending_raw(pending_entry)
+    if raw_conn and type(raw_conn.close) == "function" then
+      raw_conn:close()
+    end
   end
   self._pending_inbound = {}
 

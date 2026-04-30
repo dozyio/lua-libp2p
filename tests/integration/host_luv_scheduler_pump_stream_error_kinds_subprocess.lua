@@ -75,12 +75,9 @@ local function run()
 
   local poll_timer = assert(uv.new_timer())
   poll_timer:start(10, 20, function()
-    if not stop_sent then
-      local phase = subprocess.read_file(child_phase)
-      if phase == "timeout_ok" then
-        stop_sent = true
-        host:stop()
-      end
+    if not stop_sent and handled_stream ~= nil then
+      stop_sent = true
+      host:stop()
     end
 
     local content = subprocess.read_file(child_out)

@@ -93,6 +93,8 @@ local function run()
     "relay:reservation:active",
     "relay:reservation:removed",
     "relay:reservation:failed",
+    "relay:not-enough-relays",
+    "relay:found-enough-relays",
   }) do
     host:on(event_name, function(payload)
       events[#events + 1] = { name = event_name, payload = payload }
@@ -242,7 +244,14 @@ local function run()
   if type(reserve_log[2]) ~= "table" or reserve_log[2].peer_id ~= relay_b then
     return nil, "autorelay should reserve discovered relay peers"
   end
-  if events[2].name ~= "relay:reservation:active" or events[2].payload.relay_peer_id ~= relay_b then
+  local saw_relay_b_active = false
+  for _, event in ipairs(events) do
+    if event.name == "relay:reservation:active" and event.payload.relay_peer_id == relay_b then
+      saw_relay_b_active = true
+      break
+    end
+  end
+  if not saw_relay_b_active then
     return nil, "autorelay should emit discovered reservation active event"
   end
 
@@ -283,7 +292,14 @@ local function run()
   if ar._reserved[relay_b] ~= nil then
     return nil, "autorelay should remove reservation when backing connection closes"
   end
-  if events[#events].name ~= "relay:reservation:removed" or events[#events].payload.reason ~= "connection_closed" then
+  local saw_connection_closed_removed = false
+  for _, event in ipairs(events) do
+    if event.name == "relay:reservation:removed" and event.payload.reason == "connection_closed" then
+      saw_connection_closed_removed = true
+      break
+    end
+  end
+  if not saw_connection_closed_removed then
     return nil, "autorelay should emit reservation removed event"
   end
 
@@ -312,11 +328,14 @@ local function run()
   end
   local saw_failed = false
   local saw_refresh_removed = false
+  local saw_not_enough = false
   for _, event in ipairs(events) do
     if event.name == "relay:reservation:failed" and event.payload.relay_peer_id == relay_a then
       saw_failed = true
     elseif event.name == "relay:reservation:removed" and event.payload.reason == "refresh_failed" then
       saw_refresh_removed = true
+    elseif event.name == "relay:not-enough-relays" then
+      saw_not_enough = true
     end
   end
   if not saw_failed then
@@ -324,6 +343,9 @@ local function run()
   end
   if not saw_refresh_removed then
     return nil, "autorelay should emit refresh removal event"
+  end
+  if not saw_not_enough then
+    return nil, "autorelay should emit relay:not-enough-relays after reservation loss"
   end
 
   handlers[1]({ peer_id = relay_a, protocols = { relay_proto.HOP_ID } })

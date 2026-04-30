@@ -76,12 +76,21 @@ local function run()
     return nil, register_err
   end
 
-  local ran, run_err = host:_run_handler_tasks()
-  if not ran then
-    return nil, run_err
+  local ev, ev_err
+  for _ = 1, 8 do
+    local ran, run_err = host:_run_handler_tasks()
+    if not ran then
+      return nil, run_err
+    end
+    local bg_ok, bg_err = host:_run_background_tasks()
+    if not bg_ok then
+      return nil, bg_err
+    end
+    ev, ev_err = host:next_event(sub)
+    if ev or ev_err then
+      break
+    end
   end
-
-  local ev, ev_err = host:next_event(sub)
   if ev_err then
     return nil, ev_err
   end
