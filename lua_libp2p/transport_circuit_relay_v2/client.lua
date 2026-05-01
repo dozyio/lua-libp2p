@@ -1,6 +1,6 @@
 local error_mod = require("lua_libp2p.error")
 local multiaddr = require("lua_libp2p.multiaddr")
-local relay_proto = require("lua_libp2p.protocol.circuit_relay_v2")
+local relay_proto = require("lua_libp2p.transport_circuit_relay_v2.protocol")
 
 local M = {}
 

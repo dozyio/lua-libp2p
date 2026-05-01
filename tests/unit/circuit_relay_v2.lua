@@ -1,4 +1,4 @@
-local relay = require("lua_libp2p.protocol.circuit_relay_v2")
+local relay = require("lua_libp2p.transport_circuit_relay_v2.protocol")
 local varint = require("lua_libp2p.multiformats.varint")
 
 local relay_peer = "12D3KooWCryG7Mon9orvQxcS1rYZjotPgpwoJNHHKcLLfE4Hf5mV"

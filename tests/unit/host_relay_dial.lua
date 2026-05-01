@@ -1,6 +1,6 @@
 local host_mod = require("lua_libp2p.host")
 local upgrader = require("lua_libp2p.network.upgrader")
-local relay_proto = require("lua_libp2p.protocol.circuit_relay_v2")
+local relay_proto = require("lua_libp2p.transport_circuit_relay_v2.protocol")
 local varint = require("lua_libp2p.multiformats.varint")
 
 local relay_peer = "12D3KooWCryG7Mon9orvQxcS1rYZjotPgpwoJNHHKcLLfE4Hf5mV"
