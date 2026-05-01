@@ -1,6 +1,6 @@
 local keys = require("lua_libp2p.crypto.keys")
 local key_pb = require("lua_libp2p.crypto.key_pb")
-local noise = require("lua_libp2p.security.noise")
+local noise = require("lua_libp2p.connection_encrypter_noise.protocol")
 
 local function run()
   local identity, key_err = keys.generate_keypair("secp256k1")

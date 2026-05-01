@@ -1,5 +1,5 @@
 local key_pb = require("lua_libp2p.crypto.key_pb")
-local noise = require("lua_libp2p.security.noise")
+local noise = require("lua_libp2p.connection_encrypter_noise.protocol")
 local mime = require("mime")
 
 local function public_pem_to_der(pem)
