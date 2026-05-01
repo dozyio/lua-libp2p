@@ -1,5 +1,5 @@
 local host_mod = require("lua_libp2p.host")
-local mss = require("lua_libp2p.protocol.mss")
+local mss = require("lua_libp2p.multistream_select.protocol")
 local tcp = require("lua_libp2p.transport_tcp.transport")
 local varint = require("lua_libp2p.multiformats.varint")
 

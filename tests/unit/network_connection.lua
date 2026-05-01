@@ -1,5 +1,5 @@
 local connection = require("lua_libp2p.network.connection")
-local mss = require("lua_libp2p.protocol.mss")
+local mss = require("lua_libp2p.multistream_select.protocol")
 
 local function new_scripted_stream(incoming)
   local stream = {

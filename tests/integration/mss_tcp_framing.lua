@@ -1,4 +1,4 @@
-local mss = require("lua_libp2p.protocol.mss")
+local mss = require("lua_libp2p.multistream_select.protocol")
 local tcp = require("lua_libp2p.transport_tcp.transport")
 
 local function run()

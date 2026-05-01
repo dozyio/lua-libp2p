@@ -1166,7 +1166,7 @@ function Host:_handle_relay_stop(stream, ctx)
 end
 
 function Host:_build_router()
-  local router = require("lua_libp2p.protocol.mss").new_router()
+  local router = require("lua_libp2p.multistream_select.protocol").new_router()
   for protocol_id, handler in pairs(self._handlers) do
     local ok, err = router:register(protocol_id, handler, self._handler_options[protocol_id])
     if not ok then

@@ -1,5 +1,5 @@
 local ed25519 = require("lua_libp2p.crypto.ed25519")
-local mss = require("lua_libp2p.protocol.mss")
+local mss = require("lua_libp2p.multistream_select.protocol")
 local plaintext = require("lua_libp2p.connection_encrypter_plaintext.protocol")
 local tcp = require("lua_libp2p.transport_tcp.transport")
 
