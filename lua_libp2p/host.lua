@@ -1028,7 +1028,7 @@ function Host:_schedule_identify_for_peer(peer_id)
       inflight = map_count(self._identify_inflight),
     })
     local call_ok, result, identify_err = pcall(function()
-      return self:_request_identify(pid)
+      return self:_request_identify(pid, { ctx = ctx })
     end)
     if not call_ok then
       local panic = result
@@ -2182,6 +2182,30 @@ function Host:_find_connection_by_id(connection_id)
 end
 
 function Host:_dial_relay_raw(addr, destination_peer_id, opts)
+  opts = opts or {}
+  if not opts.ctx
+    and not opts._internal_task_ctx
+    and type(self.spawn_task) == "function"
+    and type(self.run_until_task) == "function"
+  then
+    local task, task_err = self:spawn_task("host.dial_relay_raw", function(ctx)
+      local task_opts = {}
+      for k, v in pairs(opts) do
+        task_opts[k] = v
+      end
+      task_opts.ctx = ctx
+      task_opts._internal_task_ctx = true
+      return self:_dial_relay_raw(addr, destination_peer_id, task_opts)
+    end, { service = "host" })
+    if not task then
+      return nil, nil, task_err
+    end
+    return self:run_until_task(task, {
+      timeout = opts.timeout,
+      poll_interval = opts.poll_interval,
+    })
+  end
+
   local info, info_err = multiaddr.relay_info(addr)
   if not info then
     return nil, nil, info_err

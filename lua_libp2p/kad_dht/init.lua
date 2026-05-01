@@ -372,6 +372,31 @@ function DHT:_handle_rpc(stream)
 end
 
 function DHT:_find_node(peer_or_addr, target_key, opts)
+  opts = opts or {}
+  if not opts.ctx
+    and not opts._internal_task_ctx
+    and self.host
+    and type(self.host.spawn_task) == "function"
+    and type(self.host.run_until_task) == "function"
+  then
+    local task, task_err = self.host:spawn_task("kad.find_node.inline", function(ctx)
+      local task_opts = {}
+      for k, v in pairs(opts) do
+        task_opts[k] = v
+      end
+      task_opts.ctx = ctx
+      task_opts._internal_task_ctx = true
+      return self:_find_node(peer_or_addr, target_key, task_opts)
+    end, { service = "kad_dht" })
+    if not task then
+      return nil, task_err
+    end
+    return self.host:run_until_task(task, {
+      timeout = opts.timeout,
+      poll_interval = opts.poll_interval,
+    })
+  end
+
   if not self.host or type(self.host.new_stream) ~= "function" then
     return nil, error_mod.new("state", "find_node requires host with new_stream")
   end
@@ -465,6 +490,31 @@ function DHT:_decode_response_peers(response, purpose)
 end
 
 function DHT:_rpc(peer_or_addr, request, expected_type, opts)
+  opts = opts or {}
+  if not opts.ctx
+    and not opts._internal_task_ctx
+    and self.host
+    and type(self.host.spawn_task) == "function"
+    and type(self.host.run_until_task) == "function"
+  then
+    local task, task_err = self.host:spawn_task("kad.rpc.inline", function(ctx)
+      local task_opts = {}
+      for k, v in pairs(opts) do
+        task_opts[k] = v
+      end
+      task_opts.ctx = ctx
+      task_opts._internal_task_ctx = true
+      return self:_rpc(peer_or_addr, request, expected_type, task_opts)
+    end, { service = "kad_dht" })
+    if not task then
+      return nil, task_err
+    end
+    return self.host:run_until_task(task, {
+      timeout = opts.timeout,
+      poll_interval = opts.poll_interval,
+    })
+  end
+
   if not self.host or type(self.host.new_stream) ~= "function" then
     return nil, error_mod.new("state", "kad rpc requires host with new_stream")
   end
@@ -1208,6 +1258,31 @@ function DHT:_on_peer_protocols_updated(payload)
 end
 
 function DHT:_supports_kad_protocol(peer_or_addr, opts)
+  opts = opts or {}
+  if not opts.ctx
+    and not opts._internal_task_ctx
+    and self.host
+    and type(self.host.spawn_task) == "function"
+    and type(self.host.run_until_task) == "function"
+  then
+    local task, task_err = self.host:spawn_task("kad.supports_protocol.inline", function(ctx)
+      local task_opts = {}
+      for k, v in pairs(opts) do
+        task_opts[k] = v
+      end
+      task_opts.ctx = ctx
+      task_opts._internal_task_ctx = true
+      return self:_supports_kad_protocol(peer_or_addr, task_opts)
+    end, { service = "kad_dht" })
+    if not task then
+      return nil, task_err
+    end
+    return self.host:run_until_task(task, {
+      timeout = opts.timeout,
+      poll_interval = opts.poll_interval,
+    })
+  end
+
   if not self.host or type(self.host.new_stream) ~= "function" then
     return nil, error_mod.new("state", "protocol check requires host with new_stream")
   end

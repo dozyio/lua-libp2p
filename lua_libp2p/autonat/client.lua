@@ -147,6 +147,29 @@ end
 
 function Client:check(server, opts)
   local options = opts or {}
+  if (not options.stream_opts or options.stream_opts.ctx == nil)
+    and self.host
+    and type(self.host.spawn_task) == "function"
+    and type(self.host.run_until_task) == "function"
+  then
+    local task, task_err = self.host:spawn_task("autonat.check.inline", function(ctx)
+      local task_opts = {}
+      for k, v in pairs(options) do
+        task_opts[k] = v
+      end
+      task_opts.stream_opts = task_opts.stream_opts or {}
+      task_opts.stream_opts.ctx = task_opts.stream_opts.ctx or ctx
+      return self:check(server, task_opts)
+    end, { service = "autonat" })
+    if not task then
+      return nil, task_err
+    end
+    return self.host:run_until_task(task, {
+      timeout = options.timeout,
+      poll_interval = options.poll_interval,
+    })
+  end
+
   local addrs = candidate_addrs(self.host, options)
   if #addrs == 0 then
     return nil, error_mod.new("state", "autonat check requires at least one public candidate address")

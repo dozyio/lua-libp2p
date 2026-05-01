@@ -131,7 +131,17 @@ function AutoRelay:_active_or_queued_count()
   for _ in pairs(self._queued) do
     queued = queued + 1
   end
-  return (self.reservation_count or 0) + queued
+  local reserving = 0
+  for _, task in pairs(self._reserve_tasks or {}) do
+    if task
+      and task.status ~= "completed"
+      and task.status ~= "failed"
+      and task.status ~= "cancelled"
+    then
+      reserving = reserving + 1
+    end
+  end
+  return (self.reservation_count or 0) + queued + reserving
 end
 
 function AutoRelay:_set_need_more_relays(need_more, reason)
@@ -276,6 +286,61 @@ function AutoRelay:_reserve_target(target, opts)
     connection_id = reservation.connection_id,
   })
   return reservation
+end
+
+local function task_is_active(task)
+  return task
+    and task.status ~= "completed"
+    and task.status ~= "failed"
+    and task.status ~= "cancelled"
+end
+
+function AutoRelay:_schedule_reserve_target(target, opts)
+  local key = target_peer_id(target)
+  if self._reserved[key] and not (opts and opts.force_refresh) then
+    return true
+  end
+  local existing = self._reserve_tasks[key]
+  if task_is_active(existing) then
+    return true
+  end
+  if not (self.host and type(self.host.spawn_task) == "function") then
+    local _, err = self:_reserve_target(target, opts)
+    return err == nil, err
+  end
+
+  local task, task_err = self.host:spawn_task("autorelay.reserve", function(ctx)
+    local reserve_opts = {}
+    for k, v in pairs(opts or self.reserve_opts or {}) do
+      reserve_opts[k] = v
+    end
+    reserve_opts.stream_opts = reserve_opts.stream_opts or {}
+    reserve_opts.stream_opts.ctx = reserve_opts.stream_opts.ctx or ctx
+    local reservation, err = self:_reserve_target(target, reserve_opts)
+    if not reservation then
+      return nil, err
+    end
+    return true
+  end, {
+    service = "autorelay",
+    peer_id = key,
+  })
+  if not task then
+    return nil, task_err
+  end
+  self._reserve_tasks[key] = task
+  return true
+end
+
+function AutoRelay:_collect_reserve_tasks()
+  for key, task in pairs(self._reserve_tasks) do
+    if not task_is_active(task) then
+      self._reserve_tasks[key] = nil
+      if task.status == "failed" then
+        self._failed[key] = task.error
+      end
+    end
+  end
 end
 
 function AutoRelay:_remove_reservation(key, opts)
@@ -432,7 +497,10 @@ function AutoRelay:_process_queue(now, limit)
     if not self._reserved[item.key]
         and not self._invalid[item.key]
         and not (backoff_until and backoff_until > now) then
-      self:_reserve_target(item.target)
+      local scheduled, schedule_err = self:_schedule_reserve_target(item.target)
+      if not scheduled and schedule_err then
+        self._failed[item.key] = schedule_err
+      end
       processed = processed + 1
     end
   end
@@ -579,6 +647,7 @@ function AutoRelay:tick(now)
     return true
   end
   local current = now or os.time()
+  self:_collect_reserve_tasks()
   if self.need_more_relays and #self._queue == 0 then
     self:scan_peerstore()
   end
@@ -607,7 +676,7 @@ function AutoRelay:tick(now)
     if should_refresh(reservation, current, self.refresh_margin) then
       local target = self._targets[key]
       if target then
-        local refreshed, err = self:_reserve_target(target, {
+        local refreshed, err = self:_schedule_reserve_target(target, {
           force_refresh = true,
           retry_failed = true,
         })
@@ -659,6 +728,7 @@ function M.new(host, opts)
     _queue = {},
     _queued = {},
     _targets = {},
+    _reserve_tasks = {},
     started = false,
   }, AutoRelay)
 end
