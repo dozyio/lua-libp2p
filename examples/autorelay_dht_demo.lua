@@ -8,7 +8,7 @@ local host_mod = require("lua_libp2p.host")
 local identify_service = require("lua_libp2p.protocol_identify.service")
 local ping_service = require("lua_libp2p.protocol_ping.service")
 local kad_dht_service = require("lua_libp2p.kad_dht")
-local autorelay_service = require("lua_libp2p.relay.autorelay")
+local autorelay_service = require("lua_libp2p.transport_circuit_relay_v2.autorelay")
 local ed25519 = require("lua_libp2p.crypto.ed25519")
 
 local DEFAULT_KEY_PATH = "examples/.autorelay_dht_demo.ed25519.key"

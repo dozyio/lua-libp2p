@@ -1,5 +1,5 @@
 local address_manager = require("lua_libp2p.address_manager")
-local autorelay_mod = require("lua_libp2p.relay.autorelay")
+local autorelay_mod = require("lua_libp2p.transport_circuit_relay_v2.autorelay")
 local relay_proto = require("lua_libp2p.transport_circuit_relay_v2.protocol")
 
 local relay_a = "12D3KooWCryG7Mon9orvQxcS1rYZjotPgpwoJNHHKcLLfE4Hf5mV"

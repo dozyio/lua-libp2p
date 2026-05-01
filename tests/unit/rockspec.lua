@@ -32,7 +32,7 @@ local function run()
     "lua_libp2p.protocol_ping.protocol",
     "lua_libp2p.protocol_perf.protocol",
     "lua_libp2p.relay",
-    "lua_libp2p.relay.autorelay",
+    "lua_libp2p.transport_circuit_relay_v2.autorelay",
     "lua_libp2p.transport_circuit_relay_v2.client",
     "lua_libp2p.protocol_identify.service",
     "lua_libp2p.protocol_ping.service",
