@@ -5,7 +5,7 @@ local M = {
   mss = require("lua_libp2p.protocol.mss"),
   perf = require("lua_libp2p.protocol_perf.protocol"),
   ping = require("lua_libp2p.protocol_ping.protocol"),
-  plaintext = require("lua_libp2p.protocol.plaintext"),
+  plaintext = require("lua_libp2p.connection_encrypter_plaintext.protocol"),
 }
 
 return M

@@ -3,7 +3,7 @@ local connection = require("lua_libp2p.network.connection")
 local muxer_registry = require("lua_libp2p.muxer")
 local mss = require("lua_libp2p.protocol.mss")
 local noise = require("lua_libp2p.security.noise")
-local plaintext = require("lua_libp2p.protocol.plaintext")
+local plaintext = require("lua_libp2p.connection_encrypter_plaintext.protocol")
 
 local M = {}
 
