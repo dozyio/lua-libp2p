@@ -1,4 +1,4 @@
-local tcp = require("lua_libp2p.transport.tcp")
+local tcp = require("lua_libp2p.transport_tcp.transport")
 local yamux = require("lua_libp2p.muxer.yamux")
 
 local function expect(ok, err)

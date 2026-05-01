@@ -1,4 +1,4 @@
-local tcp_luv = require("lua_libp2p.transport.tcp_luv")
+local tcp_luv = require("lua_libp2p.transport_tcp.luv")
 
 local function run()
   if tcp_luv.BACKEND ~= "luv-native" and tcp_luv.BACKEND ~= "luv-proxy" then

@@ -9,9 +9,9 @@ local noise = require("lua_libp2p.security.noise")
 local runtime = os.getenv("LUA_LIBP2P_INTEROP_RUNTIME") or "poll"
 local tcp
 if runtime == "luv" then
-  tcp = require("lua_libp2p.transport.tcp_luv")
+  tcp = require("lua_libp2p.transport_tcp.luv")
 elseif runtime == "poll" then
-  tcp = require("lua_libp2p.transport.tcp")
+  tcp = require("lua_libp2p.transport_tcp.transport")
 else
   io.stderr:write("invalid LUA_LIBP2P_INTEROP_RUNTIME, expected 'luv' or 'poll'\n")
   os.exit(2)

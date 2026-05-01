@@ -5,7 +5,7 @@ local kad_dht_service = require("lua_libp2p.kad_dht")
 local autorelay_service = require("lua_libp2p.relay.autorelay")
 local child_scripts = require("tests.support.child_scripts")
 local subprocess = require("tests.support.subprocess")
-local tcp_luv = require("lua_libp2p.transport.tcp_luv")
+local tcp_luv = require("lua_libp2p.transport_tcp.luv")
 
 local function run()
   local ok_luv, uv = pcall(require, "luv")

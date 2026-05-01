@@ -1,6 +1,6 @@
-local tcp = require("lua_libp2p.transport.tcp")
+local tcp = require("lua_libp2p.transport_tcp.transport")
 local error_mod = require("lua_libp2p.error")
-local tcp_luv_native = require("lua_libp2p.transport.tcp_luv_native")
+local tcp_luv_native = require("lua_libp2p.transport_tcp.luv_native")
 
 local ok_luv, uv = pcall(require, "luv")
 

@@ -1,4 +1,4 @@
-local tcp = require("lua_libp2p.transport.tcp")
+local tcp = require("lua_libp2p.transport_tcp.transport")
 
 local function run()
   local parsed, parse_err = tcp.parse_multiaddr("/ip4/127.0.0.1/tcp/4001")

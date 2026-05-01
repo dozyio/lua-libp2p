@@ -1,5 +1,5 @@
 local error_mod = require("lua_libp2p.error")
-local tcp = require("lua_libp2p.transport.tcp")
+local tcp = require("lua_libp2p.transport_tcp.transport")
 
 local function run()
   local listener, listen_err = tcp.listen({

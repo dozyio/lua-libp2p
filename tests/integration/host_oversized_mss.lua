@@ -1,6 +1,6 @@
 local host_mod = require("lua_libp2p.host")
 local mss = require("lua_libp2p.protocol.mss")
-local tcp = require("lua_libp2p.transport.tcp")
+local tcp = require("lua_libp2p.transport_tcp.transport")
 local varint = require("lua_libp2p.multiformats.varint")
 
 local function close_quiet(value)

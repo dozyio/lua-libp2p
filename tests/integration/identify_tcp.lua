@@ -6,7 +6,7 @@ local multiaddr = require("lua_libp2p.multiaddr")
 local peer_record = require("lua_libp2p.record.peer_record")
 local peerid = require("lua_libp2p.peerid")
 local signed_envelope = require("lua_libp2p.record.signed_envelope")
-local tcp = require("lua_libp2p.transport.tcp")
+local tcp = require("lua_libp2p.transport_tcp.transport")
 
 local function run()
   local listener, listen_err = tcp.listen({

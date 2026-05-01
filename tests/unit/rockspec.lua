@@ -37,6 +37,9 @@ local function run()
     "lua_libp2p.protocol_identify.service",
     "lua_libp2p.protocol_ping.service",
     "lua_libp2p.protocol_perf.service",
+    "lua_libp2p.transport_tcp.transport",
+    "lua_libp2p.transport_tcp.luv",
+    "lua_libp2p.transport_tcp.luv_native",
   }
 
   for _, module_name in ipairs(required) do

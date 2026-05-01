@@ -1,6 +1,6 @@
 local host_mod = require("lua_libp2p.host")
 local identify_service = require("lua_libp2p.protocol_identify.service")
-local tcp_luv = require("lua_libp2p.transport.tcp_luv")
+local tcp_luv = require("lua_libp2p.transport_tcp.luv")
 
 local function shell_quote(text)
   return "'" .. tostring(text):gsub("'", "'\\''") .. "'"

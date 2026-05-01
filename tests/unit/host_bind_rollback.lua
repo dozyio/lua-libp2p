@@ -1,6 +1,6 @@
 local ed25519 = require("lua_libp2p.crypto.ed25519")
 local host_mod = require("lua_libp2p.host")
-local tcp = require("lua_libp2p.transport.tcp")
+local tcp = require("lua_libp2p.transport_tcp.transport")
 
 local function new_host()
   local keypair = assert(ed25519.generate_keypair())

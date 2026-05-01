@@ -1,5 +1,5 @@
 local error_mod = require("lua_libp2p.error")
-local tcp_luv = require("lua_libp2p.transport.tcp_luv")
+local tcp_luv = require("lua_libp2p.transport_tcp.luv")
 
 local function run()
   local has_luv = pcall(require, "luv")

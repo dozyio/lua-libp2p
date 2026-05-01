@@ -1,7 +1,7 @@
 local host_mod = require("lua_libp2p.host")
 local child_scripts = require("tests.support.child_scripts")
 local subprocess = require("tests.support.subprocess")
-local tcp_luv = require("lua_libp2p.transport.tcp_luv")
+local tcp_luv = require("lua_libp2p.transport_tcp.luv")
 
 local PROTO_ID = "/tests/timeout-close/1.0.0"
 
