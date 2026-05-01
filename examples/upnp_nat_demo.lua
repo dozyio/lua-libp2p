@@ -5,6 +5,11 @@ package.path = table.concat({
 }, ";")
 
 local host_mod = require("lua_libp2p.host")
+local identify_service = require("lua_libp2p.protocol_identify.service")
+local ping_service = require("lua_libp2p.protocol_ping.service")
+local autonat_service = require("lua_libp2p.autonat.client")
+local kad_dht_service = require("lua_libp2p.kad_dht")
+local upnp_nat_service = require("lua_libp2p.upnp.nat")
 
 local function usage()
   io.stderr:write([[
@@ -273,11 +278,8 @@ end
 
 local function discover_autonat_servers(host, limit, ctx)
   if not host.kad_dht then
-    local ok, err = host:add_service("kad_dht")
-    if not ok then
-      print("AutoNAT discovery: failed to start kad_dht: " .. tostring(err))
-      return {}
-    end
+    print("AutoNAT discovery: kad_dht service is required")
+    return {}
   end
 
   print("AutoNAT discovery: waiting for DHT peers")
@@ -368,21 +370,26 @@ local h = assert(host_mod.new({
   runtime = opts.runtime,
   blocking = false,
   listen_addrs = { opts.listen_addr },
-  services = { "identify", "ping", "autonat" },
+  services = {
+    identify = { module = identify_service },
+    ping = { module = ping_service },
+    autonat = { module = autonat_service },
+    kad_dht = { module = kad_dht_service, config = { mode = "client" } },
+    upnp_nat = {
+      module = upnp_nat_service,
+      config = {
+        internal_client = opts.internal_client,
+        auto_confirm_address = opts.auto_confirm,
+        timeout = opts.gateway_timeout,
+        mx = opts.mx,
+        replace_existing = opts.replace_existing,
+        debug_soap = opts.debug_soap,
+        description = opts.description,
+      },
+    },
+  },
   peer_discovery = {
     bootstrap = bootstrap_config(opts),
-  },
-  kad_dht = {
-    mode = "client",
-  },
-  upnp_nat = {
-    internal_client = opts.internal_client,
-    auto_confirm_address = opts.auto_confirm,
-    timeout = opts.gateway_timeout,
-    mx = opts.mx,
-    replace_existing = opts.replace_existing,
-    debug_soap = opts.debug_soap,
-    description = opts.description,
   },
 }))
 
@@ -420,10 +427,6 @@ h:on("autonat:address:unreachable", function(payload)
 end)
 
 assert(h:start())
-local upnp_started, upnp_err = h:add_service("upnp_nat")
-if not upnp_started then
-  print("failed to start upnp_nat: " .. tostring(upnp_err))
-end
 wait_for_mappings(h, 5)
 
 print("peer_id: " .. h:peer_id().id)

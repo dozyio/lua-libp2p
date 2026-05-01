@@ -73,7 +73,8 @@ function M.host_ping_client()
   return [[
 package.path = "./?.lua;./?/init.lua;" .. package.path
 local host = require("lua_libp2p.host")
-local ping = require("lua_libp2p.protocol.ping")
+local ping = require("lua_libp2p.protocol_ping.protocol")
+local identify_service = require("lua_libp2p.protocol_identify.service")
 
 local addr = arg[1]
 local out_path = arg[2]
@@ -128,7 +129,7 @@ function M.host_noise_ping_client()
   return [[
 package.path = "./?.lua;./?/init.lua;" .. package.path
 local host = require("lua_libp2p.host")
-local ping = require("lua_libp2p.protocol.ping")
+local ping = require("lua_libp2p.protocol_ping.protocol")
 
 local addr = arg[1]
 local out_path = arg[2]
@@ -142,7 +143,9 @@ end
 local h, h_err = host.new({
   runtime = "poll",
   blocking = false,
-  services = { "identify" },
+  services = {
+    identify = identify_service,
+  },
 })
 if not h then
   write_out("init_error:" .. tostring(h_err))
@@ -187,9 +190,11 @@ function M.host_identify_ping_burst_client()
   return [[
 package.path = "./?.lua;./?/init.lua;" .. package.path
 local host = require("lua_libp2p.host")
-local identify = require("lua_libp2p.protocol.identify")
-local ping = require("lua_libp2p.protocol.ping")
+local identify = require("lua_libp2p.protocol_identify.protocol")
+local ping = require("lua_libp2p.protocol_ping.protocol")
 local socket = require("socket")
+local identify_service = require("lua_libp2p.protocol_identify.service")
+local kad_dht_service = require("lua_libp2p.kad_dht")
 
 local addr = arg[1]
 local out_path = arg[2]
@@ -204,7 +209,10 @@ end
 local h, h_err = host.new({
   runtime = "poll",
   blocking = false,
-  services = { "identify", "kad_dht" },
+  services = {
+    identify = identify_service,
+    kad_dht = kad_dht_service,
+  },
 })
 if not h then
   write_out("init_error:" .. tostring(h_err))

@@ -1,5 +1,5 @@
 local mss = require("lua_libp2p.protocol.mss")
-local ping = require("lua_libp2p.protocol.ping")
+local ping = require("lua_libp2p.protocol_ping.protocol")
 local tcp = require("lua_libp2p.transport.tcp")
 
 local function run()

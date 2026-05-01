@@ -1,5 +1,5 @@
 local ed25519 = require("lua_libp2p.crypto.ed25519")
-local identify = require("lua_libp2p.protocol.identify")
+local identify = require("lua_libp2p.protocol_identify.protocol")
 local key_pb = require("lua_libp2p.crypto.key_pb")
 local multiaddr = require("lua_libp2p.multiaddr")
 local peer_record = require("lua_libp2p.record.peer_record")

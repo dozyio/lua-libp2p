@@ -1,4 +1,4 @@
-local ping = require("lua_libp2p.protocol.ping")
+local ping = require("lua_libp2p.protocol_ping.protocol")
 
 local function new_buffered_conn(initial)
   local conn = {

@@ -1,4 +1,5 @@
 local host_mod = require("lua_libp2p.host")
+local identify_service = require("lua_libp2p.protocol_identify.service")
 local tcp_luv = require("lua_libp2p.transport.tcp_luv")
 
 local function shell_quote(text)
@@ -41,7 +42,9 @@ local function run()
     runtime = "luv",
     blocking = false,
     listen_addrs = { "/ip4/127.0.0.1/tcp/0" },
-    services = { "identify" },
+    services = {
+      identify = identify_service,
+    },
     accept_timeout = 0.05,
   })
   if not host then
@@ -81,7 +84,9 @@ end
 
 local h, h_err = host.new({
   runtime = "poll",
-  services = { "identify" },
+  services = {
+    identify = require("lua_libp2p.protocol_identify.service"),
+  },
   blocking = false,
   accept_timeout = 0.05,
 })

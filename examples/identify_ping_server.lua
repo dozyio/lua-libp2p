@@ -6,6 +6,9 @@ package.path = table.concat({
 
 local host_mod = require("lua_libp2p.host")
 local ed25519 = require("lua_libp2p.crypto.ed25519")
+local identify_service = require("lua_libp2p.protocol_identify.service")
+local ping_service = require("lua_libp2p.protocol_ping.service")
+local perf_service = require("lua_libp2p.protocol_perf.service")
 
 local listen_addr = arg[1] or "/ip4/127.0.0.1/tcp/64333"
 local key_path = arg[2] or "examples/.identify_ping_server.ed25519.key"
@@ -60,7 +63,11 @@ local host, host_err = host_mod.new({
 	runtime = runtime,
 	identity = identity,
 	listen_addrs = { listen_addr },
-	services = { "identify", "ping", "perf" },
+	services = {
+		identify = { module = identify_service },
+		ping = { module = ping_service },
+		perf = { module = perf_service },
+	},
 	blocking = true,
 	poll_interval = 0.01,
 	accept_timeout = 0.05,

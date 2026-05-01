@@ -5,6 +5,10 @@ package.path = table.concat({
 }, ";")
 
 local host_mod = require("lua_libp2p.host")
+local identify_service = require("lua_libp2p.protocol_identify.service")
+local ping_service = require("lua_libp2p.protocol_ping.service")
+local kad_dht_service = require("lua_libp2p.kad_dht")
+local autorelay_service = require("lua_libp2p.relay.autorelay")
 local ed25519 = require("lua_libp2p.crypto.ed25519")
 
 local DEFAULT_KEY_PATH = "examples/.autorelay_dht_demo.ed25519.key"
@@ -275,7 +279,12 @@ local h, host_err = host_mod.new({
     "/ip4/127.0.0.1/tcp/0",
     "/p2p-circuit",
   },
-  services = { "identify", "ping", "kad_dht", "autorelay" },
+  services = {
+    identify = { module = identify_service },
+    ping = { module = ping_service },
+    kad_dht = { module = kad_dht_service },
+    autorelay = { module = autorelay_service },
+  },
   kad_dht = {
     mode = "client",
   },

@@ -28,12 +28,15 @@ local function run()
     "lua_libp2p.operation",
     "lua_libp2p.peerstore",
     "lua_libp2p.protocol.circuit_relay_v2",
-    "lua_libp2p.protocol.identify",
-    "lua_libp2p.protocol.ping",
-    "lua_libp2p.protocol.perf",
+    "lua_libp2p.protocol_identify.protocol",
+    "lua_libp2p.protocol_ping.protocol",
+    "lua_libp2p.protocol_perf.protocol",
     "lua_libp2p.relay",
     "lua_libp2p.relay.autorelay",
     "lua_libp2p.relay.client",
+    "lua_libp2p.protocol_identify.service",
+    "lua_libp2p.protocol_ping.service",
+    "lua_libp2p.protocol_perf.service",
   }
 
   for _, module_name in ipairs(required) do

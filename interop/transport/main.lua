@@ -7,7 +7,8 @@ package.path = table.concat({
 }, ";")
 
 local host_mod = require("lua_libp2p.host")
-local ping = require("lua_libp2p.protocol.ping")
+local ping_service = require("lua_libp2p.protocol_ping.service")
+local ping = require("lua_libp2p.protocol_ping.protocol")
 
 local ok_socket, socket = pcall(require, "socket")
 
@@ -248,7 +249,9 @@ local function run_listener(cfg)
     listen_addrs = { "/ip4/" .. cfg.listener_ip .. "/tcp/0" },
     security_transports = { security_protocol },
     muxers = { muxer_protocol },
-    services = { "ping" },
+    services = {
+      ping = { module = ping_service },
+    },
     blocking = false,
     connect_timeout = 5,
     io_timeout = 5,

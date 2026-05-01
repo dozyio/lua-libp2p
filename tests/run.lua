@@ -36,6 +36,8 @@ local tests = {
   (require("tests.unit.host_bind_rollback")),
   (require("tests.unit.host_events")),
   (require("tests.unit.host_identify_on_connect")),
+  (require("tests.unit.host_services_identify")),
+  (require("tests.unit.host_services_ping")),
   (require("tests.unit.host_relay_dial")),
   (require("tests.unit.host_nonfatal_errors")),
   (require("tests.unit.host_runtime_luv")),

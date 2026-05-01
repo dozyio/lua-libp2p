@@ -1,4 +1,6 @@
 local host_mod = require("lua_libp2p.host")
+local identify_service = require("lua_libp2p.protocol_identify.service")
+local ping_service = require("lua_libp2p.protocol_ping.service")
 local child_scripts = require("tests.support.child_scripts")
 local subprocess = require("tests.support.subprocess")
 local tcp_luv = require("lua_libp2p.transport.tcp_luv")
@@ -16,7 +18,10 @@ local function run()
     runtime = "luv",
     blocking = false,
     listen_addrs = { "/ip4/127.0.0.1/tcp/0" },
-    services = { "identify", "ping" },
+    services = {
+      identify = identify_service,
+      ping = ping_service,
+    },
     accept_timeout = 0.05,
   })
   if not host then

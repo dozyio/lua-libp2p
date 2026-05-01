@@ -5,6 +5,8 @@ package.path = table.concat({
 }, ";")
 
 local host_mod = require("lua_libp2p.host")
+local identify_service = require("lua_libp2p.protocol_identify.service")
+local kad_dht_service = require("lua_libp2p.kad_dht")
 
 local M = {}
 
@@ -176,7 +178,10 @@ function M.new_client(opts)
       bootstrap = bootstrap_config(opts),
     },
     listen_addrs = { "/ip4/127.0.0.1/tcp/0" },
-    services = { "identify", "kad_dht" },
+    services = {
+      identify = { module = identify_service },
+      kad_dht = { module = kad_dht_service },
+    },
     kad_dht = {
       mode = "client",
       alpha = opts.alpha,

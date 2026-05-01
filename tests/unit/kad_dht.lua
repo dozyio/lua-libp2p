@@ -133,9 +133,6 @@ local function run()
     client_handled_protocol = protocol_id
     return true
   end
-  function client_host:add_service()
-    return true
-  end
   local client_dht, client_dht_err = kad_dht.new(client_host, {
     hash_function = fake_hash,
   })

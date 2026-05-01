@@ -40,7 +40,9 @@ local function run()
   local keypair = assert(ed25519.generate_keypair())
   local host, host_err = host_mod.new({
     identity = keypair,
-    services = { identify = identify_service },
+    services = {
+      identify = identify_service,
+    },
   })
   if not host then
     return nil, host_err
@@ -50,7 +52,7 @@ local function run()
   local wrote, write_err = identify.write(writer, {
     protocolVersion = "/ipfs/0.1.0",
     agentVersion = "remote/1.0.0",
-    protocols = { "/ipfs/kad/1.0.0" },
+    protocols = { identify.ID },
     listenAddrs = { "/ip4/127.0.0.1/tcp/4001" },
   })
   if not wrote then
@@ -69,46 +71,24 @@ local function run()
     return stream, identify.ID, { close = function() return true end }, { remote_peer_id = "peer-a" }
   end
 
-  local sub = assert(host:subscribe("peer_identified"))
-  local entry, register_err = host:_register_connection({ close = function() return true end }, {
-    remote_peer_id = "peer-a",
-  })
-  if not entry then
-    return nil, register_err
+  local result, req_err = host.services.identify:identify("peer-a")
+  if not result then
+    return nil, req_err
   end
-
-  local ev, ev_err
-  for _ = 1, 8 do
-    local ran, run_err = host:_run_handler_tasks()
-    if not ran then
-      return nil, run_err
-    end
-    local bg_ok, bg_err = host:_run_background_tasks()
-    if not bg_ok then
-      return nil, bg_err
-    end
-    ev, ev_err = host:next_event(sub)
-    if ev or ev_err then
-      break
-    end
+  if result.protocol ~= identify.ID then
+    return nil, "expected identify protocol in services identify result"
   end
-  if ev_err then
-    return nil, ev_err
+  if type(result.message) ~= "table" then
+    return nil, "expected identify message in services identify result"
   end
-  if not ev or ev.name ~= "peer_identified" then
-    return nil, "expected peer_identified event after connection"
-  end
-  if not ev.payload or ev.payload.peer_id ~= "peer-a" then
-    return nil, "expected peer_identified payload to include peer id"
-  end
-  if type(ev.payload.message) ~= "table" then
-    return nil, "expected peer_identified payload to include identify message"
+  if result.message.agentVersion ~= "remote/1.0.0" then
+    return nil, "expected identify message payload"
   end
 
   return true
 end
 
 return {
-  name = "host identify runs on peer connect",
+  name = "host services identify",
   run = run,
 }

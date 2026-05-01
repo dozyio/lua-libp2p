@@ -1,10 +1,15 @@
 local ed25519 = require("lua_libp2p.crypto.ed25519")
 local keys = require("lua_libp2p.crypto.keys")
 local host = require("lua_libp2p.host")
-local identify = require("lua_libp2p.protocol.identify")
+local identify = require("lua_libp2p.protocol_identify.protocol")
+local identify_service = require("lua_libp2p.protocol_identify.service")
+local ping_service = require("lua_libp2p.protocol_ping.service")
 local upgrader = require("lua_libp2p.network.upgrader")
-local perf = require("lua_libp2p.protocol.perf")
-local ping = require("lua_libp2p.protocol.ping")
+local perf = require("lua_libp2p.protocol_perf.protocol")
+local perf_service = require("lua_libp2p.protocol_perf.service")
+local ping = require("lua_libp2p.protocol_ping.protocol")
+local kad_dht_service = require("lua_libp2p.kad_dht")
+local upnp_nat_service = require("lua_libp2p.upnp.nat")
 
 local function run()
   local keypair, key_err = ed25519.generate_keypair()
@@ -66,7 +71,9 @@ local function run()
         },
       },
     },
-    services = { "kad_dht" },
+    services = {
+      kad_dht = { module = kad_dht_service },
+    },
     blocking = false,
   })
   if not discovery_host then
@@ -122,6 +129,9 @@ local function run()
   local limited_host = assert(host.new({
     runtime = "poll",
     identity = keypair,
+    services = {
+      ping = { module = ping_service },
+    },
     blocking = false,
   }))
   local opened_streams = {}
@@ -147,10 +157,6 @@ local function run()
   local allowed_stream, allowed_selected, _, allowed_err = limited_host:new_stream("peer-a", { "/app/allowed/1.0.0" })
   if not allowed_stream or allowed_selected ~= "/app/allowed/1.0.0" then
     return nil, allowed_err or "limited connections should allow protocols opted in at handler registration"
-  end
-  local ping_ok, ping_service_err = limited_host:add_service("ping")
-  if not ping_ok then
-    return nil, ping_service_err
   end
   local ping_stream, ping_selected, _, ping_stream_err = limited_host:new_stream("peer-a", { ping.ID })
   if not ping_stream or ping_selected ~= ping.ID then
@@ -503,7 +509,11 @@ local function run()
     transports = { "tcp" },
     security_transports = { "/plaintext/2.0.0" },
     muxers = { "/yamux/1.0.0" },
-    services = { "identify" },
+    services = {
+      identify = { module = identify_service },
+      perf = { module = perf_service },
+      kad_dht = { module = kad_dht_service },
+    },
     blocking = false,
     accept_timeout = 0.01,
   })
@@ -525,17 +535,8 @@ local function run()
     return nil, "identify service should register /ipfs/id/push/1.0.0 handler"
   end
 
-  local svc_ok, svc_err = h:add_service("perf")
-  if not svc_ok then
-    return nil, svc_err
-  end
   if type(h._handlers[perf.ID]) ~= "function" then
     return nil, "perf service should register /perf/1.0.0 handler"
-  end
-
-  local dht_svc_ok, dht_svc_err = h:add_service("kad_dht")
-  if not dht_svc_ok then
-    return nil, dht_svc_err
   end
   if not h.kad_dht or h.kad_dht.mode ~= "client" then
     return nil, "kad_dht host service should default to client mode"
@@ -558,8 +559,12 @@ local function run()
   local upnp_host, upnp_host_err = host.new({
     runtime = "poll",
     identity = keypair,
-    services = { "upnp_nat" },
-    upnp_nat = { internal_client = "192.168.1.124" },
+    services = {
+      upnp_nat = {
+        module = upnp_nat_service,
+        config = { internal_client = "192.168.1.124" },
+      },
+    },
     blocking = false,
   })
   upnp_mod.new = original_upnp_new

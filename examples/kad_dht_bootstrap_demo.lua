@@ -5,6 +5,9 @@ package.path = table.concat({
 }, ";")
 
 local host_mod = require("lua_libp2p.host")
+local identify_service = require("lua_libp2p.protocol_identify.service")
+local ping_service = require("lua_libp2p.protocol_ping.service")
+local kad_dht_service = require("lua_libp2p.kad_dht")
 local bootstrap_defaults = require("lua_libp2p.bootstrap")
 local kad_dht = require("lua_libp2p.kad_dht")
 local multiaddr = require("lua_libp2p.multiaddr")
@@ -266,7 +269,11 @@ local function run_server()
 
   local host, host_err = host_mod.new({
     listen_addrs = { listen_addr },
-    services = { "identify", "ping", "kad_dht" },
+    services = {
+      identify = { module = identify_service },
+      ping = { module = ping_service },
+      kad_dht = { module = kad_dht_service },
+    },
     kad_dht = {
       mode = "server",
     },
@@ -366,7 +373,10 @@ local function run_client()
       },
     },
     listen_addrs = { "/ip4/127.0.0.1/tcp/0" },
-    services = { "identify", "kad_dht" },
+    services = {
+      identify = { module = identify_service },
+      kad_dht = { module = kad_dht_service },
+    },
     kad_dht = {
       mode = "client",
     },

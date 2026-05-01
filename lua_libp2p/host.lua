@@ -15,16 +15,17 @@ local kad_dht = require("lua_libp2p.kad_dht")
 local multiaddr = require("lua_libp2p.multiaddr")
 local peerid = require("lua_libp2p.peerid")
 local peerstore = require("lua_libp2p.peerstore")
-local identify = require("lua_libp2p.protocol.identify")
+local identify = require("lua_libp2p.protocol_identify.protocol")
 local key_pb = require("lua_libp2p.crypto.key_pb")
-local perf = require("lua_libp2p.protocol.perf")
-local ping = require("lua_libp2p.protocol.ping")
 local relay_autorelay = require("lua_libp2p.relay.autorelay")
 local relay_proto = require("lua_libp2p.protocol.circuit_relay_v2")
 local upgrader = require("lua_libp2p.network.upgrader")
 local tcp_poll = require("lua_libp2p.transport.tcp")
 local tcp_luv = require("lua_libp2p.transport.tcp_luv")
 local upnp_nat = require("lua_libp2p.upnp.nat")
+local service_identify = require("lua_libp2p.protocol_identify.service")
+local service_ping = require("lua_libp2p.protocol_ping.service")
+local service_perf = require("lua_libp2p.protocol_perf.service")
 
 local M = {}
 
@@ -584,6 +585,7 @@ function Host:new(config)
     _handler_options = {},
     _autorelay_not_enough_relays = nil,
     _services = {},
+    services = {},
     _handler_tasks = {},
     _tasks = {},
     _task_queue = {},
@@ -667,20 +669,66 @@ function Host:new(config)
     end
   end
 
-  local services = cfg.services or cfg.service
-  if contains_circuit_listen_addr(self_obj.listen_addrs) and not list_has(services or {}, "autorelay") then
+  local services = cfg.services
+  if contains_circuit_listen_addr(self_obj.listen_addrs) and not (type(services) == "table" and services.autorelay ~= nil) then
     return nil, error_mod.new("input", "/p2p-circuit listen addr requires autorelay service")
   end
   if services ~= nil then
     if type(services) ~= "table" then
-      return nil, error_mod.new("input", "services must be a list")
+      return nil, error_mod.new("input", "services must be a map")
     end
-    for _, service_name in ipairs(services) do
-      local ok, err = self_obj:add_service(service_name)
-      if not ok then
-        return nil, err
+    for service_name, service_spec in pairs(services) do
+      if type(service_name) ~= "string" or service_name == "" then
+        return nil, error_mod.new("input", "service names must be non-empty strings")
+      end
+      local module = service_spec
+      local service_opts = {}
+      if type(service_spec) == "table" and service_spec.module ~= nil then
+        module = service_spec.module
+        service_opts = service_spec.config or {}
+      end
+      if type(module) ~= "table" or type(module.new) ~= "function" then
+        return nil, error_mod.new("input", "service entry must be module with .new(host, config)", {
+          service = service_name,
+        })
+      end
+      local instance, new_err = module.new(self_obj, service_opts, service_name)
+      if not instance then
+        return nil, new_err
+      end
+      self_obj._service_options[service_name] = service_opts
+      if type(instance.start) == "function" then
+        local started, start_err = instance:start()
+        if not started then
+          return nil, start_err
+        end
+      end
+      self_obj.services[service_name] = instance
+      self_obj._services[service_name] = instance
+      if service_name == "autorelay" then
+        self_obj.autorelay = instance
+      elseif service_name == "autonat" then
+        self_obj.autonat = instance
+      elseif service_name == "upnp_nat" then
+        self_obj.upnp_nat = instance
+      elseif service_name == "kad_dht" then
+        self_obj.kad_dht = instance
       end
     end
+    if self_obj.autorelay and type(self_obj.on) == "function" then
+      self_obj._autorelay_not_enough_relays = function(payload)
+        self_obj:_request_relay_candidate_replenish(payload and payload.reason or "relay_not_enough")
+        return true
+      end
+      local token, on_err = self_obj:on("relay:not-enough-relays", self_obj._autorelay_not_enough_relays)
+      if not token then
+        return nil, on_err
+      end
+    end
+  end
+
+  if cfg.service ~= nil then
+    return nil, error_mod.new("input", "service option is removed; use services map")
   end
 
   return self_obj
@@ -1080,144 +1128,7 @@ function Host:_schedule_identify_for_peer(peer_id)
 end
 
 function Host:add_service(name)
-  if type(name) ~= "string" or name == "" then
-    return nil, error_mod.new("input", "service name must be non-empty")
-  end
-  if self._services[name] then
-    return true
-  end
-
-  if name == "identify" then
-    local ok, err = self:handle(identify.ID, function(stream, ctx)
-      return self:_handle_identify(stream, ctx)
-    end, { run_on_limited_connection = true })
-    if not ok then
-      return nil, err
-    end
-
-    local identify_opts = self._service_options.identify or {}
-
-    local identify_hook_ok, identify_hook_err = identify.enable_run_on_connection_open(self, identify_opts)
-    if not identify_hook_ok then
-      return nil, identify_hook_err
-    end
-
-    if identify_opts.include_push ~= false then
-      ok, err = self:handle(identify.PUSH_ID, function(stream, ctx)
-        return self:_handle_identify(stream, ctx)
-      end, { run_on_limited_connection = true })
-      if not ok then
-        return nil, err
-      end
-    end
-
-    self._services[name] = true
-    return true
-  end
-
-  if name == "ping" then
-    local ok, err = self:handle(ping.ID, function(stream)
-      return ping.handle(stream)
-    end, { run_on_limited_connection = true })
-    if not ok then
-      return nil, err
-    end
-    self._services[name] = true
-    return true
-  end
-
-  if name == "perf" then
-    local perf_opts = self._service_options.perf or {}
-    local ok, err = self:handle(perf.ID, function(stream)
-      return perf.handle(stream, {
-        write_block_size = perf_opts.write_block_size,
-        yield_every_bytes = perf_opts.yield_every_bytes,
-      })
-    end)
-    if not ok then
-      return nil, err
-    end
-    self._services[name] = true
-    return true
-  end
-
-  if name == "autorelay" then
-    local autorelay_opts = self._service_options.autorelay or {}
-    local svc, svc_err = relay_autorelay.new(self, autorelay_opts)
-    if not svc then
-      return nil, svc_err
-    end
-    local started, start_err = svc:start()
-    if not started then
-      return nil, start_err
-    end
-    self.autorelay = svc
-    if type(self.on) == "function" then
-      self._autorelay_not_enough_relays = function(payload)
-        self:_request_relay_candidate_replenish(payload and payload.reason or "relay_not_enough")
-        return true
-      end
-      local token, on_err = self:on("relay:not-enough-relays", self._autorelay_not_enough_relays)
-      if not token then
-        return nil, on_err
-      end
-    end
-    self._services[name] = true
-    return true
-  end
-
-  if name == "autonat" then
-    local autonat_opts = self._service_options.autonat or {}
-    local svc, svc_err = autonat_client.new(self, autonat_opts)
-    if not svc then
-      return nil, svc_err
-    end
-    local started, start_err = svc:start()
-    if not started then
-      return nil, start_err
-    end
-    self.autonat = svc
-    self._services[name] = true
-    return true
-  end
-
-  if name == "upnp_nat" then
-    local upnp_opts = self._service_options.upnp_nat or {}
-    local svc, svc_err = upnp_nat.new(self, upnp_opts)
-    if not svc then
-      return nil, svc_err
-    end
-    local started, start_err = svc:start()
-    if not started then
-      return nil, start_err
-    end
-    self.upnp_nat = svc
-    self._services[name] = true
-    return true
-  end
-
-  if name == "kad_dht" then
-    local dht_opts = self._service_options.kad_dht or {}
-    if dht_opts.mode == nil then
-      dht_opts.mode = "client"
-    end
-    if dht_opts.peer_discovery == nil then
-      dht_opts.peer_discovery = self.peer_discovery
-    end
-    local dht, dht_err = kad_dht.new(self, dht_opts)
-    if not dht then
-      return nil, dht_err
-    end
-    local started, start_err = dht:start()
-    if not started then
-      return nil, start_err
-    end
-    self.kad_dht = dht
-    self._services[name] = true
-    return true
-  end
-
-  return nil, error_mod.new("input", "unsupported service", { service = name })
+  return nil, error_mod.new("input", "add_service is removed; pass services map to host.new")
 end
 
 function Host:_handle_relay_stop(stream, ctx)

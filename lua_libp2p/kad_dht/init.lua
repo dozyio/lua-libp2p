@@ -75,13 +75,6 @@ function DHT:start()
     return true
   end
 
-  if self.host and type(self.host.add_service) == "function" then
-    local identify_ok, identify_err = self.host:add_service("identify")
-    if not identify_ok then
-      return nil, identify_err
-    end
-  end
-
   if self.mode == "server" and self.host and type(self.host.handle) == "function" then
     local ok, err = self.host:handle(self.protocol_id, function(stream, ctx)
       return self:_handle_rpc(stream, ctx)

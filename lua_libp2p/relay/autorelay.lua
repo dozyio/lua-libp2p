@@ -1,7 +1,7 @@
 local error_mod = require("lua_libp2p.error")
 local log = require("lua_libp2p.log")
 local multiaddr = require("lua_libp2p.multiaddr")
-local ping = require("lua_libp2p.protocol.ping")
+local ping = require("lua_libp2p.protocol_ping.protocol")
 local relay_client = require("lua_libp2p.relay.client")
 local relay_proto = require("lua_libp2p.protocol.circuit_relay_v2")
 
