@@ -25,10 +25,29 @@ local function parse_ipv4(host)
   return string.format("%d.%d.%d.%d", parts[1], parts[2], parts[3], parts[4])
 end
 
+local function parse_ipv6(host)
+  if type(host) ~= "string" then
+    return nil
+  end
+  host = host:gsub("^%[", ""):gsub("%]$", "")
+  host = host:gsub("%%.+$", "")
+  if host:find(":", 1, true) == nil then
+    return nil
+  end
+  if host:match("[^0-9a-fA-F:%.]") then
+    return nil
+  end
+  return host
+end
+
 local function resolve_dial_host(host)
   local ip = parse_ipv4(host)
   if ip then
     return ip
+  end
+  local ip6 = parse_ipv6(host)
+  if ip6 then
+    return ip6
   end
   if not ok_socket or not socket or not socket.dns or type(socket.dns.toip) ~= "function" then
     return nil, error_mod.new("unsupported", "native luv tcp dial requires DNS resolver for hostnames", { host = host })
@@ -49,7 +68,12 @@ local function parse_multiaddr(addr_text)
 end
 
 local function format_multiaddr(host, port)
-  local host_protocol = parse_ipv4(host) and "ip4" or "dns"
+  local host_protocol = "dns"
+  if parse_ipv4(host) then
+    host_protocol = "ip4"
+  elseif parse_ipv6(host) then
+    host_protocol = "ip6"
+  end
   return multiaddr.format({
     components = {
       { protocol = host_protocol, value = tostring(host) },
@@ -643,9 +667,9 @@ function M.listen(target, opts)
   host = host or "127.0.0.1"
   port = port or 0
 
-  local normalized_host = parse_ipv4(host)
+  local normalized_host = parse_ipv4(host) or parse_ipv6(host)
   if not normalized_host then
-    return nil, error_mod.new("input", "invalid ip4 listen host", { host = host })
+    return nil, error_mod.new("input", "invalid tcp listen host", { host = host })
   end
 
   local server = uv.new_tcp()

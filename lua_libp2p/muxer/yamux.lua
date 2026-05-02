@@ -1,4 +1,5 @@
 local error_mod = require("lua_libp2p.error")
+local log = require("lua_libp2p.log")
 
 local M = {}
 
@@ -645,6 +646,11 @@ function Session:process_one()
   end
   if result[2] == nil and result[3] and not (error_mod.is_error(result[3]) and result[3].kind == "timeout") then
     self._pump_error = result[3]
+    log.debug("yamux pump error set", {
+      subsystem = "yamux",
+      cause = tostring(result[3]),
+      kind = error_mod.is_error(result[3]) and result[3].kind or nil,
+    })
     self:_wake_all_stream_waiters()
   end
   self._has_waiters = self:has_stream_waiters()
@@ -674,6 +680,10 @@ end
 function Session:close()
   if not self._pump_error then
     self._pump_error = error_mod.new("closed", "yamux session closed")
+    log.debug("yamux session close set pump error", {
+      subsystem = "yamux",
+      cause = tostring(self._pump_error),
+    })
   end
   self:_wake_all_stream_waiters()
   if self.conn and type(self.conn.close) == "function" then

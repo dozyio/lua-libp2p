@@ -1,4 +1,5 @@
 local error_mod = require("lua_libp2p.error")
+local log = require("lua_libp2p.log")
 local upgrader = require("lua_libp2p.network.upgrader")
 
 local M = {}
@@ -120,6 +121,14 @@ function M.process_connection(host, entry, router, is_nonfatal_stream_error)
     if task.status == "failed" or task.status == "cancelled" then
       entry.scheduler_pump_task = nil
       local task_err = task.error or task.status
+      log.debug("native connection pump task ended", {
+        subsystem = "host",
+        connection_id = entry.id,
+        peer_id = entry.state and entry.state.remote_peer_id or nil,
+        status = task.status,
+        cause = tostring(task_err),
+        kind = error_mod.is_error(task_err) and task_err.kind or nil,
+      })
       if is_nonfatal_stream_error(task_err) then
         return true
       end
@@ -146,6 +155,13 @@ function M.process_connection(host, entry, router, is_nonfatal_stream_error)
   if coroutine.status(entry.pump_co) == "dead" then
     entry.pump_co = nil
     if pump_err then
+      log.debug("native connection pump frame error", {
+        subsystem = "host",
+        connection_id = entry.id,
+        peer_id = entry.state and entry.state.remote_peer_id or nil,
+        cause = tostring(pump_err),
+        kind = error_mod.is_error(pump_err) and pump_err.kind or nil,
+      })
       if not is_nonfatal_stream_error(pump_err) then
         return nil, pump_err
       end

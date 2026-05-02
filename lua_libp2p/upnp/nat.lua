@@ -82,6 +82,14 @@ function Service:_client()
   if self.debug_soap ~= nil then
     client.debug_soap = self.debug_soap
   end
+  if self.debug_raw ~= nil then
+    client.debug_raw = self.debug_raw
+  end
+  log.info("upnp igd service selected", {
+    service_type = client.service_type,
+    control_url = client.control_url,
+    location = client.location,
+  })
   self.client = client
   return client
 end
@@ -292,6 +300,7 @@ function M.new(host, opts)
     external_port = options.external_port,
     replace_existing = options.replace_existing == true,
     debug_soap = options.debug_soap == true,
+    debug_raw = options.debug_raw == true,
     ttl = options.ttl or 720,
     auto_confirm_address = options.auto_confirm_address == true,
     description = options.description or default_description(),

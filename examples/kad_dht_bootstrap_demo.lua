@@ -9,6 +9,7 @@ local identify_service = require("lua_libp2p.protocol_identify.service")
 local ping_service = require("lua_libp2p.protocol_ping.service")
 local kad_dht_service = require("lua_libp2p.kad_dht")
 local bootstrap_defaults = require("lua_libp2p.bootstrap")
+local peer_discovery_bootstrap = require("lua_libp2p.peer_discovery_bootstrap")
 local kad_dht = require("lua_libp2p.kad_dht")
 local multiaddr = require("lua_libp2p.multiaddr")
 local socket = require("socket")
@@ -366,10 +367,13 @@ local function run_client()
     runtime = "luv",
     peer_discovery = {
       bootstrap = {
-        list = bootstrap_addrs,
-        dialable_only = true,
-        dnsaddr_resolver = dnsaddr_resolver,
-        ignore_resolve_errors = false,
+        module = peer_discovery_bootstrap,
+        config = {
+          list = bootstrap_addrs,
+          dialable_only = true,
+          dnsaddr_resolver = dnsaddr_resolver,
+          ignore_resolve_errors = false,
+        },
       },
     },
     listen_addrs = { "/ip4/127.0.0.1/tcp/0" },

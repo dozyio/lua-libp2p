@@ -1,6 +1,7 @@
 local socket = require("socket")
 
 local error_mod = require("lua_libp2p.error")
+local log = require("lua_libp2p.log")
 
 local M = {}
 
@@ -54,12 +55,20 @@ function M.build_search_request(st, opts)
   }, "\r\n")
 end
 
-local function collect_responses(udp, timeout, out, seen)
+local function collect_responses(udp, timeout, out, seen, opts)
+  local options = opts or {}
   local deadline = socket.gettime() + timeout
   while socket.gettime() < deadline do
     udp:settimeout(math.max(deadline - socket.gettime(), 0.05))
-    local data = udp:receive()
+    local data, ip, port = udp:receivefrom()
     if data then
+      if options.debug_raw then
+        log.info("upnp ssdp raw response", {
+          source_ip = ip,
+          source_port = port,
+          payload = data,
+        })
+      end
       local response = M.parse_response(data)
       if response and response.location and not seen[response.location] then
         seen[response.location] = true
@@ -88,13 +97,22 @@ function M.discover(opts)
   end
 
   for _, st in ipairs(targets) do
-    local ok, send_err = udp:sendto(M.build_search_request(st, options), M.MULTICAST_ADDR, M.MULTICAST_PORT)
+    local payload = M.build_search_request(st, options)
+    if options.debug_raw then
+      log.info("upnp ssdp raw search", {
+        st = st,
+        multicast_addr = M.MULTICAST_ADDR,
+        multicast_port = M.MULTICAST_PORT,
+        payload = payload,
+      })
+    end
+    local ok, send_err = udp:sendto(payload, M.MULTICAST_ADDR, M.MULTICAST_PORT)
     if not ok then
       udp:close()
       return nil, error_mod.new("io", "failed to send SSDP search", { cause = send_err, st = st })
     end
   end
-  collect_responses(udp, timeout, out, seen)
+  collect_responses(udp, timeout, out, seen, options)
   udp:close()
   return out
 end

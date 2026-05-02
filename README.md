@@ -38,10 +38,14 @@ This repo currently includes:
 ## Project layout
 
 - `lua_libp2p/init.lua`: package entry point
-- `lua_libp2p/transport`: transport abstractions
-- `lua_libp2p/security`: secure channel abstractions
+- `lua_libp2p/transport_tcp`: TCP transport implementations (`poll`, `luv`, `luv-native`)
+- `lua_libp2p/connection_encrypter_noise`: Noise connection encrypter protocol
+- `lua_libp2p/connection_encrypter_plaintext`: Plaintext v2 connection encrypter protocol
 - `lua_libp2p/muxer`: stream multiplexer abstractions
-- `lua_libp2p/protocol`: protocol implementations
+- `lua_libp2p/protocol_identify`: identify protocol + service
+- `lua_libp2p/protocol_ping`: ping protocol + service
+- `lua_libp2p/protocol_perf`: perf protocol + service
+- `lua_libp2p/multistream_select`: multistream-select protocol
 - `lua_libp2p/crypto`: key and signature helpers
 - `lua_libp2p/multiformats`: varint, multibase, multihash, cid helpers
 - `lua_libp2p/multiaddr.lua`: multiaddr parsing/formatting/utilities
@@ -50,14 +54,15 @@ This repo currently includes:
 - `lua_libp2p/upnp`: SSDP discovery, UPnP IGD SOAP client, and UPnP NAT service
 - `lua_libp2p/bootstrap.lua`: default bootstrap peer list and bootstrapper helpers
 - `lua_libp2p/address_manager.lua`: advertised address selection and relay address tracking
-- `lua_libp2p/discovery`: pluggable peer discovery manager + bootstrap source
+- `lua_libp2p/discovery`: pluggable peer discovery manager
+- `lua_libp2p/peer_discovery_bootstrap`: bootstrap peer discovery source
 - `lua_libp2p/network`: connection/stream abstraction layer
 - `lua_libp2p/record`: signed envelopes and peer routing records
 - `lua_libp2p/host.lua`: host/node setup (`start`, `dial`, `new_stream`, `handle`, `close`)
 - `lua_libp2p/peerstore`: peer metadata storage
 - `lua_libp2p/kbucket.lua`: Kademlia kbucket routing table module
 - `lua_libp2p/kad_dht`: Kademlia DHT module and wire helpers
-- `lua_libp2p/relay`: circuit relay v2 client and AutoRelay service
+- `lua_libp2p/transport_circuit_relay_v2`: circuit relay v2 protocol, client, and AutoRelay
 - `tests`: test harness and integration tests
 
 ## Runtime assumptions
@@ -94,11 +99,20 @@ Enable bootstrap discovery with the default public libp2p bootstrappers:
 
 ```lua
 local host = require("lua_libp2p.host")
+local identify_service = require("lua_libp2p.protocol_identify.service")
+local kad_dht_service = require("lua_libp2p.kad_dht")
+local peer_discovery_bootstrap = require("lua_libp2p.peer_discovery_bootstrap")
 
 local h = assert(host.new({
-  services = { "identify", "kad_dht" },
+  services = {
+    identify = { module = identify_service },
+    kad_dht = { module = kad_dht_service },
+  },
   peer_discovery = {
-    bootstrap = {}, -- empty table means use lua_libp2p.bootstrap defaults
+    bootstrap = {
+      module = peer_discovery_bootstrap,
+      config = {}, -- empty config means use lua_libp2p.bootstrap defaults
+    },
   },
 }))
 
@@ -122,7 +136,7 @@ Address manager status:
 - Relayed `/p2p-circuit` addrs are advertised only while an AutoRelay reservation is active.
 
 AutoNAT v2 client status:
-- `services = { "autonat" }` installs the client-side `/libp2p/autonat/2/dial-back` handler.
+- `services = { autonat = { module = require("lua_libp2p.autonat.client") } }` installs the client-side `/libp2p/autonat/2/dial-back` handler.
 - `host.autonat:check(server, { addrs = { ... } })` opens `/libp2p/autonat/2/dial-request` to an AutoNAT v2 server.
 - Dial-back nonce verification is tracked per request; the client responds with `DialBackResponse OK` for matching pending nonces.
 - Anti-amplification `DialDataRequest` is supported with configurable byte caps.
@@ -130,7 +144,7 @@ AutoNAT v2 client status:
 - AutoNAT v2 server mode is not implemented.
 
 UPnP NAT status:
-- `services = { "upnp_nat" }` enables SSDP gateway discovery and UPnP IGD SOAP port mapping.
+- `services = { upnp_nat = { module = require("lua_libp2p.upnp.nat") } }` enables SSDP gateway discovery and UPnP IGD SOAP port mapping.
 - The service maps eligible private, non-loopback IP transport listen addrs and adds external addresses to the address manager as `type = "ip-mapping"`.
 - By default mapped addresses are added as unverified and should be confirmed by AutoNAT before advertisement.
 - Set `upnp_nat = { auto_confirm_address = true }` to immediately advertise mapped addresses, useful for local testing.
@@ -139,7 +153,7 @@ UPnP NAT status:
 
 AutoRelay status:
 - Circuit relay v2 Hop/Stop protocol codecs and stream helpers are implemented.
-- `services = { "autorelay" }` installs the Stop handler and enables relay reservation management.
+- `services = { autorelay = { module = require("lua_libp2p.transport_circuit_relay_v2.autorelay") } }` installs the Stop handler and enables relay reservation management.
 - `/p2p-circuit` in `listen_addrs` requires the `autorelay` service and is treated as a relay listen capability, not a TCP listener.
 - AutoRelay discovers relay candidates from peers advertising `/libp2p/circuit/relay/0.2.0/hop` and can also reserve explicitly configured relays.
 - Active reservations publish relayed `/p2p-circuit` addrs through the address manager; removed reservations remove those addrs.

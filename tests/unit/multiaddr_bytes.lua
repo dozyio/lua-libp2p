@@ -28,9 +28,29 @@ local function run()
     return nil, "relay multiaddr binary roundtrip mismatch"
   end
 
-  local _, bad_err = multiaddr.to_bytes("/ip6/::1/tcp/4001")
-  if not bad_err then
-    return nil, "expected unsupported ip6 binary encoding error"
+  local ip6_text = "/ip6/2a00:23c7:ad38:6601:1dbf:9fc1:137b:13c4/tcp/4001"
+  local ip6_bytes, ip6_bytes_err = multiaddr.to_bytes(ip6_text)
+  if not ip6_bytes then
+    return nil, ip6_bytes_err
+  end
+  local ip6_decoded, ip6_decode_err = multiaddr.from_bytes(ip6_bytes)
+  if not ip6_decoded then
+    return nil, ip6_decode_err
+  end
+  if ip6_decoded.text ~= ip6_text then
+    return nil, "ip6 multiaddr binary roundtrip mismatch: " .. tostring(ip6_decoded.text)
+  end
+
+  local loopback_bytes, loopback_err = multiaddr.to_bytes("/ip6/::1/tcp/4001")
+  if not loopback_bytes then
+    return nil, loopback_err
+  end
+  local loopback_decoded, loopback_decode_err = multiaddr.from_bytes(loopback_bytes)
+  if not loopback_decoded then
+    return nil, loopback_decode_err
+  end
+  if loopback_decoded.text ~= "/ip6/0:0:0:0:0:0:0:1/tcp/4001" then
+    return nil, "compressed ip6 multiaddr binary roundtrip mismatch: " .. tostring(loopback_decoded.text)
   end
 
   return true

@@ -45,11 +45,81 @@ local function parse_ip4_parts(value)
   return parts
 end
 
-local function validate_ip6(value)
-  if not value:match(":") then
-    return nil, "invalid ip6 address"
+local function split_colon_groups(value)
+  local out = {}
+  if value == "" then
+    return out
   end
-  if not value:match("^[%x:%.]+$") then
+  for group in value:gmatch("[^:]+") do
+    out[#out + 1] = group
+  end
+  return out
+end
+
+local function parse_ip6_groups(value)
+  local text = tostring(value or ""):lower():gsub("%%.+$", "")
+  if text == "" or not text:find(":", 1, true) then
+    return nil
+  end
+  if text:find("::", 1, true) and text:find("::", text:find("::", 1, true) + 2, true) then
+    return nil
+  end
+
+  if text:find("%.", 1, false) then
+    local prefix, ipv4 = text:match("^(.*:)([^:]+%.%d+%.%d+%.%d+)$")
+    if not prefix then
+      return nil
+    end
+    local parts = parse_ip4_parts(ipv4)
+    if not parts then
+      return nil
+    end
+    text = prefix .. string.format("%x:%x", parts[1] * 256 + parts[2], parts[3] * 256 + parts[4])
+  end
+
+  local left, right = text:match("^(.-)::(.-)$")
+  local groups = {}
+  if left ~= nil then
+    local left_groups = split_colon_groups(left)
+    local right_groups = split_colon_groups(right)
+    if #left_groups + #right_groups > 8 then
+      return nil
+    end
+    for _, group in ipairs(left_groups) do
+      groups[#groups + 1] = group
+    end
+    for _ = 1, 8 - #left_groups - #right_groups do
+      groups[#groups + 1] = "0"
+    end
+    for _, group in ipairs(right_groups) do
+      groups[#groups + 1] = group
+    end
+  else
+    groups = split_colon_groups(text)
+    if #groups ~= 8 then
+      return nil
+    end
+  end
+
+  if #groups ~= 8 then
+    return nil
+  end
+  local out = {}
+  for i, group in ipairs(groups) do
+    if group == "" or #group > 4 or not group:match("^[%x]+$") then
+      return nil
+    end
+    local n = tonumber(group, 16)
+    if not n or n < 0 or n > 0xffff then
+      return nil
+    end
+    out[i] = n
+  end
+  return out
+end
+
+local function validate_ip6(value)
+  if not parse_ip6_groups(value) then
     return nil, "invalid ip6 address"
   end
   return true
@@ -500,7 +570,12 @@ function M.to_tcp_endpoint(input)
   end
 
   local host_part = addr.components[1]
-  if host_part.protocol ~= "ip4" and host_part.protocol ~= "dns" and host_part.protocol ~= "dns4" and host_part.protocol ~= "dns6" then
+  if host_part.protocol ~= "ip4"
+    and host_part.protocol ~= "ip6"
+    and host_part.protocol ~= "dns"
+    and host_part.protocol ~= "dns4"
+    and host_part.protocol ~= "dns6"
+  then
     return nil, error_mod.new("input", "unsupported tcp host protocol", { protocol = host_part.protocol })
   end
 
@@ -607,6 +682,30 @@ local function ip4_from_bytes(bytes)
   return string.format("%d.%d.%d.%d", bytes:byte(1), bytes:byte(2), bytes:byte(3), bytes:byte(4))
 end
 
+local function ip6_to_bytes(value)
+  local groups = parse_ip6_groups(value)
+  if not groups then
+    return nil, error_mod.new("input", "invalid ip6 address")
+  end
+  local out = {}
+  for _, group in ipairs(groups) do
+    out[#out + 1] = string.char(math.floor(group / 256), group % 256)
+  end
+  return table.concat(out)
+end
+
+local function ip6_from_bytes(bytes)
+  if #bytes ~= 16 then
+    return nil, error_mod.new("decode", "ip6 byte length must be 16")
+  end
+  local groups = {}
+  for i = 1, 16, 2 do
+    local a, b = bytes:byte(i), bytes:byte(i + 1)
+    groups[#groups + 1] = string.format("%x", a * 256 + b)
+  end
+  return table.concat(groups, ":")
+end
+
 local function port_to_bytes(text)
   local n = tonumber(text)
   return string.char(math.floor(n / 256), n % 256)
@@ -629,7 +728,7 @@ local function encode_value(protocol, value)
     return ip4_to_bytes(value)
   end
   if kind == "ip6" then
-    return nil, error_mod.new("unsupported", "ip6 binary encoding not implemented yet")
+    return ip6_to_bytes(value)
   end
   if kind == "port" then
     return port_to_bytes(value)
@@ -674,7 +773,15 @@ local function decode_value(protocol, bytes, offset)
     return value, finish + 1
   end
   if kind == "ip6" then
-    return nil, nil, error_mod.new("unsupported", "ip6 binary decoding not implemented yet")
+    local finish = i + 15
+    if finish > #bytes then
+      return nil, nil, error_mod.new("decode", "truncated ip6 value")
+    end
+    local value, err = ip6_from_bytes(bytes:sub(i, finish))
+    if not value then
+      return nil, nil, err
+    end
+    return value, finish + 1
   end
   if kind == "port" then
     local finish = i + 1

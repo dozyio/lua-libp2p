@@ -1,11 +1,8 @@
 local address_manager = require("lua_libp2p.address_manager")
 local autonat_client = require("lua_libp2p.autonat.client")
-local bootstrap = require("lua_libp2p.bootstrap")
 local connection_manager = require("lua_libp2p.connection_manager")
 local keys = require("lua_libp2p.crypto.keys")
 local discovery = require("lua_libp2p.discovery")
-local discovery_bootstrap = require("lua_libp2p.peer_discovery_bootstrap")
-local dnsaddr = require("lua_libp2p.dnsaddr")
 local error_mod = require("lua_libp2p.error")
 local log = require("lua_libp2p.log")
 local host_runtime_luv = require("lua_libp2p.host_runtime_luv")
@@ -33,8 +30,6 @@ local DEFAULT_IDENTIFY_PROTOCOL_VERSION = "/lua-libp2p/0.1.0"
 local DEFAULT_IDENTIFY_AGENT_VERSION = "lua-libp2p/0.1.0"
 local DEFAULT_EVENT_QUEUE_MAX = 256
 local DEFAULT_TASK_RESUME_BUDGET = 128
-local DEFAULT_BOOTSTRAPPERS = bootstrap.DEFAULT_BOOTSTRAPPERS
-
 local function now_seconds()
   local ok_socket, socket = pcall(require, "socket")
   if ok_socket and type(socket.gettime) == "function" then
@@ -469,32 +464,67 @@ local function build_peer_discovery(config)
 
   local sources = {}
   local bootstrap_config = nil
-  if type(config.sources) == "table" then
-    for _, source in ipairs(config.sources) do
-      sources[#sources + 1] = source
+
+  local function append_source(source_name, source_spec)
+    local source = source_spec
+    if type(source_spec) == "table" and type(source_spec.discover) == "function" then
+      source = source_spec
+    elseif type(source_spec) == "table" and source_spec.module ~= nil then
+      local module = source_spec.module
+      if type(module) ~= "table" or type(module.new) ~= "function" then
+        return nil, error_mod.new("input", "peer_discovery module entry must expose .new(opts)", {
+          source = source_name,
+        })
+      end
+      local built_source, built_err = module.new(source_spec.config or {})
+      if not built_source then
+        return nil, built_err
+      end
+      source = built_source
+    elseif type(source_spec) == "table" and type(source_spec.new) == "function" then
+      local built_source, built_err = source_spec.new({})
+      if not built_source then
+        return nil, built_err
+      end
+      source = built_source
+    else
+      return nil, error_mod.new("input", "peer_discovery entries must be source objects or module specs", {
+        source = source_name,
+      })
     end
-  end
-  if config.bootstrap ~= nil then
-    local bootstrap_opts = config.bootstrap
-    if type(bootstrap_opts) == "table" and bootstrap_opts[1] ~= nil and bootstrap_opts.list == nil then
-      bootstrap_opts = { list = bootstrap_opts }
+
+    if type(source) ~= "table" or type(source.discover) ~= "function" then
+      return nil, error_mod.new("input", "peer_discovery source must provide discover(opts)", {
+        source = source_name,
+      })
     end
-    bootstrap_opts = bootstrap_opts or {}
-    if bootstrap_opts.list == nil then
-      bootstrap_opts.list = DEFAULT_BOOTSTRAPPERS
-    end
-    if bootstrap_opts.dnsaddr_resolver == nil then
-      bootstrap_opts.dnsaddr_resolver = dnsaddr.default_resolver
-    end
-    bootstrap_config = bootstrap_opts
-    local source, source_err = discovery_bootstrap.new(bootstrap_opts)
-    if not source then
-      return nil, nil, source_err
+    if source_name == "bootstrap" and type(source._bootstrap_config) == "table" then
+      bootstrap_config = source._bootstrap_config
     end
     sources[#sources + 1] = source
+    return true
   end
+
+  if type(config.sources) == "table" then
+    for idx, source in ipairs(config.sources) do
+      local ok, err = append_source("source_" .. tostring(idx), source)
+      if not ok then
+        return nil, nil, err
+      end
+    end
+  else
+    for source_name, source_spec in pairs(config) do
+      if source_name ~= "sources" then
+        local ok, err = append_source(source_name, source_spec)
+        if not ok then
+          return nil, nil, err
+        end
+      end
+    end
+  end
+
   if #sources == 0 then
-    return nil, nil, error_mod.new("input", "peer_discovery config must include sources or bootstrap")
+    return nil, nil, error_mod.new("input", "peer_discovery config must include at least one source")
   end
   local discoverer, discoverer_err = discovery.new({ sources = sources })
   if not discoverer then
@@ -595,6 +625,7 @@ function Host:new(config)
     _task_completion_waiters = {},
     _next_task_id = 1,
     _task_resume_budget = cfg.task_resume_budget or DEFAULT_TASK_RESUME_BUDGET,
+    _connection_process_budget = cfg.connection_process_budget or cfg.max_connections_per_poll or math.huge,
     _scheduler_connection_pump = runtime_name == "luv" and tcp_luv.BACKEND == "luv-native",
     _listeners = {},
     _connections = {},
@@ -992,6 +1023,11 @@ function Host:_request_identify(peer_id, opts)
 
   local stream, selected, conn, state_or_err = self:new_stream(peer_id, { identify.ID }, opts)
   if not stream then
+    log.debug("identify request stream open failed", {
+      subsystem = "identify",
+      peer_id = peer_id,
+      cause = tostring(state_or_err),
+    })
     return nil, state_or_err
   end
   local state = state_or_err
@@ -1007,6 +1043,14 @@ function Host:_request_identify(peer_id, opts)
     end)
   end
   if not msg then
+    log.debug("identify request read failed", {
+      subsystem = "identify",
+      peer_id = peer_id,
+      cause = tostring(read_err),
+      protocol = selected,
+      security = state and state.security,
+      muxer = state and state.muxer,
+    })
     return nil, read_err
   end
 
@@ -1070,7 +1114,7 @@ function Host:_schedule_identify_for_peer(peer_id)
 
   self:_spawn_handler_task(function(_, ctx)
     local pid = ctx and ctx.peer_id
-    log.info("identify on connect running", {
+    log.debug("identify on connect running", {
       subsystem = "identify",
       peer_id = pid,
       inflight = map_count(self._identify_inflight),
@@ -1326,6 +1370,15 @@ function Host:_unregister_connection(index, entry, cause)
     self._connections_by_id[entry.id] = nil
   end
   local peer_id = entry.state and entry.state.remote_peer_id
+  log.debug("connection closed", {
+    peer_id = peer_id,
+    connection_id = entry.id,
+    direction = entry.state and entry.state.direction or nil,
+    security = entry.state and entry.state.security or nil,
+    muxer = entry.state and entry.state.muxer or nil,
+    cause = tostring(cause),
+    subsystem = "host",
+  })
   if peer_id and self._connections_by_peer[peer_id] then
     if entry.id ~= nil then
       self._connections_by_peer[peer_id][entry.id] = nil
@@ -2429,6 +2482,7 @@ function Host:_poll_once_with_ready_map(timeout, ready_map)
       end
       raw_conn, accept_err = listener:accept(accept_timeout)
     end
+
     if raw_conn then
       if host_runtime_luv_native.is_native_host(self) then
         self._pending_inbound[#self._pending_inbound + 1] = { raw_conn = raw_conn }
@@ -2492,7 +2546,11 @@ function Host:_poll_once_with_ready_map(timeout, ready_map)
     end
   end
 
+  local processed_connections = 0
   for i = #self._connections, 1, -1 do
+    if processed_connections >= (self._connection_process_budget or math.huge) then
+      break
+    end
     local entry = self._connections[i]
     local conn = entry.conn
     local should_process = true
@@ -2501,6 +2559,7 @@ function Host:_poll_once_with_ready_map(timeout, ready_map)
     end
 
     if should_process then
+      processed_connections = processed_connections + 1
       if host_runtime_luv_native.is_native_host(self) then
         local ok, native_err = host_runtime_luv_native.process_connection(
           self,
@@ -2646,6 +2705,10 @@ function Host:_run_bootstrap_discovery_if_due()
   if not peers then
     return nil, discover_err
   end
+  log.info("bootstrap discovery completed", {
+    discovered = #peers,
+    subsystem = "host",
+  })
   for _, peer in ipairs(peers) do
     if type(peer) == "table" and type(peer.peer_id) == "string" and peer.peer_id ~= "" then
       if self.peerstore then
@@ -2657,9 +2720,19 @@ function Host:_run_bootstrap_discovery_if_due()
       end
       self:spawn_task("host.bootstrap_dial", function(ctx)
         if self:_find_connection(peer.peer_id) then
+          log.debug("bootstrap dial skipped existing connection", {
+            peer_id = peer.peer_id,
+            subsystem = "host",
+          })
           return true
         end
-        local ok = pcall(function()
+        log.debug("bootstrap dial attempt", {
+          peer_id = peer.peer_id,
+          addr_count = #(peer.addrs or {}),
+          addr = (peer.addrs and peer.addrs[1]) or nil,
+          subsystem = "host",
+        })
+        local ok, dial_err = pcall(function()
           self:dial({
             peer_id = peer.peer_id,
             addrs = peer.addrs,
@@ -2669,6 +2742,18 @@ function Host:_run_bootstrap_discovery_if_due()
             ctx = ctx,
           })
         end)
+        if ok then
+          log.info("bootstrap dial succeeded", {
+            peer_id = peer.peer_id,
+            subsystem = "host",
+          })
+        else
+          log.warn("bootstrap dial failed", {
+            peer_id = peer.peer_id,
+            cause = tostring(dial_err),
+            subsystem = "host",
+          })
+        end
         -- Bootstrap dials are opportunistic; identify events seed interested services.
         return ok == true
       end, {

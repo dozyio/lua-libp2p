@@ -5,6 +5,8 @@ local M = {}
 local AddressManager = {}
 AddressManager.__index = AddressManager
 
+local LISTEN_ADDR_EXPANSION_CACHE_TTL = 60
+
 local function copy_list(values)
   local out = {}
   for i, value in ipairs(values or {}) do
@@ -29,6 +31,24 @@ local function as_set(values)
     end
   end
   return out
+end
+
+local function list_equal(a, b)
+  if a == b then
+    return true
+  end
+  if type(a) ~= "table" or type(b) ~= "table" then
+    return false
+  end
+  if #a ~= #b then
+    return false
+  end
+  for i = 1, #a do
+    if a[i] ~= b[i] then
+      return false
+    end
+  end
+  return true
 end
 
 local function local_ipv4_addrs()
@@ -56,6 +76,34 @@ local function local_ipv4_addrs()
   return out
 end
 
+local function local_ipv6_addrs()
+  local ok_luv, uv = pcall(require, "luv")
+  if not ok_luv or type(uv.interface_addresses) ~= "function" then
+    return {}
+  end
+  local interfaces = uv.interface_addresses()
+  local out = {}
+  local seen = {}
+  for _, entries in pairs(interfaces or {}) do
+    for _, entry in ipairs(entries or {}) do
+      local addr = entry.address or entry.ip
+      if (entry.family == "IPv6" or entry.family == "inet6")
+          and not entry.internal
+          and type(addr) == "string"
+          and addr ~= "::"
+      then
+        local normalized = addr:gsub("%%.+$", "")
+        if normalized ~= "" and normalized:sub(1, 5):lower() ~= "fe80:" and not seen[normalized] then
+          seen[normalized] = true
+          out[#out + 1] = normalized
+        end
+      end
+    end
+  end
+  table.sort(out)
+  return out
+end
+
 local function expand_unspecified_listen_addr(addr)
   local parsed = multiaddr.parse(addr)
   if not parsed then
@@ -63,7 +111,7 @@ local function expand_unspecified_listen_addr(addr)
   end
   local ip_index, transport_index, port
   for i, component in ipairs(parsed.components) do
-    if component.protocol == "ip4" then
+    if component.protocol == "ip4" or component.protocol == "ip6" then
       ip_index = i
     elseif component.protocol == "tcp" or component.protocol == "udp" then
       transport_index = i
@@ -71,10 +119,18 @@ local function expand_unspecified_listen_addr(addr)
       break
     end
   end
-  if not ip_index or not transport_index or parsed.components[ip_index].value ~= "0.0.0.0" or not port then
+  if not ip_index or not transport_index or not port then
     return { addr }
   end
-  local ips = local_ipv4_addrs()
+  local ip_component = parsed.components[ip_index]
+  local ips
+  if ip_component.protocol == "ip4" and ip_component.value == "0.0.0.0" then
+    ips = local_ipv4_addrs()
+  elseif ip_component.protocol == "ip6" and ip_component.value == "::" then
+    ips = local_ipv6_addrs()
+  else
+    return { addr }
+  end
   if #ips == 0 then
     return { addr }
   end
@@ -105,8 +161,18 @@ local function expand_listen_addrs(addrs)
 end
 
 function AddressManager:set_listen_addrs(addrs)
-  self._listen_addrs = copy_list(addrs)
-  self._transport_addrs = expand_listen_addrs(self._listen_addrs)
+  local next_listen_addrs = copy_list(addrs)
+  local now = os.time()
+  local cache_valid = self._transport_addrs_expanded_at ~= nil
+    and (now - self._transport_addrs_expanded_at) < LISTEN_ADDR_EXPANSION_CACHE_TTL
+  local unchanged = list_equal(self._listen_addrs, next_listen_addrs)
+
+  self._listen_addrs = next_listen_addrs
+  if not (unchanged and cache_valid) then
+    self._transport_addrs = expand_listen_addrs(self._listen_addrs)
+    self._transport_addrs_expanded_at = now
+  end
+
   for _, addr in ipairs(self._listen_addrs) do
     self:_classify_private_addr(addr, "transport")
   end
@@ -329,6 +395,7 @@ function M.new(opts)
     _public_mapping_addrs = copy_list(options.public_mapping_addrs),
     _reachability = {},
     _advertise_observed = options.advertise_observed == true,
+    _transport_addrs_expanded_at = os.time(),
   }, AddressManager)
   for _, addr in ipairs(manager._listen_addrs) do
     manager:_classify_private_addr(addr, "transport")

@@ -7,6 +7,7 @@ package.path = table.concat({
 local host_mod = require("lua_libp2p.host")
 local identify_service = require("lua_libp2p.protocol_identify.service")
 local kad_dht_service = require("lua_libp2p.kad_dht")
+local peer_discovery_bootstrap = require("lua_libp2p.peer_discovery_bootstrap")
 
 local M = {}
 
@@ -175,7 +176,10 @@ function M.new_client(opts)
   local host, host_err = host_mod.new({
     runtime = "luv",
     peer_discovery = {
-      bootstrap = bootstrap_config(opts),
+      bootstrap = {
+        module = peer_discovery_bootstrap,
+        config = bootstrap_config(opts),
+      },
     },
     listen_addrs = { "/ip4/127.0.0.1/tcp/0" },
     services = {

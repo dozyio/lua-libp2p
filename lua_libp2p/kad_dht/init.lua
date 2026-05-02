@@ -8,6 +8,7 @@ local multiaddr = require("lua_libp2p.multiaddr")
 local operation = require("lua_libp2p.operation")
 local peerid = require("lua_libp2p.peerid")
 local protocol = require("lua_libp2p.kad_dht.protocol")
+local log = require("lua_libp2p.log")
 
 local M = {}
 local compare_distance
@@ -109,6 +110,16 @@ function DHT:add_peer(peer_id, opts)
     self._peer_health[peer_id] = self._peer_health[peer_id] or {}
     self._peer_health[peer_id].stale = false
     self._peer_health[peer_id].last_connected_at = self._peer_health[peer_id].last_connected_at or now
+    log.debug("kad dht peer added", {
+      peer_id = peer_id,
+      subsystem = "kad_dht",
+    })
+  elseif err then
+    log.debug("kad dht peer rejected", {
+      peer_id = tostring(peer_id),
+      cause = tostring(err),
+      subsystem = "kad_dht",
+    })
   end
   return added, err
 end

@@ -10,6 +10,7 @@ local ping_service = require("lua_libp2p.protocol_ping.service")
 local autonat_service = require("lua_libp2p.autonat.client")
 local kad_dht_service = require("lua_libp2p.kad_dht")
 local upnp_nat_service = require("lua_libp2p.upnp.nat")
+local peer_discovery_bootstrap = require("lua_libp2p.peer_discovery_bootstrap")
 
 local function usage()
   io.stderr:write([[
@@ -24,6 +25,8 @@ address-manager mapping state. When listening on 0.0.0.0, interface addresses
 are expanded automatically; --internal-client can override the selected LAN IP.
 Pass --autonat-server to verify mapped addresses with a known AutoNAT v2 server,
 or --discover-autonat to bootstrap/crawl the DHT for peers advertising AutoNAT v2.
+Use --debug-raw to log raw SSDP packets and UPnP HTTP/SOAP request/response payloads.
+Use --wanppp-only to force WANPPPConnection:1 probing only.
 ]])
 end
 
@@ -36,6 +39,8 @@ local function parse_args(args)
     mx = 2,
     replace_existing = false,
     debug_soap = false,
+    debug_raw = false,
+    wanppp_only = false,
     description = nil,
     list_mappings = false,
     list_mappings_max = 64,
@@ -73,6 +78,12 @@ local function parse_args(args)
       i = i + 1
     elseif name == "--debug-soap" then
       opts.debug_soap = true
+      i = i + 1
+    elseif name == "--debug-raw" then
+      opts.debug_raw = true
+      i = i + 1
+    elseif name == "--wanppp-only" then
+      opts.wanppp_only = true
       i = i + 1
     elseif name == "--description" then
       opts.description = value
@@ -155,6 +166,13 @@ local function bootstrap_config(opts)
   return {
     ignore_resolve_errors = true,
   }
+end
+
+local function upnp_service_types(opts)
+  if opts.wanppp_only then
+    return { "urn:schemas-upnp-org:service:WANPPPConnection:1" }
+  end
+  return nil
 end
 
 local function wait_task(host, task, interval)
@@ -384,12 +402,17 @@ local h = assert(host_mod.new({
         mx = opts.mx,
         replace_existing = opts.replace_existing,
         debug_soap = opts.debug_soap,
+        debug_raw = opts.debug_raw,
+        service_types = upnp_service_types(opts),
         description = opts.description,
       },
     },
   },
   peer_discovery = {
-    bootstrap = bootstrap_config(opts),
+    bootstrap = {
+      module = peer_discovery_bootstrap,
+      config = bootstrap_config(opts),
+    },
   },
 }))
 

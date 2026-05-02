@@ -10,6 +10,7 @@ local tests = {
   (require("tests.integration.host_luv_runtime_identify_event")),
   (require("tests.integration.host_luv_native_coroutine_resume")),
   (require("tests.integration.host_luv_scheduler_pump_noise_ping_subprocess")),
+  (require("tests.integration.host_luv_scheduler_pump_noise_ping_ipv6_subprocess")),
   (require("tests.integration.host_luv_scheduler_pump_ping_subprocess")),
   (require("tests.integration.host_luv_scheduler_identify_autorelay_dht_pressure")),
   (require("tests.integration.host_luv_scheduler_pump_stream_error_kinds_subprocess")),

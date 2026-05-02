@@ -1,6 +1,7 @@
 local dnsaddr = require("lua_libp2p.dnsaddr")
 local error_mod = require("lua_libp2p.error")
 local multiaddr = require("lua_libp2p.multiaddr")
+local bootstrap = require("lua_libp2p.bootstrap")
 
 local M = {}
 
@@ -85,15 +86,33 @@ end
 
 function M.new(opts)
   local options = opts or {}
-  if type(options.list) ~= "table" then
+  local list = options.list
+  if list == nil then
+    list = bootstrap.DEFAULT_BOOTSTRAPPERS
+  end
+  if type(list) ~= "table" then
     return nil, error_mod.new("input", "bootstrap source list must be provided")
   end
 
-  return setmetatable({
-    list = copy_list(options.list),
-    dnsaddr_resolver = options.dnsaddr_resolver,
+  local resolved_opts = {
+    list = copy_list(list),
+    dnsaddr_resolver = options.dnsaddr_resolver or dnsaddr.default_resolver,
     dialable_only = not not options.dialable_only,
     ignore_resolve_errors = not not options.ignore_resolve_errors,
+    dial_on_start = options.dial_on_start,
+    timeout = options.timeout,
+    delay = options.delay,
+    tag_name = options.tag_name,
+    tag_value = options.tag_value,
+    tag_ttl = options.tag_ttl,
+  }
+
+  return setmetatable({
+    list = copy_list(resolved_opts.list),
+    dnsaddr_resolver = resolved_opts.dnsaddr_resolver,
+    dialable_only = resolved_opts.dialable_only,
+    ignore_resolve_errors = resolved_opts.ignore_resolve_errors,
+    _bootstrap_config = resolved_opts,
   }, BootstrapSource)
 end
 

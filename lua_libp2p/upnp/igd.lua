@@ -2,6 +2,7 @@ local http = require("socket.http")
 local ltn12 = require("ltn12")
 
 local error_mod = require("lua_libp2p.error")
+local log = require("lua_libp2p.log")
 local ssdp = require("lua_libp2p.upnp.ssdp")
 
 local M = {}
@@ -11,6 +12,14 @@ local SERVICE_TYPES = {
   "urn:schemas-upnp-org:service:WANIPConnection:1",
   "urn:schemas-upnp-org:service:WANPPPConnection:1",
 }
+
+local function selected_service_types(opts)
+  local options = opts or {}
+  if type(options.service_types) == "table" and #options.service_types > 0 then
+    return options.service_types
+  end
+  return SERVICE_TYPES
+end
 
 local ACTION_ARG_ORDER = {
   AddPortMapping = {
@@ -98,6 +107,14 @@ end
 
 local function http_request(url, opts)
   local options = opts or {}
+  if options.debug_raw then
+    log.info("upnp http request", {
+      method = options.method or "GET",
+      url = url,
+      headers = options.headers,
+      body = options.body,
+    })
+  end
   local chunks = {}
   local ok, code, headers, status = http.request({
     url = url,
@@ -111,6 +128,15 @@ local function http_request(url, opts)
   end
   code = tonumber(code)
   local body = table.concat(chunks)
+  if options.debug_raw then
+    log.info("upnp http response", {
+      url = url,
+      code = code,
+      status = status,
+      headers = headers,
+      body = body,
+    })
+  end
   if not code or code < 200 or code >= 300 then
     return nil, error_mod.new("protocol", "HTTP request returned non-success status", {
       url = url,
@@ -130,14 +156,33 @@ local function service_blocks(xml)
   return blocks
 end
 
+local function descriptor_service_types(xml)
+  local out = {}
+  for _, block in ipairs(service_blocks(xml)) do
+    local service_type = trim(tostring(block):match("<%s*serviceType%s*>(.-)<%s*/%s*serviceType%s*>") or "")
+    if service_type ~= "" then
+      out[#out + 1] = service_type
+    end
+  end
+  return out
+end
+
 local function tag_text(xml, tag)
   return trim(tostring(xml or ""):match("<%s*" .. tag .. "%s*>(.-)<%s*/%s*" .. tag .. "%s*>") or "")
 end
 
-function M.parse_descriptor(xml, location)
+function M.parse_descriptor(xml, location, opts)
+  local wanted_types = selected_service_types(opts)
+  if opts and opts.debug_raw then
+    log.info("upnp descriptor services discovered", {
+      location = location,
+      service_types = descriptor_service_types(xml),
+      wanted_service_types = wanted_types,
+    })
+  end
   for _, block in ipairs(service_blocks(xml)) do
     local service_type = tag_text(block, "serviceType")
-    for _, wanted in ipairs(SERVICE_TYPES) do
+    for _, wanted in ipairs(wanted_types) do
       if service_type == wanted then
         local control_url = tag_text(block, "controlURL")
         local scpd_url = tag_text(block, "SCPDURL")
@@ -202,6 +247,7 @@ function Client:soap(action, args)
   return http_request(self.control_url, {
     method = "POST",
     body = body,
+    debug_raw = self.debug_raw,
     headers = {
       ["Content-Type"] = 'text/xml; charset="utf-8"',
       ["Content-Length"] = tostring(#body),
@@ -317,12 +363,14 @@ function M.new(service)
   return setmetatable(service, Client)
 end
 
-function M.from_location(location)
-  local body, err = http_request(location)
+function M.from_location(location, opts)
+  local body, err = http_request(location, {
+    debug_raw = opts and opts.debug_raw,
+  })
   if not body then
     return nil, err
   end
-  local service, service_err = M.parse_descriptor(body, location)
+  local service, service_err = M.parse_descriptor(body, location, opts)
   if not service then
     return nil, service_err
   end
@@ -330,13 +378,14 @@ function M.from_location(location)
 end
 
 function M.discover(opts)
+  local options = opts or {}
   local responses, err = ssdp.discover(opts)
   if not responses then
     return nil, err
   end
   local last_err
   for _, response in ipairs(responses) do
-    local client, client_err = M.from_location(response.location)
+    local client, client_err = M.from_location(response.location, options)
     if client then
       return client
     end

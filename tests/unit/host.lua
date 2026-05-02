@@ -10,6 +10,7 @@ local perf_service = require("lua_libp2p.protocol_perf.service")
 local ping = require("lua_libp2p.protocol_ping.protocol")
 local kad_dht_service = require("lua_libp2p.kad_dht")
 local upnp_nat_service = require("lua_libp2p.upnp.nat")
+local peer_discovery_bootstrap = require("lua_libp2p.peer_discovery_bootstrap")
 
 local function run()
   local keypair, key_err = ed25519.generate_keypair()
@@ -48,7 +49,9 @@ local function run()
   local default_discovery_host, default_discovery_host_err = host.new({
     runtime = "poll",
     identity = keypair,
-    peer_discovery = { bootstrap = {} },
+    peer_discovery = {
+      bootstrap = { module = peer_discovery_bootstrap, config = {} },
+    },
     blocking = false,
   })
   if not default_discovery_host then
@@ -65,9 +68,12 @@ local function run()
     identity = keypair,
     peer_discovery = {
       bootstrap = {
-        list = {
-          "/ip4/127.0.0.1/tcp/4001/p2p/12D3KooWCryG7Mon9orvQxcS1rYZjotPgpwoJNHHKcLLfE4Hf5mV",
-          "/ip4/127.0.0.1/tcp/4002/p2p/12D3KooWQWZLu9qXWPTDnF9rTRrAiVGZrXCbHAvkqYrsG8cW4UHg",
+        module = peer_discovery_bootstrap,
+        config = {
+          list = {
+            "/ip4/127.0.0.1/tcp/4001/p2p/12D3KooWCryG7Mon9orvQxcS1rYZjotPgpwoJNHHKcLLfE4Hf5mV",
+            "/ip4/127.0.0.1/tcp/4002/p2p/12D3KooWQWZLu9qXWPTDnF9rTRrAiVGZrXCbHAvkqYrsG8cW4UHg",
+          },
         },
       },
     },

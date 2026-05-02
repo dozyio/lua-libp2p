@@ -24,6 +24,21 @@ local function parse_ipv4(host)
   return string.format("%d.%d.%d.%d", parts[1], parts[2], parts[3], parts[4])
 end
 
+local function parse_ipv6(host)
+  if type(host) ~= "string" then
+    return nil
+  end
+  host = host:gsub("^%[", ""):gsub("%]$", "")
+  host = host:gsub("%%.+$", "")
+  if host:find(":", 1, true) == nil then
+    return nil
+  end
+  if host:match("[^0-9a-fA-F:%.]") then
+    return nil
+  end
+  return host
+end
+
 function M.parse_multiaddr(addr_text)
   local parsed, parse_err = multiaddr.parse(addr_text)
   if not parsed then
@@ -41,7 +56,12 @@ function M.format_multiaddr(host, port)
     return nil, error_mod.new("input", "invalid tcp port", { port = port })
   end
 
-  local host_protocol = parse_ipv4(host) and "ip4" or "dns"
+  local host_protocol = "dns"
+  if parse_ipv4(host) then
+    host_protocol = "ip4"
+  elseif parse_ipv6(host) then
+    host_protocol = "ip6"
+  end
   return multiaddr.format({
     components = {
       { protocol = host_protocol, value = tostring(host) },
@@ -242,9 +262,9 @@ function M.listen(opts)
     port = 0
   end
 
-  local normalized_host = parse_ipv4(host)
+  local normalized_host = parse_ipv4(host) or parse_ipv6(host)
   if not normalized_host then
-    return nil, error_mod.new("input", "invalid ip4 listen host", { host = host })
+    return nil, error_mod.new("input", "invalid tcp listen host", { host = host })
   end
   if type(port) ~= "number" or port < 0 or port > 65535 then
     return nil, error_mod.new("input", "invalid listen port", { port = port })
