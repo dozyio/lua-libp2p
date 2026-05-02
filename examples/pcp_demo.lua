@@ -256,17 +256,13 @@ h:on("autonat:address:unreachable", function(payload)
 end)
 
 h:on("peer_connected", function(payload)
-	print("peer connected: " .. tostring(payload.peer_id))
+	if opts.debug then
+		print("peer connected: " .. tostring(payload.peer_id))
+	end
 	return true
 end)
 
-h:on("peer_identified", function(payload)
-	local protocols = {}
-	if payload and type(payload.protocols) == "table" then
-		protocols = payload.protocols
-	elseif payload and payload.peer_id and h.peerstore and type(h.peerstore.get_protocols) == "function" then
-		protocols = h.peerstore:get_protocols(payload.peer_id) or {}
-	end
+h:on("peer_identified", function()
 	identify_success_count = identify_success_count + 1
 	return true
 end)
@@ -277,6 +273,9 @@ h:on("peer_identify_failed", function(payload)
 end)
 
 h:on("connection_opened", function(payload)
+	if not opts.debug then
+		return true
+	end
 	local state = payload and payload.state or {}
 	local remote_addr = nil
 	if payload and payload.connection and type(payload.connection.raw) == "function" then
@@ -299,6 +298,9 @@ h:on("connection_opened", function(payload)
 end)
 
 h:on("connection_closed", function(payload)
+	if not opts.debug then
+		return true
+	end
 	local state = payload and payload.state or {}
 	print(
 		"connection closed: peer="
@@ -346,7 +348,9 @@ end
 
 local function ensure_core_protocol_handlers(host)
 	local protocols = sorted_protocol_ids(host and host._handlers)
-	print("protocol handlers: " .. table.concat(protocols, ","))
+	if opts.debug then
+		print("protocol handlers: " .. table.concat(protocols, ","))
+	end
 	if not has_protocol(protocols, "/ipfs/id/1.0.0") then
 		return nil, "identify protocol handler not registered: /ipfs/id/1.0.0"
 	end
