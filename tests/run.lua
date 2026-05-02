@@ -54,6 +54,7 @@ local tests = {
   (require("tests.unit.kad_dht_dnsaddr")),
   (require("tests.unit.kad_dht_protocol")),
   (require("tests.unit.kad_dht_refresh")),
+  (require("tests.unit.kad_dht_maintenance")),
   (require("tests.unit.kbucket")),
   (require("tests.unit.mss")),
   (require("tests.unit.network_connection")),

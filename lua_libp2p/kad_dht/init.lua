@@ -20,6 +20,12 @@ M.DEFAULT_K = 20
 M.DEFAULT_ALPHA = 10
 M.DEFAULT_DISJOINT_PATHS = 10
 M.DEFAULT_ADDRESS_FILTER = "public"
+M.DEFAULT_MAINTENANCE_ENABLED = true
+M.DEFAULT_MAINTENANCE_INTERVAL_SECONDS = 30
+M.DEFAULT_MAINTENANCE_MIN_RECHECK_SECONDS = 60
+M.DEFAULT_MAINTENANCE_MAX_CHECKS = 10
+M.DEFAULT_MAINTENANCE_WALK_EVERY = 4
+M.DEFAULT_MAX_FAILED_CHECKS_BEFORE_EVICT = 2
 
 function M.default_peer_discovery(opts)
   local options = opts or {}
@@ -88,6 +94,59 @@ function DHT:start()
   end
 
   self._running = true
+
+  if self._maintenance_enabled and self.host and type(self.host.spawn_task) == "function" then
+    local task, task_err = self.host:spawn_task("kad.maintenance", function(ctx)
+      local tick = 0
+      while self._running do
+        tick = tick + 1
+        local refresh_report, refresh_err = self:refresh_once({
+          min_recheck_seconds = self._maintenance_min_recheck_seconds,
+          max_checks = self._maintenance_max_checks,
+          protocol_check_opts = {
+            timeout = self._maintenance_protocol_check_timeout,
+            stream_opts = { ctx = ctx },
+          },
+        })
+        if not refresh_report and refresh_err then
+          log.debug("kad dht maintenance refresh failed", {
+            cause = tostring(refresh_err),
+            subsystem = "kad_dht",
+          })
+        else
+          local emit_event = self.host and self.host.emit
+          if type(emit_event) == "function" then
+            emit_event(self.host, "kad_dht:maintenance:refresh", refresh_report)
+          end
+        end
+
+        if self._maintenance_walk_every > 0 and (tick % self._maintenance_walk_every) == 0 then
+          local walk_op = self:random_walk({
+            alpha = self.alpha,
+            disjoint_paths = self.disjoint_paths,
+            find_node_opts = { ctx = ctx },
+          })
+          if walk_op and type(walk_op.result) == "function" then
+            local walk_report = walk_op:result({ ctx = ctx, timeout = self._maintenance_walk_timeout })
+            if self.host and type(self.host.emit) == "function" then
+              self.host:emit("kad_dht:maintenance:walk", walk_report)
+            end
+          end
+        end
+
+        local sleep_ok, sleep_err = ctx:sleep(self._maintenance_interval_seconds)
+        if sleep_ok == nil and sleep_err then
+          return nil, sleep_err
+        end
+      end
+      return true
+    end, { service = "kad_dht" })
+    if not task then
+      return nil, task_err
+    end
+    self._maintenance_task = task
+  end
+
   return true
 end
 
@@ -97,6 +156,10 @@ function DHT:stop()
       self.host:off("peer_protocols_updated", self._host_on_protocols_updated)
     end
   end
+  if self._maintenance_task and self.host and type(self.host.cancel_task) == "function" then
+    self.host:cancel_task(self._maintenance_task.id)
+  end
+  self._maintenance_task = nil
   self._running = false
   return true
 end
@@ -111,6 +174,7 @@ function DHT:add_peer(peer_id, opts)
     local now = os.time()
     self._peer_health[peer_id] = self._peer_health[peer_id] or {}
     self._peer_health[peer_id].stale = false
+    self._peer_health[peer_id].failed_checks = 0
     self._peer_health[peer_id].last_connected_at = self._peer_health[peer_id].last_connected_at or now
     log.debug("kad dht peer added", {
       peer_id = peer_id,
@@ -1255,6 +1319,7 @@ function DHT:_on_peer_protocols_updated(payload)
   })
   local health = self._peer_health[peer_id] or {}
   health.last_verified_at = os.time()
+  health.failed_checks = 0
   health.stale = false
   self._peer_health[peer_id] = health
   if not added and add_err and not is_capacity_error(add_err) then
@@ -1447,8 +1512,12 @@ function DHT:refresh_once(opts)
   local now = os.time()
   local min_recheck = options.min_recheck_seconds or 60
   local max_checks = options.max_checks or self.alpha
+  local max_failed_checks_before_evict = options.max_failed_checks_before_evict or self._max_failed_checks_before_evict
   if type(max_checks) ~= "number" or max_checks <= 0 then
     return nil, error_mod.new("input", "max_checks must be > 0")
+  end
+  if type(max_failed_checks_before_evict) ~= "number" or max_failed_checks_before_evict <= 0 then
+    return nil, error_mod.new("input", "max_failed_checks_before_evict must be > 0")
   end
 
   local peers = self.routing_table:all_peers()
@@ -1467,7 +1536,8 @@ function DHT:refresh_once(opts)
 
     local peer_id = entry.peer_id
     local health = self._peer_health[peer_id] or {}
-    local stale = health.stale == true
+    local failed_checks = tonumber(health.failed_checks) or (health.stale == true and 1 or 0)
+    local stale = failed_checks > 0
     local last_verified = health.last_verified_at or 0
     local recent = (now - last_verified) < min_recheck
     if not stale and recent then
@@ -1478,13 +1548,15 @@ function DHT:refresh_once(opts)
     report.checked = report.checked + 1
     local ok, check_err = self:_supports_kad_protocol(peer_id, options.protocol_check_opts)
     if ok then
+      health.failed_checks = 0
       health.stale = false
       health.last_verified_at = now
       self._peer_health[peer_id] = health
       report.healthy = report.healthy + 1
     else
       report.errors[#report.errors + 1] = check_err
-      if stale then
+      failed_checks = failed_checks + 1
+      if failed_checks >= max_failed_checks_before_evict then
         local removed, remove_err = self:remove_peer(peer_id)
         if removed then
           report.removed = report.removed + 1
@@ -1492,6 +1564,7 @@ function DHT:refresh_once(opts)
           report.errors[#report.errors + 1] = remove_err
         end
       else
+        health.failed_checks = failed_checks
         health.stale = true
         health.last_disconnected_at = health.last_disconnected_at or now
         self._peer_health[peer_id] = health
@@ -1904,6 +1977,15 @@ function M.new(host, opts)
     _peer_health = {},
     _dnsaddr_resolver = options.dnsaddr_resolver,
     _host_on_protocols_updated = nil,
+    _maintenance_enabled = options.maintenance_enabled ~= false and M.DEFAULT_MAINTENANCE_ENABLED,
+    _maintenance_interval_seconds = options.maintenance_interval_seconds or M.DEFAULT_MAINTENANCE_INTERVAL_SECONDS,
+    _maintenance_min_recheck_seconds = options.maintenance_min_recheck_seconds or M.DEFAULT_MAINTENANCE_MIN_RECHECK_SECONDS,
+    _maintenance_max_checks = options.maintenance_max_checks or M.DEFAULT_MAINTENANCE_MAX_CHECKS,
+    _maintenance_walk_every = options.maintenance_walk_every or M.DEFAULT_MAINTENANCE_WALK_EVERY,
+    _maintenance_walk_timeout = options.maintenance_walk_timeout or 20,
+    _maintenance_protocol_check_timeout = options.maintenance_protocol_check_timeout or 4,
+    _max_failed_checks_before_evict = options.max_failed_checks_before_evict or M.DEFAULT_MAX_FAILED_CHECKS_BEFORE_EVICT,
+    _maintenance_task = nil,
     _running = false,
   }, DHT)
 
