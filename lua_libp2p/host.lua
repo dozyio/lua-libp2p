@@ -625,7 +625,6 @@ function Host:new(config)
     _task_completion_waiters = {},
     _next_task_id = 1,
     _task_resume_budget = cfg.task_resume_budget or DEFAULT_TASK_RESUME_BUDGET,
-    _connection_process_budget = cfg.connection_process_budget or cfg.max_connections_per_poll or math.huge,
     _scheduler_connection_pump = runtime_name == "luv" and tcp_luv.BACKEND == "luv-native",
     _listeners = {},
     _connections = {},
@@ -2546,11 +2545,7 @@ function Host:_poll_once_with_ready_map(timeout, ready_map)
     end
   end
 
-  local processed_connections = 0
   for i = #self._connections, 1, -1 do
-    if processed_connections >= (self._connection_process_budget or math.huge) then
-      break
-    end
     local entry = self._connections[i]
     local conn = entry.conn
     local should_process = true
@@ -2559,7 +2554,6 @@ function Host:_poll_once_with_ready_map(timeout, ready_map)
     end
 
     if should_process then
-      processed_connections = processed_connections + 1
       if host_runtime_luv_native.is_native_host(self) then
         local ok, native_err = host_runtime_luv_native.process_connection(
           self,
