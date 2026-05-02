@@ -175,56 +175,13 @@ local function upnp_service_types(opts)
   return nil
 end
 
-local function wait_task(host, task, interval)
-  return host:run_until_task(task, { poll_interval = interval })
-end
-
-local function run_task(host, name, fn)
-  local task = assert(host:spawn_task(name, fn, { service = "example" }))
-  return wait_task(host, task)
-end
-
-local function wait_child_task(ctx, task)
-  return ctx:await_task(task)
-end
-
-local function sleep_poll(host, seconds, ctx)
-  local deadline = os.time() + seconds
-  while os.time() < deadline do
-    if ctx then
-      local ok, err = ctx:sleep(0.25)
-      if ok == nil and err then
-        return nil, err
-      end
-    else
-      local ok, err = run_task(host, "example.sleep", function(task_ctx)
-        local slept, sleep_err = task_ctx:sleep(0.25)
-        if slept == nil and sleep_err then
-          return nil, sleep_err
-        end
-        return true
-      end)
-      if not ok then
-        return nil, err
-      end
-    end
-  end
-  return true
-end
-
-local function wait_for_mappings(host, seconds)
+local function wait_for_mappings(host, seconds, ctx)
   local deadline = os.time() + seconds
   while os.time() < deadline do
     if #host.address_manager:get_public_address_mappings() > 0 then
       return true
     end
-    local ok, err = run_task(host, "example.wait_for_mappings", function(ctx)
-      local slept, sleep_err = ctx:sleep(0.25)
-      if slept == nil and sleep_err then
-        return nil, sleep_err
-      end
-      return true
-    end)
+    local ok, err = host:sleep(0.25, { ctx = ctx })
     if not ok then
       return nil, err
     end
@@ -273,13 +230,13 @@ local function print_mappings(host)
   end
 end
 
-local function autonat_check_mappings_async(host, server)
+local function autonat_check_mappings_async(host, server, ctx)
   local responses = 0
   local task = assert(host.autonat:start_check(server, {
     addrs = host.address_manager:get_public_address_mappings(),
     type = "ip-mapping",
   }))
-  local result, task_err = wait_task(host, task)
+  local result, task_err = host:wait_task(task, { ctx = ctx })
   if not result then
     return nil, task_err
   end
@@ -301,12 +258,12 @@ local function discover_autonat_servers(host, limit, ctx)
   end
 
   print("AutoNAT discovery: waiting for DHT peers")
-  sleep_poll(host, 1, ctx)
+  host:sleep(1, { ctx = ctx })
   local seed_deadline = os.time() + 30
   while #host.kad_dht.routing_table:all_peers() == 0 and os.time() < seed_deadline do
-    sleep_poll(host, 0.25, ctx)
+    host:sleep(0.25, { ctx = ctx })
   end
-  sleep_poll(host, 1, ctx)
+  host:sleep(1, { ctx = ctx })
   print("  routing_table_peers=" .. tostring(#host.kad_dht.routing_table:all_peers()))
 
   print("AutoNAT discovery: random walk")
@@ -316,7 +273,7 @@ local function discover_autonat_servers(host, limit, ctx)
     disjoint_paths = 10,
   }))
   local walk_report = walk_op:result({ ctx = ctx })
-  sleep_poll(host, 1, ctx)
+  host:sleep(1, { ctx = ctx })
   if walk_report then
     print("  walk queried=" .. tostring(walk_report.queried or 0)
       .. " responses=" .. tostring(walk_report.responses or 0)
@@ -343,13 +300,14 @@ local function discover_autonat_servers(host, limit, ctx)
   return out
 end
 
-local function check_discovered_autonat_servers(host, opts)
+local function check_discovered_autonat_servers(host, opts, ctx)
   local checked = 0
   local real_responses = 0
   while checked < opts.max_autonat_servers and real_responses < opts.target_autonat_responses do
-    local servers = run_task(host, "example.discover_autonat_servers", function(ctx)
-      return discover_autonat_servers(host, opts.max_autonat_servers, ctx)
-    end) or {}
+    local discover_task = assert(host:spawn_task("example.discover_autonat_servers", function(task_ctx)
+      return discover_autonat_servers(host, opts.max_autonat_servers, task_ctx)
+    end, { service = "example" }))
+    local servers = host:wait_task(discover_task, { ctx = ctx }) or {}
     if #servers == 0 then
       break
     end
@@ -358,7 +316,7 @@ local function check_discovered_autonat_servers(host, opts)
         break
       end
       checked = checked + 1
-      local responses = autonat_check_mappings_async(host, server) or 0
+      local responses = autonat_check_mappings_async(host, server, ctx) or 0
       real_responses = real_responses + responses
       if responses == 0 then
         print("  no AutoNAT DialResponse from " .. tostring(server.peer_id))
@@ -368,13 +326,13 @@ local function check_discovered_autonat_servers(host, opts)
       print("AutoNAT discovery: target responses not met; continuing random walk")
       if host.kad_dht then
         local extra = assert(host.kad_dht:random_walk({ count = 20, alpha = 10, disjoint_paths = 10 }))
-        extra:result({ timeout = 60 })
+        extra:result({ ctx = ctx, timeout = 60 })
       else
         break
       end
     end
   end
-  sleep_poll(host, opts.drain_seconds)
+  host:sleep(opts.drain_seconds, { ctx = ctx })
   print("AutoNAT discovery: checked=" .. tostring(checked) .. " real_responses=" .. tostring(real_responses))
 end
 
@@ -476,7 +434,7 @@ end
 
 if opts.duration > 0 then
   print("running for " .. tostring(opts.duration) .. "s; press Ctrl-C to stop")
-  assert(sleep_poll(h, opts.duration))
+  assert(h:sleep(opts.duration))
 end
 
 print_mappings(h)

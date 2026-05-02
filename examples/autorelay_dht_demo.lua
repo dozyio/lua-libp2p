@@ -112,24 +112,6 @@ local function load_or_create_identity(path)
 	return keypair
 end
 
-local function wait_task(host, task, interval)
-	return host:run_until_task(task, { poll_interval = interval })
-end
-
-local function scheduler_sleep(host, seconds)
-	local task, task_err = host:spawn_task("example.sleep", function(ctx)
-		local slept, sleep_err = ctx:sleep(seconds)
-		if slept == nil and sleep_err then
-			return nil, sleep_err
-		end
-		return true
-	end, { service = "example" })
-	if not task then
-		return nil, task_err
-	end
-	return wait_task(host, task)
-end
-
 local function print_status(host)
 	local now = os.time()
 	local reservations = host.autorelay and host.autorelay:get_reservations() or {}
@@ -377,7 +359,7 @@ if not dht_task then
 	io.stderr:write("dht discovery task failed: " .. tostring(dht_task_err) .. "\n")
 end
 
-local pumped, pump_err = scheduler_sleep(h, 1)
+local pumped, pump_err = h:sleep(1)
 if not pumped then
 	io.stderr:write("host pump failed: " .. tostring(pump_err) .. "\n")
 end
@@ -407,7 +389,7 @@ end, { service = "example" })
 if not run_task then
 	io.stderr:write("status task failed: " .. tostring(run_task_err) .. "\n")
 else
-	local _, run_err = wait_task(h, run_task, 0.05)
+	local _, run_err = h:wait_task(run_task, { poll_interval = 0.05 })
 	if run_err then
 		io.stderr:write("host run failed: " .. tostring(run_err) .. "\n")
 	end

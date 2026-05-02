@@ -89,20 +89,6 @@ local function parse_args(args)
   return opts
 end
 
-local function wait_for_duration(host, seconds)
-  local task, task_err = host:spawn_task("example.sleep", function(ctx)
-    local ok, err = ctx:sleep(seconds)
-    if ok == nil and err then
-      return nil, err
-    end
-    return true
-  end, { service = "example" })
-  if not task then
-    return nil, task_err
-  end
-  return host:run_until_task(task, { poll_interval = 0.05 })
-end
-
 local opts, opts_err = parse_args(arg)
 if not opts then
   io.stderr:write(tostring(opts_err) .. "\n")
@@ -178,7 +164,7 @@ if opts.autonat_server and h.autonat then
     timeout = 8,
   })
   if check_task then
-    local ok, run_err = h:run_until_task(check_task, { poll_interval = 0.05 })
+    local ok, run_err = h:wait_task(check_task, { poll_interval = 0.05 })
     if not ok then
       print("autonat check failed: " .. tostring(run_err))
     end
@@ -187,13 +173,13 @@ if opts.autonat_server and h.autonat then
   end
 end
 
-local wait_ok, wait_err = wait_for_duration(h, opts.duration)
+local wait_ok, wait_err = h:sleep(opts.duration, { poll_interval = 0.05 })
 if not wait_ok then
   print("wait failed: " .. tostring(wait_err))
 end
 
 if opts.drain_seconds and opts.drain_seconds > 0 then
-  wait_for_duration(h, opts.drain_seconds)
+  h:sleep(opts.drain_seconds, { poll_interval = 0.05 })
 end
 
 if h.address_manager and type(h.address_manager.get_public_addresses) == "function" then

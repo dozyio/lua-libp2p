@@ -141,30 +141,17 @@ function M.print_lookup(label, lookup)
   end
 end
 
-function M.wait_task(host, task, interval)
-  return host:run_until_task(task, { poll_interval = interval })
-end
-
-function M.run_task(host, name, fn)
-  local task, task_err = host:spawn_task(name, fn, { service = "example" })
-  if not task then
-    return nil, task_err
-  end
-  return M.wait_task(host, task)
-end
-
 function M.wait_for_routing_table(host, dht, opts)
   local options = opts or {}
   local timeout = options.timeout or 30
   local min_peers = options.min_peers or 1
+  local ctx = options.ctx
   local started_at = os.time()
   while os.time() - started_at < timeout do
     if #(dht.routing_table:all_peers()) >= min_peers then
       return true
     end
-    local ok, err = M.run_task(host, "example.wait_for_dht_peer", function(ctx)
-      return ctx:sleep(0.25)
-    end)
+    local ok, err = host:sleep(0.25, { ctx = ctx })
     if ok == nil and err then
       return nil, err
     end

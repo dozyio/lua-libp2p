@@ -400,28 +400,6 @@ local function run_client()
     os.exit(1)
   end
 
-  local function wait_task(task)
-    return host:run_until_task(task)
-  end
-
-  local function run_task(name, fn)
-    local task, task_err = host:spawn_task(name, fn, { service = "example" })
-    if not task then
-      return nil, task_err
-    end
-    return wait_task(task)
-  end
-
-  local function scheduler_sleep(seconds)
-    return run_task("example.sleep", function(ctx)
-      local slept, sleep_err = ctx:sleep(seconds)
-      if slept == nil and sleep_err then
-        return nil, sleep_err
-      end
-      return true
-    end)
-  end
-
   local discovered, discovered_err = host.peer_discovery:discover({
     dialable_only = true,
   })
@@ -438,7 +416,7 @@ local function run_client()
 
   local seed_deadline = os.time() + 30
   while #dht.routing_table:all_peers() == 0 and os.time() < seed_deadline do
-    local pumped, pump_err = scheduler_sleep(0.25)
+    local pumped, pump_err = host:sleep(0.25)
     if not pumped then
       io.stderr:write("host pump failed: " .. tostring(pump_err) .. "\n")
       break

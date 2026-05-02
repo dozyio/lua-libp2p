@@ -4,6 +4,8 @@ local multiaddr = require("lua_libp2p.multiaddr")
 local pcp_client = require("lua_libp2p.pcp.client")
 
 local M = {}
+M.provides = { "pcp" }
+M.requires = {}
 
 local Service = {}
 Service.__index = Service

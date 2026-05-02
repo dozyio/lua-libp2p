@@ -552,6 +552,28 @@ local function resolve_target(target)
   return nil
 end
 
+local function normalize_capability_list(values, default_value)
+  local out = {}
+  local source = values
+  if source == nil then
+    source = { default_value }
+  end
+  if type(source) ~= "table" then
+    return nil, error_mod.new("input", "service capability metadata must be a list")
+  end
+  local seen = {}
+  for _, capability in ipairs(source) do
+    if type(capability) ~= "string" or capability == "" then
+      return nil, error_mod.new("input", "service capability names must be non-empty strings")
+    end
+    if not seen[capability] then
+      seen[capability] = true
+      out[#out + 1] = capability
+    end
+  end
+  return out
+end
+
 function Host:new(config)
   local cfg = config or {}
   local runtime_name = cfg.runtime or cfg.runtime_backend or "auto"
@@ -616,6 +638,8 @@ function Host:new(config)
     _autorelay_not_enough_relays = nil,
     _services = {},
     services = {},
+    components = {},
+    capabilities = {},
     _handler_tasks = {},
     _tasks = {},
     _task_queue = {},
@@ -707,32 +731,73 @@ function Host:new(config)
     if type(services) ~= "table" then
       return nil, error_mod.new("input", "services must be a map")
     end
+    local service_defs = {}
+    local capability_providers = {}
+
     for service_name, service_spec in pairs(services) do
       if type(service_name) ~= "string" or service_name == "" then
         return nil, error_mod.new("input", "service names must be non-empty strings")
       end
       local module = service_spec
       local service_opts = {}
+      local service_provides = nil
+      local service_requires = nil
       if type(service_spec) == "table" and service_spec.module ~= nil then
         module = service_spec.module
         service_opts = service_spec.config or {}
+        service_provides = service_spec.provides
+        service_requires = service_spec.requires
       end
       if type(module) ~= "table" or type(module.new) ~= "function" then
         return nil, error_mod.new("input", "service entry must be module with .new(host, config)", {
           service = service_name,
         })
       end
+
+      local provides, provides_err = normalize_capability_list(service_provides or module.provides, service_name)
+      if not provides then
+        return nil, error_mod.wrap("input", "invalid service provides metadata", provides_err, {
+          service = service_name,
+        })
+      end
+      local requires, requires_err = normalize_capability_list(service_requires or module.requires, nil)
+      if not requires then
+        return nil, error_mod.wrap("input", "invalid service requires metadata", requires_err, {
+          service = service_name,
+        })
+      end
+
       local instance, new_err = module.new(self_obj, service_opts, service_name)
       if not instance then
         return nil, new_err
       end
-      self_obj._service_options[service_name] = service_opts
-      if type(instance.start) == "function" then
-        local started, start_err = instance:start()
-        if not started then
-          return nil, start_err
+
+      local def = {
+        name = service_name,
+        module = module,
+        opts = service_opts,
+        instance = instance,
+        provides = provides,
+        requires = requires,
+        started = false,
+      }
+      service_defs[#service_defs + 1] = def
+
+      for _, capability in ipairs(provides) do
+        local existing = capability_providers[capability]
+        if existing and existing ~= service_name then
+          return nil, error_mod.new("input", "duplicate service capability provider", {
+            capability = capability,
+            existing_service = existing,
+            conflicting_service = service_name,
+          })
         end
+        capability_providers[capability] = service_name
+        self_obj.components[capability] = instance
+        self_obj.capabilities[capability] = instance
       end
+
+      self_obj._service_options[service_name] = service_opts
       self_obj.services[service_name] = instance
       self_obj._services[service_name] = instance
       if service_name == "autorelay" then
@@ -745,6 +810,75 @@ function Host:new(config)
         self_obj.kad_dht = instance
       end
     end
+
+    for _, def in ipairs(service_defs) do
+      for _, required in ipairs(def.requires) do
+        if capability_providers[required] == nil then
+          return nil, error_mod.new("state", "service dependency is missing", {
+            service = def.name,
+            required_capability = required,
+          })
+        end
+      end
+    end
+
+    local started_count = 0
+    while started_count < #service_defs do
+      local progressed = false
+      for _, def in ipairs(service_defs) do
+        if not def.started then
+          local can_start = true
+          for _, required in ipairs(def.requires) do
+            local provider_name = capability_providers[required]
+            if provider_name ~= def.name then
+              local provider_started = false
+              for _, candidate in ipairs(service_defs) do
+                if candidate.name == provider_name then
+                  provider_started = candidate.started
+                  break
+                end
+              end
+              if not provider_started then
+                can_start = false
+                break
+              end
+            end
+          end
+
+          if can_start then
+            if type(def.instance.start) == "function" then
+              local started, start_err = def.instance:start()
+              if not started then
+                return nil, start_err
+              end
+            end
+            def.started = true
+            started_count = started_count + 1
+            progressed = true
+          end
+        end
+      end
+
+      if not progressed then
+        local blocked = {}
+        for _, def in ipairs(service_defs) do
+          if not def.started then
+            blocked[#blocked + 1] = def.name
+          end
+        end
+        return nil, error_mod.new("state", "service dependency cycle or unresolved dependency", {
+          blocked_services = blocked,
+        })
+      end
+    end
+
+    for capability, provider_name in pairs(capability_providers) do
+      local provider = self_obj._services[provider_name]
+      if self_obj[capability] == nil then
+        self_obj[capability] = provider
+      end
+    end
+
     if self_obj.autorelay and type(self_obj.on) == "function" then
       self_obj._autorelay_not_enough_relays = function(payload)
         self_obj:_request_relay_candidate_replenish(payload and payload.reason or "relay_not_enough")
@@ -1644,6 +1778,42 @@ function Host:run_until_task(task, opts)
     return unpack_returns(task.results)
   end
   return task.result
+end
+
+function Host:wait_task(task, opts)
+  if type(task) ~= "table" then
+    return nil, error_mod.new("input", "task table is required")
+  end
+  local options = opts or {}
+  if options.ctx and type(options.ctx.await_task) == "function" then
+    return options.ctx:await_task(task)
+  end
+  return self:run_until_task(task, options)
+end
+
+function Host:sleep(seconds, opts)
+  if type(seconds) ~= "number" or seconds < 0 then
+    return nil, error_mod.new("input", "sleep duration must be a non-negative number")
+  end
+  local options = opts or {}
+  if options.ctx and type(options.ctx.sleep) == "function" then
+    local slept, sleep_err = options.ctx:sleep(seconds)
+    if slept == nil and sleep_err then
+      return nil, sleep_err
+    end
+    return true
+  end
+  local task, task_err = self:spawn_task("host.sleep", function(ctx)
+    local slept, sleep_err = ctx:sleep(seconds)
+    if slept == nil and sleep_err then
+      return nil, sleep_err
+    end
+    return true
+  end, { service = "host" })
+  if not task then
+    return nil, task_err
+  end
+  return self:run_until_task(task, options)
 end
 
 function Host:_wait_task_read(task, connection)

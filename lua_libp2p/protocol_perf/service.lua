@@ -1,6 +1,8 @@
 local perf = require("lua_libp2p.protocol_perf.protocol")
 
 local M = {}
+M.provides = { "perf" }
+M.requires = {}
 
 function M.new(host, opts)
   local options = opts or {}

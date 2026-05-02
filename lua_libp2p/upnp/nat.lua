@@ -4,6 +4,8 @@ local log = require("lua_libp2p.log")
 local multiaddr = require("lua_libp2p.multiaddr")
 
 local M = {}
+M.provides = { "upnp_nat" }
+M.requires = {}
 
 local Service = {}
 Service.__index = Service

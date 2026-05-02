@@ -6,6 +6,8 @@ local relay_client = require("lua_libp2p.transport_circuit_relay_v2.client")
 local relay_proto = require("lua_libp2p.transport_circuit_relay_v2.protocol")
 
 local M = {}
+M.provides = { "autorelay" }
+M.requires = { "identify", "ping" }
 M.KEEP_ALIVE_TAG = "relay-keep-alive"
 M.DEFAULT_KEEPALIVE_INTERVAL = 30
 

@@ -45,7 +45,6 @@ local function parse_args(args)
 		dht_paths = 2,
 		dht_count = 20,
 		stop_on_first_reachable = true,
-		probe_bootstrap = false,
 	}
 	local i = 1
 	while i <= #args do
@@ -109,9 +108,6 @@ local function parse_args(args)
 		elseif name == "--dht-count" then
 			opts.dht_count = tonumber(value) or opts.dht_count
 			i = i + 2
-		elseif name == "--probe-bootstrap" then
-			opts.probe_bootstrap = true
-			i = i + 1
 		else
 			return nil, "unknown argument: " .. tostring(name)
 		end
@@ -315,69 +311,6 @@ h:on("connection_closed", function(payload)
 	return true
 end)
 
-local function sleep_poll(host, seconds, ctx)
-	if ctx and type(ctx.sleep) == "function" then
-		return ctx:sleep(seconds)
-	end
-	local task, task_err = host:spawn_task("example.sleep", function(task_ctx)
-		return task_ctx:sleep(seconds)
-	end, { service = "example", ctx = ctx })
-	if not task then
-		return nil, task_err
-	end
-	return host:run_until_task(task, { poll_interval = 0.05, ctx = ctx })
-end
-
-local function sorted_protocol_ids(handler_map)
-	local out = {}
-	for protocol_id, _ in pairs(handler_map or {}) do
-		out[#out + 1] = protocol_id
-	end
-	table.sort(out)
-	return out
-end
-
-local function has_protocol(protocols, target)
-	for _, protocol_id in ipairs(protocols or {}) do
-		if protocol_id == target then
-			return true
-		end
-	end
-	return false
-end
-
-local function ensure_core_protocol_handlers(host)
-	local protocols = sorted_protocol_ids(host and host._handlers)
-	if opts.debug then
-		print("protocol handlers: " .. table.concat(protocols, ","))
-	end
-	if not has_protocol(protocols, "/ipfs/id/1.0.0") then
-		return nil, "identify protocol handler not registered: /ipfs/id/1.0.0"
-	end
-	if not has_protocol(protocols, "/ipfs/ping/1.0.0") then
-		return nil, "ping protocol handler not registered: /ipfs/ping/1.0.0"
-	end
-	return true
-end
-
-local function wait_task(host, task, ctx)
-	if not task then
-		return nil, "task is required"
-	end
-	if ctx and type(ctx.await_task) == "function" then
-		local _, wait_err = ctx:await_task(task)
-		if task.status ~= "completed" then
-			return nil, wait_err or task.error
-		end
-		return task.result
-	end
-	local ok, run_err = host:run_until_task(task, { poll_interval = 0.05 })
-	if not ok then
-		return nil, run_err
-	end
-	return task.result
-end
-
 local function autonat_check_mappings(host, server, ctx)
 	local server_peer_id = type(server) == "table" and server.peer_id or server
 	if checked_autonat_peers[server_peer_id] then
@@ -403,7 +336,7 @@ local function autonat_check_mappings(host, server, ctx)
 	if not task then
 		return nil, start_err
 	end
-	local result, run_err = wait_task(host, task, ctx)
+	local result, run_err = host:wait_task(task, { poll_interval = 0.05, ctx = ctx })
 	if not result then
 		return nil, run_err
 	end
@@ -437,18 +370,30 @@ local function discover_autonat_servers(host, limit, ctx, opts)
 		print("autonat discovery: kad_dht service is required")
 		return {}
 	end
-	sleep_poll(host, opts.seed_wait_seconds or 2, ctx)
+	host:sleep(opts.seed_wait_seconds or 2, { poll_interval = 0.05, ctx = ctx })
 	local seed_deadline = os.time() + (opts.seed_wait_seconds or 2)
 	while #host.kad_dht.routing_table:all_peers() == 0 and os.time() < seed_deadline do
-		sleep_poll(host, 0.25, ctx)
+		host:sleep(0.25, { poll_interval = 0.05, ctx = ctx })
 	end
-	print("autonat discovery: routing_table_peers=" .. tostring(#host.kad_dht.routing_table:all_peers()))
+	print("autonat discovery: pre-walk routing_table_peers=" .. tostring(#host.kad_dht.routing_table:all_peers()))
 	local walk_op = assert(host.kad_dht:random_walk({
 		count = opts.dht_count or 20,
 		alpha = opts.dht_alpha or 3,
 		disjoint_paths = opts.dht_paths or 2,
 	}))
-	walk_op:result({ ctx = ctx, timeout = opts.walk_timeout or 12 })
+	local walk_report = walk_op:result({ ctx = ctx, timeout = opts.walk_timeout or 12 })
+	if walk_report then
+		print(
+			"autonat discovery: random_walk queried="
+				.. tostring(walk_report.queried or 0)
+				.. " responses="
+				.. tostring(walk_report.responses or 0)
+				.. " added="
+				.. tostring(walk_report.added or 0)
+				.. " discovered="
+				.. tostring(walk_report.discovered or 0)
+		)
+	end
 	print("autonat discovery: post-walk peers=" .. tostring(#host.kad_dht.routing_table:all_peers()))
 	local proto = require("lua_libp2p.protocol.autonat_v2").DIAL_REQUEST_ID
 	local out = {}
@@ -495,7 +440,7 @@ end
 local function check_discovered_autonat_servers(host, opts, ctx)
 	local ready_deadline = os.time() + 6
 	while identify_success_count == 0 and os.time() < ready_deadline do
-		sleep_poll(host, 0.25, ctx)
+		host:sleep(0.25, { poll_interval = 0.05, ctx = ctx })
 	end
 	print("autonat discovery: identified_peers=" .. tostring(identify_success_count))
 
@@ -510,14 +455,14 @@ local function check_discovered_autonat_servers(host, opts, ctx)
 		local discover_task = assert(host:spawn_task("example.discover_autonat", function(ctx)
 			return discover_autonat_servers(host, opts.max_autonat_servers, ctx, opts)
 		end, { service = "example" }))
-		local servers = wait_task(host, discover_task, ctx) or {}
+		local servers = host:wait_task(discover_task, { poll_interval = 0.05, ctx = ctx }) or {}
 		if #servers == 0 then
 			print("autonat discovery: no candidates found yet")
 			if os.time() >= deadline then
 				print("autonat discovery: timed out waiting for candidates")
 				break
 			end
-			sleep_poll(host, 2, ctx)
+			host:sleep(2, { poll_interval = 0.05, ctx = ctx })
 			goto continue_discovery
 		end
 		for _, server in ipairs(servers) do
@@ -546,7 +491,7 @@ local function check_discovered_autonat_servers(host, opts, ctx)
 		end
 	end
 	if opts.drain_seconds and opts.drain_seconds > 0 then
-		sleep_poll(host, opts.drain_seconds, ctx)
+		host:sleep(opts.drain_seconds, { poll_interval = 0.05, ctx = ctx })
 	end
 	print(
 		"autonat discovery: checked="
@@ -562,34 +507,10 @@ end
 
 assert(h:start())
 
-do
-	local ok_handlers, handler_err = ensure_core_protocol_handlers(h)
-	if not ok_handlers then
-		error(handler_err)
-	end
-end
-
 print("peer id: " .. tostring(h:peer_id().id))
 print("listen addrs:")
 for _, addr in ipairs(h:get_multiaddrs()) do
 	print("  " .. tostring(addr))
-end
-
-if opts.probe_bootstrap and h.peer_discovery then
-	local probe_task = assert(h:spawn_task("example.bootstrap_probe", function()
-		local boot_peers, boot_err = h.peer_discovery:discover({
-			dialable_only = true,
-			ignore_resolve_errors = false,
-			ignore_source_errors = false,
-		})
-		if not boot_peers then
-			print("bootstrap discovery probe failed: " .. tostring(boot_err))
-		else
-			print("bootstrap discovery probe peers=" .. tostring(#boot_peers))
-		end
-		return true
-	end, { service = "example" }))
-	wait_task(h, probe_task)
 end
 
 if opts.autonat_server and h.autonat then
@@ -631,8 +552,5 @@ if opts.discover_autonat then
 	end, { service = "example" })
 end
 
-local task = assert(h:spawn_task("example.sleep", function(ctx)
-	return ctx:sleep(opts.duration)
-end, { service = "example" }))
-h:run_until_task(task, { poll_interval = 0.05 })
+h:sleep(opts.duration, { poll_interval = 0.05 })
 h:stop()

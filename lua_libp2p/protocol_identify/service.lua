@@ -1,6 +1,8 @@
 local identify = require("lua_libp2p.protocol_identify.protocol")
 
 local M = {}
+M.provides = { "identify" }
+M.requires = {}
 
 function M.new(host, opts)
   local options = opts or {}

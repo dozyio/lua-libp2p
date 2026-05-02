@@ -351,6 +351,22 @@ local function run()
     return nil, "run_until_task should return task result"
   end
 
+  local wait_task = assert(wait_host:spawn_task("test.wait_task", function()
+    return "wait-result"
+  end))
+  local wait_result, wait_err = wait_host:wait_task(wait_task, { poll_interval = 0 })
+  if not wait_result then
+    return nil, wait_err
+  end
+  if wait_result ~= "wait-result" then
+    return nil, "wait_task should return task result"
+  end
+
+  local slept, sleep_err = wait_host:sleep(0, { poll_interval = 0 })
+  if not slept then
+    return nil, sleep_err
+  end
+
   local parent_task = assert(wait_host:spawn_task("test.await_parent", function(ctx)
     local child = assert(wait_host:spawn_task("test.await_child", function()
       return "child-result"

@@ -194,6 +194,7 @@ local identify = require("lua_libp2p.protocol_identify.protocol")
 local ping = require("lua_libp2p.protocol_ping.protocol")
 local socket = require("socket")
 local identify_service = require("lua_libp2p.protocol_identify.service")
+local ping_service = require("lua_libp2p.protocol_ping.service")
 local kad_dht_service = require("lua_libp2p.kad_dht")
 
 local addr = arg[1]
@@ -211,6 +212,7 @@ local h, h_err = host.new({
   blocking = false,
   services = {
     identify = identify_service,
+    ping = ping_service,
     kad_dht = kad_dht_service,
   },
 })

@@ -78,6 +78,8 @@ local function run()
       },
     },
     services = {
+      identify = { module = identify_service },
+      ping = { module = ping_service },
       kad_dht = { module = kad_dht_service },
     },
     blocking = false,
@@ -90,6 +92,24 @@ local function run()
   end
   if not discovery_host.kad_dht or discovery_host.kad_dht.peer_discovery ~= discovery_host.peer_discovery then
     return nil, "kad_dht service should default to host peer_discovery"
+  end
+  if discovery_host.components.identify ~= discovery_host.services.identify
+      or discovery_host.components.ping ~= discovery_host.services.ping
+      or discovery_host.components.kad_dht ~= discovery_host.services.kad_dht
+      or discovery_host.components.peer_routing ~= discovery_host.services.kad_dht then
+    return nil, "host should register service capabilities in components"
+  end
+
+  local missing_dep_host, missing_dep_err = host.new({
+    runtime = "poll",
+    identity = keypair,
+    services = {
+      kad_dht = { module = kad_dht_service },
+    },
+    blocking = false,
+  })
+  if missing_dep_host ~= nil or not missing_dep_err or missing_dep_err.kind ~= "state" then
+    return nil, "kad_dht without identify/ping should fail dependency validation"
   end
 
   local bootstrap_dialed = {}
@@ -517,6 +537,7 @@ local function run()
     muxers = { "/yamux/1.0.0" },
     services = {
       identify = { module = identify_service },
+      ping = { module = ping_service },
       perf = { module = perf_service },
       kad_dht = { module = kad_dht_service },
     },

@@ -4,6 +4,8 @@ local multiaddr = require("lua_libp2p.multiaddr")
 local autonat_proto = require("lua_libp2p.protocol.autonat_v2")
 
 local M = {}
+M.provides = { "autonat" }
+M.requires = { "identify", "ping" }
 
 local Client = {}
 Client.__index = Client

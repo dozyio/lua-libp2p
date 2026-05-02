@@ -1,6 +1,8 @@
 local ping = require("lua_libp2p.protocol_ping.protocol")
 
 local M = {}
+M.provides = { "ping" }
+M.requires = {}
 
 function M.new(host)
   local svc = {}

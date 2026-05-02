@@ -12,6 +12,8 @@ local log = require("lua_libp2p.log")
 
 local M = {}
 local compare_distance
+M.provides = { "peer_routing", "kad_dht" }
+M.requires = { "identify", "ping" }
 
 M.PROTOCOL_ID = "/ipfs/kad/1.0.0"
 M.DEFAULT_K = 20
