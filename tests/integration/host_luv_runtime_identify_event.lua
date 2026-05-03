@@ -111,7 +111,7 @@ if dial_err then
 end
 
 for _ = 1, 200 do
-  local ok, poll_err = h:poll_once(0)
+  local ok, poll_err = h:_poll_once(0)
   if not ok then
     write_out("poll_error:" .. tostring(poll_err))
     os.exit(1)

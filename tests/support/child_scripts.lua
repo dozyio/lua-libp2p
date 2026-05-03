@@ -274,7 +274,7 @@ for _ = 1, rounds do
   end)
 
   for _ = 1, 20 do
-    local ok, poll_err = h:poll_once(0)
+    local ok, poll_err = h:_poll_once(0)
     if not ok then
       write_out("poll_error:" .. tostring(poll_err))
       os.exit(1)
@@ -284,7 +284,7 @@ for _ = 1, rounds do
 end
 
 for _ = 1, 40 do
-  local ok, poll_err = h:poll_once(0)
+  local ok, poll_err = h:_poll_once(0)
   if not ok then
     write_out("poll_error:" .. tostring(poll_err))
     os.exit(1)

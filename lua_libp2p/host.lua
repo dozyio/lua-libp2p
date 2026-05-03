@@ -252,6 +252,13 @@ local function bind_listeners(self, addrs)
     self.address_manager:set_listen_addrs(self.listen_addrs)
   end
 
+  if self._running then
+    local self_update_ok, self_update_err = self:_emit_self_peer_update_if_changed()
+    if not self_update_ok then
+      return nil, self_update_err
+    end
+  end
+
   if self._running and self._runtime_impl and self._runtime_impl.sync_watchers then
     local ok, sync_err = self._runtime_impl.sync_watchers(self)
     if not ok then
@@ -375,7 +382,7 @@ local function runtime_luv_stop(host)
 end
 
 local function runtime_luv_poll_once(host, timeout)
-  return host:_poll_once_luv(timeout)
+  return host_runtime_luv.poll_once(host, timeout)
 end
 
 local function runtime_luv_sync_watchers(host)
@@ -597,15 +604,17 @@ function Host:new(config)
     peerstore = cfg.peerstore or peerstore.new(cfg.peerstore_options),
     peer_discovery = nil,
     _bootstrap_discovery = nil,
-    _bootstrap_discovery_due_at = nil,
     _bootstrap_discovery_done = false,
+    _bootstrap_discovery_task = nil,
     _relay_candidate_replenish = {
       pending = false,
       cooldown_seconds = 30,
       next_allowed_at = 0,
       walk_task = nil,
       walk_inflight = false,
+      task = nil,
     },
+    _autorelay_tick_task = nil,
     address_manager = cfg.address_manager or address_manager.new({
       listen_addrs = cfg.listen_addrs or {},
       announce_addrs = cfg.announce_addrs or {},
@@ -874,6 +883,9 @@ function Host:new(config)
       if not token then
         return nil, on_err
       end
+      if self_obj.autorelay.need_more_relays == true then
+        self_obj:_request_relay_candidate_replenish("initial_need_more_relays")
+      end
     end
   end
 
@@ -905,6 +917,9 @@ function Host:handle(protocol_id, handler, opts)
   local options = opts or {}
   self._handlers[protocol_id] = handler
   self._handler_options[protocol_id] = options
+  if self._running then
+    return self:_emit_self_peer_update_if_changed()
+  end
   return true
 end
 
@@ -1230,6 +1245,10 @@ function Host:_request_identify(peer_id, opts)
       if not ok then
         return nil, emit_err
       end
+      local self_update_ok, self_update_err = self:_emit_self_peer_update_if_changed()
+      if not self_update_ok then
+        return nil, self_update_err
+      end
     end
   end
 
@@ -1400,10 +1419,15 @@ end
 function Host:_emit_self_peer_update_if_changed()
   local addrs = self:get_multiaddrs_raw()
   local protocols = list_protocol_handlers(self._handlers)
-  if self._last_advertised_addrs and list_equal(self._last_advertised_addrs, addrs) then
+  if self._last_advertised_addrs
+    and self._last_advertised_protocols
+    and list_equal(self._last_advertised_addrs, addrs)
+    and list_equal(self._last_advertised_protocols, protocols)
+  then
     return true
   end
   self._last_advertised_addrs = list_copy(addrs)
+  self._last_advertised_protocols = list_copy(protocols)
   log.info("self peer addresses updated", {
     subsystem = "host",
     peer_id = self:peer_id().id,
@@ -1852,7 +1876,7 @@ function Host:run_until_task(task, opts)
         name = task.name,
       })
     end
-    local ok, err = self:poll_once(poll_interval)
+    local ok, err = self:_poll_once(poll_interval)
     if not ok then
       return nil, err
     end
@@ -2668,7 +2692,7 @@ function Host:new_stream(peer_or_addr, protocols, opts)
   return stream, selected, conn, state
 end
 
-function Host:_poll_once_with_ready_map(timeout, ready_map)
+function Host:_process_runtime_events(timeout, ready_map)
   if ready_map then
     for connection in pairs(self._task_read_waiters) do
       if ready_map[connection] then
@@ -2987,33 +3011,42 @@ function Host:_poll_once_with_ready_map(timeout, ready_map)
   return true
 end
 
-function Host:_poll_once_luv(timeout)
-  local ok_luv, uv = pcall(require, "luv")
-  if ok_luv and self._runtime_impl and self._runtime_impl.sync_watchers then
-    local sync_ok, sync_err = self._runtime_impl.sync_watchers(self)
-    if not sync_ok then
-      return nil, sync_err
-    end
-  end
-  if ok_luv then
-    local ok, err = pcall(function()
-      return uv.run("nowait")
-    end)
-    if not ok and string.find(tostring(err or ""), "loop already running", 1, true) == nil then
-      return nil, error_mod.new("io", "luv poll failed", { cause = err })
-    end
-  end
-  local ready_map = self._luv_ready
-  self._luv_ready = {}
-  return self:_poll_once_with_ready_map(timeout, ready_map)
+function Host:_poll_once_with_ready_map(timeout, ready_map)
+  return self:_process_runtime_events(timeout, ready_map)
 end
 
-function Host:_run_bootstrap_discovery_if_due()
+function Host:_schedule_bootstrap_discovery(delay_seconds)
   local cfg = self._bootstrap_discovery
   if not cfg or self._bootstrap_discovery_done or cfg.dial_on_start == false then
     return true
   end
-  if self._bootstrap_discovery_due_at and os.time() < self._bootstrap_discovery_due_at then
+  local existing = self._bootstrap_discovery_task
+  if existing and existing.status ~= "completed" and existing.status ~= "failed" and existing.status ~= "cancelled" then
+    return true
+  end
+  local delay = type(delay_seconds) == "number" and math.max(0, delay_seconds) or 0
+  local task, task_err = self:spawn_task("host.bootstrap_discovery", function(ctx)
+    if delay > 0 then
+      local slept, sleep_err = ctx:sleep(delay)
+      if slept == nil and sleep_err then
+        return nil, sleep_err
+      end
+    end
+    if not self._running or self._bootstrap_discovery_done then
+      return true
+    end
+    return self:_run_bootstrap_discovery_once()
+  end, { service = "host" })
+  if not task then
+    return nil, task_err
+  end
+  self._bootstrap_discovery_task = task
+  return true
+end
+
+function Host:_run_bootstrap_discovery_once()
+  local cfg = self._bootstrap_discovery
+  if not cfg or self._bootstrap_discovery_done or cfg.dial_on_start == false then
     return true
   end
   self._bootstrap_discovery_done = true
@@ -3096,12 +3129,51 @@ function Host:_request_relay_candidate_replenish(reason)
   end
   self._relay_candidate_replenish.pending = true
   self._relay_candidate_replenish.reason = reason
+  if self._running then
+    local ok = self:_schedule_relay_candidate_replenish()
+    return ok == true
+  end
   return true
 end
 
-function Host:_run_relay_candidate_replenish_if_due(now)
+function Host:_schedule_relay_candidate_replenish()
   local state = self._relay_candidate_replenish
   if not state or not state.pending then
+    return true
+  end
+  local existing = state.task
+  if existing and existing.status ~= "completed" and existing.status ~= "failed" and existing.status ~= "cancelled" then
+    return true
+  end
+  local current = os.time()
+  local delay = math.max(0, (state.next_allowed_at or 0) - current)
+  local task, task_err = self:spawn_task("host.relay_candidate_replenish", function(ctx)
+    if delay > 0 then
+      local slept, sleep_err = ctx:sleep(delay)
+      if slept == nil and sleep_err then
+        return nil, sleep_err
+      end
+    end
+    if not self._running then
+      return true
+    end
+    return self:_run_relay_candidate_replenish_once()
+  end, { service = "host" })
+  if not task then
+    return nil, task_err
+  end
+  state.task = task
+  return true
+end
+
+function Host:_run_relay_candidate_replenish_once(now)
+  local state = self._relay_candidate_replenish
+  if not state or not state.pending then
+    return true
+  end
+  if self.autorelay and self.autorelay.need_more_relays == false then
+    state.pending = false
+    state.task = nil
     return true
   end
   local current = now or os.time()
@@ -3116,16 +3188,21 @@ function Host:_run_relay_candidate_replenish_if_due(now)
 
   if ktable_peers == 0 and self._bootstrap_discovery and self._bootstrap_discovery.dial_on_start ~= false then
     self._bootstrap_discovery_done = false
-    self._bootstrap_discovery_due_at = current
-    state.pending = false
     state.next_allowed_at = current + (state.cooldown_seconds or 30)
-    return true
+    local boot_ok, boot_err = self:_schedule_bootstrap_discovery(0)
+    if not boot_ok then
+      return nil, boot_err
+    end
+    state.task = nil
+    return self:_schedule_relay_candidate_replenish()
   end
 
   if self.kad_dht and type(self.kad_dht.random_walk) == "function" then
     local walk = state.walk_task
     if walk and walk.status ~= "completed" and walk.status ~= "failed" and walk.status ~= "cancelled" then
-      return true
+      state.next_allowed_at = current + 1
+      state.task = nil
+      return self:_schedule_relay_candidate_replenish()
     end
     local walk_op, walk_err = self.kad_dht:random_walk({
       alpha = self.kad_dht.alpha,
@@ -3145,25 +3222,46 @@ function Host:_run_relay_candidate_replenish_if_due(now)
   return true
 end
 
-function Host:poll_once(timeout)
-  local self_update_ok, self_update_err = self:_emit_self_peer_update_if_changed()
-  if not self_update_ok then
-    return nil, self_update_err
+function Host:_schedule_autorelay_tick()
+  if not (self.autorelay and type(self.autorelay.tick) == "function") then
+    return true
   end
-  if self.autorelay and type(self.autorelay.tick) == "function" then
-    local relay_ok, relay_err = self.autorelay:tick()
-    if not relay_ok then
-      return nil, relay_err
+  local existing = self._autorelay_tick_task
+  if existing and existing.status ~= "completed" and existing.status ~= "failed" and existing.status ~= "cancelled" then
+    return true
+  end
+  local interval = tonumber(self.autorelay.tick_interval) or 1
+  if interval < 0 then
+    interval = 1
+  end
+  local task, task_err = self:spawn_task("host.autorelay_tick", function(ctx)
+    while self._running and self.autorelay and self.autorelay.started do
+      local ok, tick_err = self.autorelay:tick()
+      if not ok then
+        return nil, tick_err
+      end
+      if interval > 0 then
+        local slept, sleep_err = ctx:sleep(interval)
+        if slept == nil and sleep_err then
+          return nil, sleep_err
+        end
+      else
+        local checkpoint_ok, checkpoint_err = ctx:checkpoint()
+        if checkpoint_ok == nil and checkpoint_err then
+          return nil, checkpoint_err
+        end
+      end
     end
+    return true
+  end, { service = "host" })
+  if not task then
+    return nil, task_err
   end
-  local boot_ok, boot_err = self:_run_bootstrap_discovery_if_due()
-  if not boot_ok then
-    return nil, boot_err
-  end
-  local replenish_ok, replenish_err = self:_run_relay_candidate_replenish_if_due(os.time())
-  if not replenish_ok then
-    return nil, replenish_err
-  end
+  self._autorelay_tick_task = task
+  return true
+end
+
+function Host:_poll_once(timeout)
   if self._runtime_impl and self._runtime_impl.poll_once then
     return self._runtime_impl.poll_once(self, timeout)
   end
@@ -3189,7 +3287,24 @@ function Host:start()
     self._running = true
   end
   if self._bootstrap_discovery and self._bootstrap_discovery.dial_on_start ~= false then
-    self._bootstrap_discovery_due_at = os.time() + (self._bootstrap_discovery.timeout or 1)
+    local boot_ok, boot_err = self:_schedule_bootstrap_discovery(self._bootstrap_discovery.timeout or 1)
+    if not boot_ok then
+      return nil, boot_err
+    end
+  end
+  if self._relay_candidate_replenish and self._relay_candidate_replenish.pending then
+    local replenish_ok, replenish_err = self:_schedule_relay_candidate_replenish()
+    if not replenish_ok then
+      return nil, replenish_err
+    end
+  end
+  local autorelay_tick_ok, autorelay_tick_err = self:_schedule_autorelay_tick()
+  if not autorelay_tick_ok then
+    return nil, autorelay_tick_err
+  end
+  local self_update_ok, self_update_err = self:_emit_self_peer_update_if_changed()
+  if not self_update_ok then
+    return nil, self_update_err
   end
 
   if type(self._on_started) == "function" then
@@ -3212,7 +3327,7 @@ function Host:start()
     local max_iterations = self._start_max_iterations
     local poll_interval = self._start_poll_interval
     while self._running do
-      local ok, err = self:poll_once(self._accept_timeout)
+      local ok, err = self:_poll_once(self._accept_timeout)
       if not ok then
         self._running = false
         return nil, err

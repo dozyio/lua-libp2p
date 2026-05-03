@@ -292,15 +292,19 @@ local h, host_err = host_mod.new({
 	services = {
 		identify = { module = identify_service },
 		ping = { module = ping_service },
-		kad_dht = { module = kad_dht_service },
-		autorelay = { module = autorelay_service },
-	},
-	kad_dht = {
-		mode = "client",
-	},
-	autorelay = {
-		relays = opts.relays,
-		max_reservations = opts.max_reservations,
+		kad_dht = {
+			module = kad_dht_service,
+			config = {
+				mode = "client",
+			},
+		},
+		autorelay = {
+			module = autorelay_service,
+			config = {
+				relays = opts.relays,
+				max_reservations = opts.max_reservations,
+			},
+		},
 	},
 	blocking = false,
 	connect_timeout = 6,

@@ -170,7 +170,7 @@ local host, host_err = host_mod.new({
 				},
 			},
 		},
-		kad_dht = { module = kad_dht_service },
+		kad_dht = { module = kad_dht_service, config = { mode = "client" } },
 		autorelay = {
 			module = autorelay_service,
 			config = {

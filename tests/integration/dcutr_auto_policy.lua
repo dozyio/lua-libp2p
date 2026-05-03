@@ -59,7 +59,7 @@ local function run()
   if not ok then
     return nil, emit_err
   end
-  ok, emit_err = host:poll_once(0)
+  ok, emit_err = host:_poll_once(0)
   if not ok then
     return nil, emit_err
   end

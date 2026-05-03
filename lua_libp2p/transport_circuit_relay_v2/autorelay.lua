@@ -372,6 +372,9 @@ function AutoRelay:_remove_reservation(key, opts)
   end
   if self.host and self.host.address_manager then
     self.host.address_manager:remove_relay_addrs(reservation.relay_addrs or {})
+    if type(self.host._emit_self_peer_update_if_changed) == "function" then
+      self.host:_emit_self_peer_update_if_changed()
+    end
   end
   if self.host and self.host.peerstore and type(self.host.peerstore.untag) == "function" then
     self.host.peerstore:untag(reservation.relay_peer_id or key, M.KEEP_ALIVE_TAG)
@@ -722,7 +725,7 @@ end
 -- Common options: `relays`, `max_reservations`, `reservation_concurrency`,
 -- `max_queue_length`, `backoff_seconds`, `keepalive_interval`, `keepalive_timeout`,
 -- `discover`, `reserve_opts`, `refresh_margin`, `refresh_timeout`,
--- `refresh_timeout_min`, `min_reservation_ttl`, and `fail_fast`.
+-- `refresh_timeout_min`, `min_reservation_ttl`, `tick_interval`, and `fail_fast`.
 -- `opts.keepalive_interval` defaults to `DEFAULT_KEEPALIVE_INTERVAL` when nil.
 -- `opts.relays` is the static bootstrap relay target list.
 -- @treturn table|nil service
@@ -747,6 +750,7 @@ function M.new(host, opts)
     reservation_concurrency = options.reservation_concurrency or 1,
     backoff_seconds = options.backoff_seconds or 60,
     keepalive_interval = options.keepalive_interval == nil and M.DEFAULT_KEEPALIVE_INTERVAL or options.keepalive_interval,
+    tick_interval = options.tick_interval or 1,
     keepalive_timeout = options.keepalive_timeout or 5,
     fail_fast = options.fail_fast == true,
     discover = options.discover,

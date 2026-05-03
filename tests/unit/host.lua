@@ -148,7 +148,7 @@ local function run()
   if not discovery_started then
     return nil, discovery_start_err
   end
-  local discovery_polled, discovery_poll_err = discovery_host:poll_once(0)
+  local discovery_polled, discovery_poll_err = discovery_host:_poll_once(0)
   if not discovery_polled then
     return nil, discovery_poll_err
   end
@@ -160,7 +160,10 @@ local function run()
     return nil, "host should tag bootstrap peers"
   end
   local bootstrap_stats = discovery_host:task_stats()
-  if bootstrap_stats.by_name["host.bootstrap_dial"] ~= 2 or bootstrap_stats.by_status.completed ~= 2 then
+  if bootstrap_stats.by_name["host.bootstrap_discovery"] ~= 1
+    or bootstrap_stats.by_name["host.bootstrap_dial"] ~= 2
+    or bootstrap_stats.by_status.completed ~= 3
+  then
     return nil, "host task stats should include completed bootstrap dial tasks"
   end
   local host_stats = discovery_host:stats()
@@ -191,12 +194,57 @@ local function run()
     return nil, nil, require("lua_libp2p.error").new("io", "forced bootstrap failure")
   end
   assert(failed_discovery_host:start())
-  assert(failed_discovery_host:poll_once(0))
+  assert(failed_discovery_host:_poll_once(0))
   local failed_tasks = failed_discovery_host:list_tasks()
-  if #failed_tasks ~= 1 or failed_tasks[1].name ~= "host.bootstrap_dial" or failed_tasks[1].result ~= false then
+  if #failed_tasks ~= 2
+    or failed_tasks[1].name ~= "host.bootstrap_discovery"
+    or failed_tasks[2].name ~= "host.bootstrap_dial"
+    or failed_tasks[2].result ~= false
+  then
     return nil, "bootstrap dial task should report false when dial returns nil,error"
   end
   failed_discovery_host:stop()
+  local missed_need_more_service = {
+    provides = { "autorelay" },
+    new = function(service_host)
+      return {
+        host = service_host,
+        need_more_relays = false,
+        start = function(self)
+          self.need_more_relays = true
+          service_host:emit("relay:not-enough-relays", { reason = "start" })
+          return true
+        end,
+        tick = function() return true end,
+      }
+    end,
+  }
+  local missed_need_more_host = assert(host.new({
+    runtime = "luv",
+    identity = keypair,
+    services = {
+      autorelay = { module = missed_need_more_service },
+    },
+    blocking = false,
+  }))
+  if not missed_need_more_host._relay_candidate_replenish.pending then
+    return nil, "host should reconcile autorelay need_more state emitted before subscription"
+  end
+  missed_need_more_host._bootstrap_discovery = { dial_on_start = true }
+  missed_need_more_host.kad_dht = { routing_table = { all_peers = function() return {} end } }
+  missed_need_more_host._relay_candidate_replenish.cooldown_seconds = 1
+  local replenish_ok, replenish_err = missed_need_more_host:_run_relay_candidate_replenish_once(os.time())
+  if not replenish_ok then
+    return nil, replenish_err
+  end
+  if not missed_need_more_host._relay_candidate_replenish.pending then
+    return nil, "relay candidate replenish should remain pending while bootstrap reseeds empty kad table"
+  end
+  local replenish_task = missed_need_more_host._relay_candidate_replenish.task
+  if not replenish_task or replenish_task.name ~= "host.relay_candidate_replenish" then
+    return nil, "empty kad table should reschedule relay candidate replenish after bootstrap reseed"
+  end
+  missed_need_more_host:stop()
   discovery_host._identify_inflight["peer-a"] = true
   discovery_host._identify_inflight["peer-b"] = true
   if discovery_host:task_stats().identify_inflight ~= 2 then

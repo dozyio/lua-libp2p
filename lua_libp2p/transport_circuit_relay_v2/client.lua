@@ -135,6 +135,12 @@ function Client:reserve(target, opts)
         expires = reservation.expire,
       })
     end
+    if type(self.host._emit_self_peer_update_if_changed) == "function" then
+      local ok, update_err = self.host:_emit_self_peer_update_if_changed()
+      if not ok then
+        return nil, update_err
+      end
+    end
   end
 
   local result = {

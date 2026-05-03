@@ -57,7 +57,7 @@ local function run()
     return nil, write_err
   end
 
-  local ok, poll_err = h:poll_once(0.2)
+  local ok, poll_err = h:_poll_once(0.2)
   close_quiet(attacker)
   if not ok then
     close_quiet(h)
@@ -69,7 +69,7 @@ local function run()
     return nil, "host should remain running after oversized multistream frame"
   end
 
-  ok, poll_err = h:poll_once(0)
+  ok, poll_err = h:_poll_once(0)
   if not ok then
     close_quiet(h)
     return nil, poll_err

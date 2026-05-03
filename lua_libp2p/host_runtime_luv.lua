@@ -6,6 +6,24 @@ local ok_luv, uv = pcall(require, "luv")
 
 local M = {}
 
+local function now_seconds()
+  local ok_socket, socket = pcall(require, "socket")
+  if ok_socket and type(socket.gettime) == "function" then
+    return socket.gettime()
+  end
+  return os.time()
+end
+
+local function sleep_seconds(seconds)
+  if seconds <= 0 then
+    return
+  end
+  local ok_socket, socket = pcall(require, "socket")
+  if ok_socket and type(socket.sleep) == "function" then
+    socket.sleep(seconds)
+  end
+end
+
 local function map_size(map)
   local n = 0
   for _ in pairs(map or {}) do
@@ -85,7 +103,7 @@ local function pump_waiting_connections(host)
   if not has_ready then
     return true
   end
-  return host:_poll_once_with_ready_map(0, ready)
+  return host:_process_runtime_events(0, ready)
 end
 
 function M.is_available()
@@ -181,7 +199,7 @@ function M.tick(host)
   end
 
   if #host._pending_inbound > 0 then
-    ok, err = host:poll_once(0)
+      ok, err = M.poll_once(host, 0)
     if not ok then
       host:_set_runtime_error("luv", err)
       return nil, err
@@ -189,7 +207,7 @@ function M.tick(host)
   end
 
   if map_size(host._luv_ready) > 0 then
-    ok, err = host:poll_once(0)
+    ok, err = M.poll_once(host, 0)
     if not ok then
       host:_set_runtime_error("luv", err)
       return nil, err
@@ -224,7 +242,7 @@ function M.tick(host)
   end
 
   if map_size(host._luv_ready) > 0 then
-    ok, err = host:poll_once(0)
+      ok, err = M.poll_once(host, 0)
     if not ok then
       host:_set_runtime_error("luv", err)
       return nil, err
@@ -239,6 +257,42 @@ function M.run(mode)
     return nil, "luv not available"
   end
   return uv.run(mode)
+end
+
+function M.poll_once(host, timeout)
+  if not ok_luv then
+    return nil, error_mod.new("unsupported", "runtime=luv requires 'luv' module")
+  end
+  if type(host) ~= "table" then
+    return nil, error_mod.new("input", "host table is required")
+  end
+
+  local sync_ok, sync_err = M.sync_watchers(host)
+  if not sync_ok then
+    return nil, sync_err
+  end
+
+  local wait_timeout = type(timeout) == "number" and math.max(0, timeout) or 0
+  local deadline = now_seconds() + wait_timeout
+  repeat
+    local ok, err = pcall(function()
+      return uv.run("nowait")
+    end)
+    if not ok then
+      if string.find(tostring(err or ""), "loop already running", 1, true) == nil then
+        return nil, error_mod.new("io", "luv poll failed", { cause = err })
+      end
+      break
+    end
+    if next(host._luv_ready) ~= nil or wait_timeout <= 0 or now_seconds() >= deadline then
+      break
+    end
+    sleep_seconds(math.min(0.001, math.max(0, deadline - now_seconds())))
+  until false
+
+  local ready_map = host._luv_ready
+  host._luv_ready = {}
+  return host:_process_runtime_events(timeout, ready_map)
 end
 
 function M.close_watchers(host)

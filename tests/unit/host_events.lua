@@ -270,8 +270,11 @@ local function run()
     return nil, "luv read task should park before socket readiness"
   end
   assert(client:send("x"))
-  assert(luv_wait_host:poll_once(0.05))
+  assert(luv_wait_host:_poll_once(0.05))
   if luv_read_task.status ~= "completed" or not luv_read_resumed then
+    accepted:close()
+    client:close()
+    server:close()
     return nil, "luv runtime should wake readable task waiters from socket readiness"
   end
   accepted:close()
@@ -659,7 +662,7 @@ local function run()
   local dial_a2 = spawn_dial("test.dial_queue_a2", peer_a)
   local dial_b = spawn_dial("test.dial_queue_b", peer_b)
   for _ = 1, 100 do
-    assert(dial_queue_host:poll_once(0.02))
+    assert(dial_queue_host:_poll_once(0.02))
     if dial_a1.status == "completed" and dial_a2.status == "completed" and dial_b.status == "completed" then
       break
     end
@@ -697,7 +700,7 @@ local function run()
       addrs = { "/ip4/127.0.0.1/tcp/4001/p2p/" .. full_peer_a },
     }, { ctx = ctx })
   end))
-  assert(full_queue_host:poll_once(0.01))
+  assert(full_queue_host:_poll_once(0.01))
   if queued.status ~= "waiting_task" and queued.status ~= "ready" then
     return nil, "first queued dial should remain pending when no dial slots are available"
   end
@@ -711,7 +714,7 @@ local function run()
     end
     return true
   end))
-  assert(full_queue_host:poll_once(0.01))
+  assert(full_queue_host:_poll_once(0.01))
   if queue_full.status ~= "completed" then
     return nil, "dial queue should reject new dials when queue is full"
   end

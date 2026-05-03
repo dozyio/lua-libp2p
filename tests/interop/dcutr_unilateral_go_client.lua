@@ -101,7 +101,7 @@ assert(host:emit("peer_connected", {
 
 local deadline = os.time() + 8
 while os.time() < deadline and (not migrated or not direct_connection_id) do
-  local ok, err = host:poll_once(0.02)
+  local ok, err = host:_poll_once(0.02)
   if not ok then
     host:stop()
     io.stderr:write(tostring(err) .. "\n")
