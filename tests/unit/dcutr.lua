@@ -146,8 +146,8 @@ local function run()
   function host:new_stream()
     return nil, nil, nil, "forced stream open failure"
   end
-  function host:emit(name, payload)
-    emitted_events[#emitted_events + 1] = { name, payload }
+  function host:emit(name, event_payload)
+    emitted_events[#emitted_events + 1] = { name, event_payload }
     return true
   end
 
@@ -251,7 +251,6 @@ local function run()
     return nil, "expected dcutr to prefer public same-family non-relay candidate"
   end
 
-  local attempt_stream_a, _ = loopback_stream_pair()
   local failed_new_stream_calls = 0
   host.new_stream = function()
     failed_new_stream_calls = failed_new_stream_calls + 1

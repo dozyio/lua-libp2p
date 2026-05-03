@@ -86,7 +86,7 @@ local function run()
     input = relay_response({ type = relay_proto.HOP_TYPE.STATUS, status = relay_proto.STATUS.NO_RESERVATION }),
     writes = {},
   }, Stream)
-  function h:new_stream(target, protocols)
+  function h:new_stream(_, protocols)
     return bad_stream, protocols[1], nil, {}
   end
   local failed, _, failed_err = h:_dial_relay_raw(relayed_addr)

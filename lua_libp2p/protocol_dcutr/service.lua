@@ -224,14 +224,14 @@ local function default_obs_addrs(host, opts)
   end
 
   local fallback = {}
-  local seen = {}
+  local fallback_seen = {}
   for _, addr in ipairs(out) do
     if type(addr) == "string"
       and addr:sub(1, 1) == "/"
-      and not seen[addr]
+      and not fallback_seen[addr]
       and not addr_has_proto(addr, "p2p-circuit")
     then
-      seen[addr] = true
+      fallback_seen[addr] = true
       fallback[#fallback + 1] = addr
     end
   end
@@ -460,18 +460,18 @@ function M.new(host, opts)
 
   function svc:_attempt_direct_dials(target_peer_id, addrs, dial_opts)
     local errors = {}
-    local opts = {}
+    local dial_options = {}
     for k, v in pairs(dial_opts or {}) do
-      opts[k] = v
+      dial_options[k] = v
     end
-    opts.require_unlimited_connection = true
-    opts.force = true
+    dial_options.require_unlimited_connection = true
+    dial_options.force = true
     for _, addr in ipairs(addrs or {}) do
       local dial_target = {
         peer_id = target_peer_id,
         addrs = { addr },
       }
-      local conn, state, dial_err = host:dial(dial_target, opts)
+      local conn, state, dial_err = host:dial(dial_target, dial_options)
       if conn and not (state and state.relay and state.relay.limit_kind == "limited") then
         emit_event(host, "dcutr:attempt:success", {
           peer_id = target_peer_id,
@@ -684,13 +684,13 @@ function M.new(host, opts)
           state_or_err = run_opts.state
         end
       else
-        local ignored_conn
-        stream, selected, ignored_conn, state_or_err = host:new_stream(target, { dcutr.ID }, {
+        local opened = { host:new_stream(target, { dcutr.ID }, {
           timeout = run_opts.timeout,
           io_timeout = run_opts.io_timeout,
           ctx = run_opts.ctx,
           allow_limited_connection = true,
-        })
+        }) }
+        stream, selected, state_or_err = opened[1], opened[2], opened[4]
       end
       if not stream then
         emit_event(host, "dcutr:attempt:failed", {

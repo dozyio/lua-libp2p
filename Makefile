@@ -11,7 +11,7 @@ lint:
 		echo "luacheck not found; run 'make lint-deps' and load your LuaRocks path"; \
 		exit 127; \
 	}
-	luacheck lua_libp2p tests examples
+	luacheck --std lua54 --no-max-line-length --no-self --read-globals arg -- lua_libp2p tests examples
 
 test:
 	lua tests/run.lua

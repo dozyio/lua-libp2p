@@ -29,7 +29,6 @@ M.DEFAULT_MAX_FAILED_CHECKS_BEFORE_EVICT = 2
 
 function M.default_peer_discovery(opts)
   local options = opts or {}
-  local yield = type(options.yield) == "function" and options.yield or nil
   local bootstrap_source, bootstrap_err = discovery_bootstrap.new({
     list = options.bootstrappers or bootstrap.DEFAULT_BOOTSTRAPPERS,
     dnsaddr_resolver = options.dnsaddr_resolver,
@@ -299,8 +298,8 @@ local function is_dialable_tcp_addr(addr)
     return false
   end
   for i = 3, #parsed.components do
-    local protocol = parsed.components[i].protocol
-    if protocol ~= "p2p" then
+    local proto = parsed.components[i].protocol
+    if proto ~= "p2p" then
       return false
     end
   end
@@ -692,7 +691,7 @@ end
 function DHT:_strict_lookup_complete(target_hash, states, k)
   local peers = {}
   local heard_or_waiting = 0
-  for peer_id, state in pairs(states) do
+  for _, state in pairs(states) do
     if state.state ~= "unreachable" then
       peers[#peers + 1] = state
       if state.state == "heard" or state.state == "waiting" then
@@ -1509,7 +1508,6 @@ end
 
 function DHT:refresh_once(opts)
   local options = opts or {}
-  local yield = type(options.yield) == "function" and options.yield or nil
   local now = os.time()
   local min_recheck = options.min_recheck_seconds or 60
   local max_checks = options.max_checks or self.alpha
@@ -1824,6 +1822,8 @@ function DHT:_random_walk(opts)
       end
     end
   end
+
+  local _ = queue_has_entries and next_from_path and query_target_for and apply_query_result
 
   local yield = type(options.yield) == "function" and options.yield or nil
 

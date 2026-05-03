@@ -5,14 +5,6 @@ local M = {}
 local Store = {}
 Store.__index = Store
 
-local function copy_list(values)
-  local out = {}
-  for i, value in ipairs(values or {}) do
-    out[i] = value
-  end
-  return out
-end
-
 local function ensure_peer(self, peer_id)
   if type(peer_id) ~= "string" or peer_id == "" then
     return nil, error_mod.new("input", "peer id must be a non-empty string")

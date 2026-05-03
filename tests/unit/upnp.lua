@@ -112,7 +112,6 @@ local function run()
       return out
     end,
   }
-  local handlers = {}
   local host = {
     address_manager = address_manager.new({
       listen_addrs = {
@@ -121,8 +120,7 @@ local function run()
       },
     }),
     events = {},
-    on = function(_, event_name, handler)
-      handlers[event_name] = handler
+    on = function()
       return true
     end,
     off = function()

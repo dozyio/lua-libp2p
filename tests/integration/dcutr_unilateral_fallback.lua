@@ -39,7 +39,7 @@ local function run()
   end
 
   local original_start_hole_punch = host.dcutr.start_hole_punch
-  host.dcutr.start_hole_punch = function(self, peer_id, opts)
+  host.dcutr.start_hole_punch = function(_, peer_id, opts)
     start_hole_punch_calls = start_hole_punch_calls + 1
     return host:spawn_task("test.dcutr.fallback", function()
       return { peer_id = peer_id, opts = opts }

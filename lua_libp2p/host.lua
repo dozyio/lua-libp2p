@@ -1,5 +1,4 @@
 local address_manager = require("lua_libp2p.address_manager")
-local autonat_client = require("lua_libp2p.autonat.client")
 local connection_manager = require("lua_libp2p.connection_manager")
 local keys = require("lua_libp2p.crypto.keys")
 local discovery = require("lua_libp2p.discovery")
@@ -8,21 +7,14 @@ local log = require("lua_libp2p.log")
 local host_runtime_luv = require("lua_libp2p.host_runtime_luv")
 local host_runtime_luv_native = require("lua_libp2p.host_runtime_luv_native")
 local host_runtime_poll = require("lua_libp2p.host_runtime_poll")
-local kad_dht = require("lua_libp2p.kad_dht")
 local multiaddr = require("lua_libp2p.multiaddr")
-local peerid = require("lua_libp2p.peerid")
 local peerstore = require("lua_libp2p.peerstore")
 local identify = require("lua_libp2p.protocol_identify.protocol")
 local key_pb = require("lua_libp2p.crypto.key_pb")
-local relay_autorelay = require("lua_libp2p.transport_circuit_relay_v2.autorelay")
 local relay_proto = require("lua_libp2p.transport_circuit_relay_v2.protocol")
 local upgrader = require("lua_libp2p.network.upgrader")
 local tcp_poll = require("lua_libp2p.transport_tcp.transport")
 local tcp_luv = require("lua_libp2p.transport_tcp.luv")
-local upnp_nat = require("lua_libp2p.upnp.nat")
-local service_identify = require("lua_libp2p.protocol_identify.service")
-local service_ping = require("lua_libp2p.protocol_ping.service")
-local service_perf = require("lua_libp2p.protocol_perf.service")
 
 local M = {}
 
@@ -442,15 +434,6 @@ local function contains_circuit_listen_addr(addrs)
   return false
 end
 
-local function list_has(values, needle)
-  for _, value in ipairs(values or {}) do
-    if value == needle then
-      return true
-    end
-  end
-  return false
-end
-
 local function build_peer_discovery(config)
   if config == nil or config == false then
     return nil
@@ -466,7 +449,7 @@ local function build_peer_discovery(config)
   local bootstrap_config = nil
 
   local function append_source(source_name, source_spec)
-    local source = source_spec
+    local source
     if type(source_spec) == "table" and type(source_spec.discover) == "function" then
       source = source_spec
     elseif type(source_spec) == "table" and source_spec.module ~= nil then
@@ -1330,7 +1313,7 @@ function Host:_schedule_identify_for_peer(peer_id)
   return true
 end
 
-function Host:add_service(name)
+function Host:add_service(_)
   return nil, error_mod.new("input", "add_service is removed; pass services map to host.new")
 end
 
@@ -2582,19 +2565,14 @@ function Host:_poll_once_with_ready_map(timeout, ready_map)
         conn:close()
         return nil, register_err
       end
-    elseif up_err and error_mod.is_error(up_err) and up_err.kind == "timeout" then
-      -- keep pending; retry on next poll tick
-    elseif is_nonfatal_stream_error(up_err) then
+    elseif not (up_err and error_mod.is_error(up_err) and up_err.kind == "timeout") then
       remove_pending_relay_inbound(i, pending)
       if raw_conn and type(raw_conn.close) == "function" then
         raw_conn:close()
       end
-    else
-      remove_pending_relay_inbound(i, pending)
-      if raw_conn and type(raw_conn.close) == "function" then
-        raw_conn:close()
+      if not is_nonfatal_stream_error(up_err) then
+        return nil, up_err
       end
-      return nil, up_err
     end
     ::continue_pending_relay_inbound::
   end

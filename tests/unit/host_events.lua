@@ -272,13 +272,10 @@ local function run()
     return nil, "write wake should unregister write watcher"
   end
 
-  local immediate_read_unwatch = false
   local immediate_readable = {}
   function immediate_readable:watch_luv_readable(on_readable)
     on_readable()
-    return function()
-      immediate_read_unwatch = true
-    end
+    return function() end
   end
   local immediate_read_task = assert(host:spawn_task("test.immediate_read_wait", function(ctx)
     ctx:wait_read(immediate_readable)
@@ -291,13 +288,10 @@ local function run()
     return nil, "immediate read watcher wake should not leave stale watcher"
   end
 
-  local immediate_write_unwatch = false
   local immediate_writable = {}
   function immediate_writable:watch_luv_write(on_write)
     on_write()
-    return function()
-      immediate_write_unwatch = true
-    end
+    return function() end
   end
   local immediate_write_task = assert(host:spawn_task("test.immediate_write_wait", function(ctx)
     ctx:wait_write(immediate_writable)
@@ -389,9 +383,9 @@ local function run()
     local fast = assert(wait_host:spawn_task("test.await_any_fast", function()
       return "fast"
     end))
-    local waited, wait_err = ctx:await_any_task({ slow, fast })
-    if waited == nil and wait_err then
-      return nil, wait_err
+    local waited, await_err = ctx:await_any_task({ slow, fast })
+    if waited == nil and await_err then
+      return nil, await_err
     end
     return fast.status
   end))
@@ -568,7 +562,7 @@ local function run()
   local direct_started = 0
   local active_direct = 0
   local active_peak = 0
-  function dial_queue_host:_dial_direct(target, opts)
+  function dial_queue_host:_dial_direct(target)
     direct_started = direct_started + 1
     active_direct = active_direct + 1
     if active_direct > active_peak then
@@ -582,11 +576,11 @@ local function run()
   local dial_results = {}
   local function spawn_dial(name, peer_id)
     return assert(dial_queue_host:spawn_task(name, function(ctx)
-      local conn, _, dial_err = dial_queue_host:dial({
+      local dial_conn, _, dial_err = dial_queue_host:dial({
         peer_id = peer_id,
         addrs = { "/ip4/127.0.0.1/tcp/4001/p2p/" .. peer_id },
       }, { ctx = ctx })
-      if not conn then
+      if not dial_conn then
         return nil, dial_err
       end
       dial_results[#dial_results + 1] = peer_id
@@ -640,11 +634,11 @@ local function run()
     return nil, "first queued dial should remain pending when no dial slots are available"
   end
   local queue_full = assert(full_queue_host:spawn_task("test.full_queue_second", function(ctx)
-    local conn, _, dial_err = full_queue_host:dial({
+    local dial_conn, _, dial_err = full_queue_host:dial({
       peer_id = full_peer_b,
       addrs = { "/ip4/127.0.0.1/tcp/4001/p2p/" .. full_peer_b },
     }, { ctx = ctx })
-    if conn ~= nil or not dial_err or dial_err.kind ~= "resource" then
+    if dial_conn ~= nil or not dial_err or dial_err.kind ~= "resource" then
       return nil, "expected dial queue full resource error"
     end
     return true

@@ -1,13 +1,6 @@
 local tcp = require("lua_libp2p.transport_tcp.transport")
 local yamux = require("lua_libp2p.muxer.yamux")
 
-local function expect(ok, err)
-  if ok then
-    return true
-  end
-  return nil, err
-end
-
 local function run()
   local listener, listen_err = tcp.listen({
     host = "127.0.0.1",

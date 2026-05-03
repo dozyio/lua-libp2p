@@ -79,7 +79,7 @@ local function wrap_socket_error(kind, message, cause, context)
   return error_mod.new(kind, message, merged)
 end
 
-function Connection:new(sock, opts)
+function Connection:new(sock)
   return setmetatable({
     _socket = sock,
     _closed = false,

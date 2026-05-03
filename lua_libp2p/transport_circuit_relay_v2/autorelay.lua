@@ -389,7 +389,7 @@ function AutoRelay:_remove_reservation(key, opts)
   return true
 end
 
-function AutoRelay:_keepalive(key, reservation, now)
+function AutoRelay:_keepalive(_, reservation, now)
   if self.keepalive_interval == nil or self.keepalive_interval == false then
     return true
   end
@@ -688,7 +688,6 @@ function AutoRelay:tick(now)
         end
       end
     end
-    ::continue_reserved::
   end
   return true
 end

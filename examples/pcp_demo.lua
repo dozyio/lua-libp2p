@@ -129,7 +129,7 @@ if opts.debug then
 	log.set_level("debug")
 end
 
-local bootstrap_discovery_config = nil
+local bootstrap_discovery_config
 if opts.bootstrap and #opts.bootstrap > 0 then
 	bootstrap_discovery_config = {
 		list = opts.bootstrap,

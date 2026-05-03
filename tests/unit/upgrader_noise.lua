@@ -1,5 +1,4 @@
 local ed25519 = require("lua_libp2p.crypto.ed25519")
-local mss = require("lua_libp2p.multistream_select.protocol")
 local upgrader = require("lua_libp2p.network.upgrader")
 local yamux = require("lua_libp2p.muxer.yamux")
 

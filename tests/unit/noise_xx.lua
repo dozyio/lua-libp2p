@@ -48,7 +48,7 @@ local function run_coroutines(co1, co2)
 
   for _ = 1, 20000 do
     if not done1 then
-      local ok, r1, r2, r3 = coroutine.resume(co1)
+      local ok, r1, r2 = coroutine.resume(co1)
       if not ok then
         return nil, "outbound coroutine failed: " .. tostring(r1)
       end
@@ -62,7 +62,7 @@ local function run_coroutines(co1, co2)
     end
 
     if not done2 then
-      local ok, r1, r2, r3 = coroutine.resume(co2)
+      local ok, r1, r2 = coroutine.resume(co2)
       if not ok then
         return nil, "inbound coroutine failed: " .. tostring(r1)
       end

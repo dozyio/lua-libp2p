@@ -52,12 +52,12 @@ local function run()
   local orig_attempt_a = host_a.dcutr._attempt_direct_dials
   local orig_attempt_b = host_b.dcutr._attempt_direct_dials
 
-  host_a.dcutr._attempt_direct_dials = function(self, peer_id, addrs, opts)
+  host_a.dcutr._attempt_direct_dials = function(_, peer_id, addrs)
     outbound_success_seen = type(peer_id) == "string" and #addrs > 0
     return { connection = {}, state = { remote_peer_id = peer_id }, addr = addrs[1] }
   end
 
-  host_b.dcutr._attempt_direct_dials = function(self, peer_id, addrs, opts)
+  host_b.dcutr._attempt_direct_dials = function(_, peer_id, addrs)
     inbound_sync_seen = type(peer_id) == "string"
     return { connection = {}, state = { remote_peer_id = peer_id }, addr = addrs[1] or "/ip4/127.0.0.1/tcp/1" }
   end

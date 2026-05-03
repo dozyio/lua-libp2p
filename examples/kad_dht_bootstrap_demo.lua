@@ -10,7 +10,6 @@ local ping_service = require("lua_libp2p.protocol_ping.service")
 local kad_dht_service = require("lua_libp2p.kad_dht")
 local bootstrap_defaults = require("lua_libp2p.bootstrap")
 local peer_discovery_bootstrap = require("lua_libp2p.peer_discovery_bootstrap")
-local kad_dht = require("lua_libp2p.kad_dht")
 local multiaddr = require("lua_libp2p.multiaddr")
 local socket = require("socket")
 
@@ -304,8 +303,8 @@ end
 
 local function run_client()
   local bootstrap_arg = arg[2]
-  local bootstrap_addrs = {}
-  local parsed_input = nil
+  local bootstrap_addrs
+  local parsed_input
   local dns_cache = {}
   local function dnsaddr_resolver(domain)
     if dns_cache[domain] ~= nil then
