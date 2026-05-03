@@ -65,8 +65,8 @@ local function parse_runtime(raw)
   if value == nil or value == "" then
     value = "luv"
   end
-  if value ~= "luv" and value ~= "poll" then
-    fatal("invalid HOST_RUNTIME env var, expected 'luv' or 'poll': " .. tostring(value))
+  if value ~= "luv" then
+    fatal("invalid HOST_RUNTIME env var, expected 'luv': " .. tostring(value))
   end
   return value
 end

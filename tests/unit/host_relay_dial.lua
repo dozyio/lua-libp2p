@@ -34,7 +34,7 @@ end
 
 local function run()
   local h, h_err = host_mod.new({
-    runtime = "poll",
+    runtime = "luv",
     blocking = false,
   })
   if not h then

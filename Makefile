@@ -31,9 +31,6 @@ check: test
 test-luv-native:
 	lua tests/run.lua
 
-test-luv-proxy:
-	LUA_LIBP2P_TCP_LUV_PROXY=1 lua tests/run.lua
-
 interop-yamux-go:
 	addr_file=$$(mktemp); err_file=$$(mktemp); \
 	( cd tests/interop/go_yamux_echo && go run . ) > $$addr_file 2> $$err_file & pid=$$!; \
@@ -60,9 +57,6 @@ interop-yamux-go-luv:
 
 interop-yamux-go-luv-native:
 	LUA_LIBP2P_INTEROP_RUNTIME=luv $(MAKE) interop-yamux-go
-
-interop-yamux-go-luv-proxy:
-	LUA_LIBP2P_TCP_LUV_PROXY=1 LUA_LIBP2P_INTEROP_RUNTIME=luv $(MAKE) interop-yamux-go
 
 interop-yamux-go-reverse:
 	addr_file=$$(mktemp); err_file=$$(mktemp); \
@@ -91,9 +85,6 @@ interop-yamux-go-reverse-luv:
 interop-yamux-go-reverse-luv-native:
 	LUA_LIBP2P_INTEROP_RUNTIME=luv $(MAKE) interop-yamux-go-reverse
 
-interop-yamux-go-reverse-luv-proxy:
-	LUA_LIBP2P_TCP_LUV_PROXY=1 LUA_LIBP2P_INTEROP_RUNTIME=luv $(MAKE) interop-yamux-go-reverse
-
 interop-noise-go:
 	addr_file=$$(mktemp); err_file=$$(mktemp); \
 	( cd tests/interop/go_noise_echo && go run . ) > $$addr_file 2> $$err_file & pid=$$!; \
@@ -120,9 +111,6 @@ interop-noise-go-luv:
 
 interop-noise-go-luv-native:
 	LUA_LIBP2P_INTEROP_RUNTIME=luv $(MAKE) interop-noise-go
-
-interop-noise-go-luv-proxy:
-	LUA_LIBP2P_TCP_LUV_PROXY=1 LUA_LIBP2P_INTEROP_RUNTIME=luv $(MAKE) interop-noise-go
 
 interop-noise-go-reverse:
 	addr_file=$$(mktemp); err_file=$$(mktemp); \
@@ -152,9 +140,6 @@ interop-noise-go-reverse-luv:
 interop-noise-go-reverse-luv-native:
 	LUA_LIBP2P_INTEROP_RUNTIME=luv $(MAKE) interop-noise-go-reverse
 
-interop-noise-go-reverse-luv-proxy:
-	LUA_LIBP2P_TCP_LUV_PROXY=1 LUA_LIBP2P_INTEROP_RUNTIME=luv $(MAKE) interop-noise-go-reverse
-
 interop-dcutr-go:
 	addr_file=$$(mktemp); err_file=$$(mktemp); \
 	( cd tests/interop/go_dcutr_echo && go run . ) > $$addr_file 2> $$err_file & pid=$$!; \
@@ -179,9 +164,6 @@ interop-dcutr-go:
 interop-dcutr-go-luv-native:
 	LUA_LIBP2P_INTEROP_RUNTIME=luv $(MAKE) interop-dcutr-go
 
-interop-dcutr-go-luv-proxy:
-	LUA_LIBP2P_TCP_LUV_PROXY=1 LUA_LIBP2P_INTEROP_RUNTIME=luv $(MAKE) interop-dcutr-go
-
 interop-dcutr-unilateral-go:
 	addr_file=$$(mktemp); err_file=$$(mktemp); \
 	( cd tests/interop/go_dcutr_unilateral && go run . ) > $$addr_file 2> $$err_file & pid=$$!; \
@@ -205,9 +187,6 @@ interop-dcutr-unilateral-go:
 
 interop-dcutr-unilateral-go-luv-native:
 	LUA_LIBP2P_INTEROP_RUNTIME=luv $(MAKE) interop-dcutr-unilateral-go
-
-interop-dcutr-unilateral-go-luv-proxy:
-	LUA_LIBP2P_TCP_LUV_PROXY=1 LUA_LIBP2P_INTEROP_RUNTIME=luv $(MAKE) interop-dcutr-unilateral-go
 
 interop-perf-js:
 	log_file=$$(mktemp); \
@@ -265,6 +244,3 @@ interop-perf-js-luv:
 
 interop-perf-js-luv-native:
 	LUA_LIBP2P_RUNTIME=luv $(MAKE) interop-perf-js-luv
-
-interop-perf-js-luv-proxy:
-	LUA_LIBP2P_TCP_LUV_PROXY=1 LUA_LIBP2P_RUNTIME=luv $(MAKE) interop-perf-js-luv

@@ -12,7 +12,7 @@ local perf_service = require("lua_libp2p.protocol_perf.service")
 
 local listen_addr = arg[1] or "/ip4/127.0.0.1/tcp/64333"
 local key_path = arg[2] or "examples/.identify_ping_server.ed25519.key"
-local runtime = os.getenv("LUA_LIBP2P_RUNTIME") or "poll"
+local runtime = os.getenv("LUA_LIBP2P_RUNTIME") or "luv"
 
 local function file_exists(path)
 	local f = io.open(path, "rb")

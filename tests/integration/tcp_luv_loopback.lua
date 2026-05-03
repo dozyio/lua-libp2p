@@ -4,10 +4,7 @@ local tcp_luv = require("lua_libp2p.transport_tcp.luv")
 local function run()
   local has_luv = pcall(require, "luv")
   if not has_luv then
-    if tcp_luv.BACKEND ~= "luv-proxy" then
-      return nil, "expected luv-proxy backend marker when luv is unavailable"
-    end
-    return true
+    return nil, "luv is required for tcp_luv"
   end
 
   local listener, listen_err = tcp_luv.listen({
@@ -27,7 +24,7 @@ local function run()
   end
 
   local client, dial_err = tcp_luv.dial(addr, {
-    timeout = 1,
+    timeout = 3,
     io_timeout = 0.2,
   })
   if not client then

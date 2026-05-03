@@ -18,9 +18,9 @@ if not target_addr or target_addr == "" then
   os.exit(2)
 end
 
-local runtime = os.getenv("LUA_LIBP2P_INTEROP_RUNTIME") or "poll"
-if runtime ~= "poll" and runtime ~= "luv" then
-  io.stderr:write("invalid LUA_LIBP2P_INTEROP_RUNTIME, expected 'luv' or 'poll'\n")
+local runtime = os.getenv("LUA_LIBP2P_INTEROP_RUNTIME") or "luv"
+if runtime ~= "luv" then
+  io.stderr:write("invalid LUA_LIBP2P_INTEROP_RUNTIME, expected 'luv'\n")
   os.exit(2)
 end
 

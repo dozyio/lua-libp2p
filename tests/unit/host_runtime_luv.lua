@@ -21,7 +21,7 @@ local function run()
     if not h._tcp_transport then
       return nil, "expected runtime=luv host to select luv tcp transport backend"
     end
-    if h._tcp_transport.BACKEND ~= "luv-native" and h._tcp_transport.BACKEND ~= "luv-proxy" then
+    if h._tcp_transport.BACKEND ~= "luv-native" then
       return nil, "unexpected runtime=luv tcp transport backend marker"
     end
 

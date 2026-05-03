@@ -40,7 +40,6 @@ build = {
     ["lua_libp2p.host"] = "lua_libp2p/host.lua",
     ["lua_libp2p.host_runtime_luv"] = "lua_libp2p/host_runtime_luv.lua",
     ["lua_libp2p.host_runtime_luv_native"] = "lua_libp2p/host_runtime_luv_native.lua",
-    ["lua_libp2p.host_runtime_poll"] = "lua_libp2p/host_runtime_poll.lua",
     ["lua_libp2p.log"] = "lua_libp2p/log.lua",
     ["lua_libp2p.multiaddr"] = "lua_libp2p/multiaddr.lua",
     ["lua_libp2p.network"] = "lua_libp2p/network/init.lua",
@@ -52,7 +51,6 @@ build = {
     ["lua_libp2p.record"] = "lua_libp2p/record/init.lua",
     ["lua_libp2p.record.signed_envelope"] = "lua_libp2p/record/signed_envelope.lua",
     ["lua_libp2p.record.peer_record"] = "lua_libp2p/record/peer_record.lua",
-    ["lua_libp2p.relay"] = "lua_libp2p/relay/init.lua",
     ["lua_libp2p.transport_circuit_relay_v2.autorelay"] = "lua_libp2p/transport_circuit_relay_v2/autorelay.lua",
     ["lua_libp2p.transport_circuit_relay_v2.protocol"] = "lua_libp2p/transport_circuit_relay_v2/protocol.lua",
     ["lua_libp2p.transport_circuit_relay_v2.client"] = "lua_libp2p/transport_circuit_relay_v2/client.lua",
@@ -89,6 +87,5 @@ build = {
     ["lua_libp2p.crypto.ed25519"] = "lua_libp2p/crypto/ed25519.lua",
     ["lua_libp2p.crypto.key_pb"] = "lua_libp2p/crypto/key_pb.lua",
     ["lua_libp2p.crypto.keys"] = "lua_libp2p/crypto/keys.lua",
-    ["lua_libp2p.peerstore"] = "lua_libp2p/peerstore/init.lua",
   },
 }

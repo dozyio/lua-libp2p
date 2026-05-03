@@ -8,13 +8,15 @@ local NONFATAL_KINDS = { "timeout", "closed", "decode", "protocol", "unsupported
 local function new_host()
   local keypair = assert(ed25519.generate_keypair())
   local h, err = host_mod.new({
-    runtime = "poll",
+    runtime = "luv",
     identity = keypair,
     listen_addrs = {},
   })
   if not h then
     error(err)
   end
+  h._tcp_transport = { BACKEND = "test" }
+  h._scheduler_connection_pump = false
   return h
 end
 
@@ -37,7 +39,7 @@ local function run_inner()
     h._connections = { { conn = conn, state = { remote_peer_id = "peer-a" } } }
     h._connections_by_peer["peer-a"] = h._connections[1]
 
-    local ok, err = h:poll_once(0)
+    local ok, err = h:_poll_once_with_ready_map(0)
     if not ok then
       return nil, string.format("expected nonfatal process error '%s' to continue: %s", kind, tostring(err))
     end
@@ -75,7 +77,7 @@ local function run_inner()
     h._connections = { { conn = conn, state = { remote_peer_id = "peer-b" } } }
     h._connections_by_peer["peer-b"] = h._connections[1]
 
-    local ok, err = h:poll_once(0)
+    local ok, err = h:_poll_once_with_ready_map(0)
     if not ok then
       return nil, string.format("expected nonfatal stream error '%s' to continue: %s", kind, tostring(err))
     end

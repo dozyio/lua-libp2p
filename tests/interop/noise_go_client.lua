@@ -6,14 +6,12 @@ package.path = table.concat({
 
 local ed25519 = require("lua_libp2p.crypto.ed25519")
 local noise = require("lua_libp2p.connection_encrypter_noise.protocol")
-local runtime = os.getenv("LUA_LIBP2P_INTEROP_RUNTIME") or "poll"
+local runtime = os.getenv("LUA_LIBP2P_INTEROP_RUNTIME") or "luv"
 local tcp
 if runtime == "luv" then
   tcp = require("lua_libp2p.transport_tcp.luv")
-elseif runtime == "poll" then
-  tcp = require("lua_libp2p.transport_tcp.transport")
 else
-  io.stderr:write("invalid LUA_LIBP2P_INTEROP_RUNTIME, expected 'luv' or 'poll'\n")
+  io.stderr:write("invalid LUA_LIBP2P_INTEROP_RUNTIME, expected 'luv'\n")
   os.exit(2)
 end
 

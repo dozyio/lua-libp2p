@@ -6,6 +6,7 @@ package.path = table.concat({
 
 local host_mod = require("lua_libp2p.host")
 local identify_service = require("lua_libp2p.protocol_identify.service")
+local ping_service = require("lua_libp2p.protocol_ping.service")
 local kad_dht_service = require("lua_libp2p.kad_dht")
 local peer_discovery_bootstrap = require("lua_libp2p.peer_discovery_bootstrap")
 
@@ -171,13 +172,16 @@ function M.new_client(opts)
     listen_addrs = { "/ip4/127.0.0.1/tcp/0" },
     services = {
       identify = { module = identify_service },
-      kad_dht = { module = kad_dht_service },
-    },
-    kad_dht = {
-      mode = "client",
-      alpha = opts.alpha,
-      disjoint_paths = opts.disjoint_paths,
-      address_filter = opts.address_filter,
+      ping = { module = ping_service },
+      kad_dht = {
+        module = kad_dht_service,
+        config = {
+          mode = "client",
+          alpha = opts.alpha,
+          disjoint_paths = opts.disjoint_paths,
+          address_filter = opts.address_filter,
+        },
+      },
     },
     blocking = false,
     connect_timeout = opts.connect_timeout,

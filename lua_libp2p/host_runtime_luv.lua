@@ -1,7 +1,6 @@
 --- Host runtime adapter for luv loop management.
 -- @module lua_libp2p.host_runtime_luv
 local error_mod = require("lua_libp2p.error")
-local host_runtime_poll = require("lua_libp2p.host_runtime_poll")
 
 local ok_luv, uv = pcall(require, "luv")
 
@@ -28,6 +27,48 @@ local function socket_fd(sock)
   end
   return fd
 end
+
+local function unwrap_socket(value, seen)
+  if type(value) ~= "table" then
+    return nil
+  end
+  local visited = seen or {}
+  if visited[value] then
+    return nil
+  end
+  visited[value] = true
+
+  if type(value.socket) == "function" then
+    local ok, sock = pcall(value.socket, value)
+    if ok and sock then
+      return sock
+    end
+  end
+
+  if value._socket then
+    return value._socket
+  end
+  if value._server then
+    return value._server
+  end
+
+  if value._raw then
+    local sock = unwrap_socket(value._raw, visited)
+    if sock then
+      return sock
+    end
+  end
+  if value._raw_conn then
+    local sock = unwrap_socket(value._raw_conn, visited)
+    if sock then
+      return sock
+    end
+  end
+
+  return nil
+end
+
+M.unwrap_socket = unwrap_socket
 
 local function pump_waiting_connections(host)
   if not (host._tcp_transport and host._tcp_transport.BACKEND == "luv-native") then
@@ -225,14 +266,16 @@ function M.sync_watchers(host)
     active[listener] = {
       kind = "listener",
       watchable = listener,
-      socket = host_runtime_poll.unwrap_socket(listener),
+      socket = unwrap_socket(listener),
+      events = "r",
     }
   end
   for _, entry in ipairs(host._connections) do
     active[entry] = {
       kind = "connection",
       watchable = entry.conn,
-      socket = host_runtime_poll.unwrap_socket(entry.conn),
+      socket = unwrap_socket(entry.conn),
+      events = "r",
     }
   end
   for _, pending in ipairs(host._pending_inbound or {}) do
@@ -243,7 +286,32 @@ function M.sync_watchers(host)
     active[pending] = {
       kind = "pending_inbound",
       watchable = raw_conn,
-      socket = host_runtime_poll.unwrap_socket(raw_conn),
+      socket = unwrap_socket(raw_conn),
+      events = "r",
+    }
+  end
+  for connection in pairs(host._task_read_waiters or {}) do
+    active[connection] = {
+      kind = "task_read",
+      watchable = connection,
+      socket = unwrap_socket(connection),
+      events = "r",
+    }
+  end
+  for connection in pairs(host._task_write_waiters or {}) do
+    active[connection] = {
+      kind = "task_write",
+      watchable = connection,
+      socket = unwrap_socket(connection),
+      events = "w",
+    }
+  end
+  for connection in pairs(host._task_dial_waiters or {}) do
+    active[connection] = {
+      kind = "task_dial",
+      watchable = connection,
+      socket = unwrap_socket(connection),
+      events = "w",
     }
   end
 
@@ -301,7 +369,7 @@ function M.sync_watchers(host)
           })
         end
 
-        local ok, start_err = poll_handle:start("r", function(err)
+        local ok, start_err = poll_handle:start(item.events or "r", function(err)
           if err then
             host:_set_runtime_error("luv", error_mod.new("io", "luv poll callback error", {
               kind = item.kind,
@@ -313,6 +381,14 @@ function M.sync_watchers(host)
           if type(host._wake_task_readers) == "function" then
             host:_wake_task_readers(item.watchable)
             host:_wake_task_readers(target)
+          end
+          if type(host._wake_task_writers) == "function" then
+            host:_wake_task_writers(item.watchable)
+            host:_wake_task_writers(target)
+          end
+          if type(host._wake_task_dialers) == "function" then
+            host:_wake_task_dialers(item.watchable)
+            host:_wake_task_dialers(target)
           end
         end)
         if not ok then

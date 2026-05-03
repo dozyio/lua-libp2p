@@ -39,7 +39,7 @@ This repo currently includes:
 ## Project layout
 
 - `lua_libp2p/init.lua`: package entry point
-- `lua_libp2p/transport_tcp`: TCP transport implementations (`poll`, `luv`, `luv-native`)
+- `lua_libp2p/transport_tcp`: TCP transport implementations (`luv`, `luv-native`, and socket compatibility helpers)
 - `lua_libp2p/connection_encrypter_noise`: Noise connection encrypter protocol
 - `lua_libp2p/connection_encrypter_plaintext`: Plaintext v2 connection encrypter protocol
 - `lua_libp2p/muxer`: stream multiplexer abstractions
@@ -80,12 +80,9 @@ This repo currently includes:
 - Tests run with the Lua interpreter directly
 
 Host runtime note:
-- `runtime = "auto"` is the default. It selects `luv` when the `luv` module is available, otherwise `poll`.
-- `runtime = "poll"` keeps the poll/select scheduler.
-- `runtime = "luv"` enables a libuv-backed internal scheduler and uses the native `luv` TCP transport when `luv` is available.
+- `runtime = "auto"` is the default and resolves to `luv`.
+- `runtime = "luv"` enables a libuv-backed internal scheduler and uses the native `luv` TCP transport.
 - With `runtime = "luv"` and `blocking = false`, a uv loop must be running in the process.
-- Set `LUA_LIBP2P_TCP_LUV_PROXY=1` to force the compatibility proxy transport under `runtime = "luv"`.
-- Proxy mode is a temporary fallback/debug path; native luv TCP is the recommended and faster luv runtime transport.
 
 Networking note:
 - `lua_libp2p.network.MESSAGE_SIZE_MAX` is `4 * 1024 * 1024` bytes, matching the 4 MiB practical KAD RPC cap used by Go/JS implementations.
@@ -228,7 +225,6 @@ Or via Make:
 ```bash
 make test
 make test-luv-native
-make test-luv-proxy
 ```
 
 Yamux interop check against go-yamux:
@@ -238,21 +234,16 @@ make interop-yamux-go
 make interop-yamux-go-reverse
 make interop-yamux-go-luv-native
 make interop-yamux-go-reverse-luv-native
-make interop-yamux-go-luv-proxy
-make interop-yamux-go-reverse-luv-proxy
 
 # Noise interop checks against go-libp2p Noise
 make interop-noise-go
 make interop-noise-go-reverse
 make interop-noise-go-luv-native
 make interop-noise-go-reverse-luv-native
-make interop-noise-go-luv-proxy
-make interop-noise-go-reverse-luv-proxy
 
 # JS perf interop check against lua host
 make interop-perf-js
 make interop-perf-js-luv-native
-make interop-perf-js-luv-proxy
 ```
 
 Note: multiaddr conformance tests include a go/js-derived vector set plus an explicit

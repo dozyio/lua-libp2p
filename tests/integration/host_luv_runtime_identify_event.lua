@@ -83,7 +83,7 @@ local function write_out(text)
 end
 
 local h, h_err = host.new({
-  runtime = "poll",
+  runtime = "luv",
   services = {
     identify = require("lua_libp2p.protocol_identify.service"),
   },

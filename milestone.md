@@ -100,7 +100,7 @@ Status: In Progress
 - Provide one runnable example (connect + identify + ping).
 - Done when: user can copy example and interop in under 5 minutes.
 
-Note: API ergonomics improved with host service registration (`services = { "identify", "ping", "perf" }`), peer/multiaddr convenience methods (`peer_id`, `get_multiaddrs`, `get_multiaddrs_raw`), runtime selection (`runtime = "auto" | "poll" | "luv"`), and public bootstrap/DHT crawl examples.
+Note: API ergonomics improved with host service registration (`services = { "identify", "ping", "perf" }`), peer/multiaddr convenience methods (`peer_id`, `get_multiaddrs`, `get_multiaddrs_raw`), runtime selection (`runtime = "auto" | "luv"`), and public bootstrap/DHT crawl examples.
 
 ## Milestone 11: Connection Manager
 Status: Planned
@@ -117,10 +117,10 @@ Status: Complete
 - Add libuv-backed host runtime with non-blocking scheduler integration.
 - Implement native luv TCP listen/dial/read/write path.
 - Keep proxy transport as fallback/debug path.
-- Default to `runtime = "auto"`, selecting luv-native when `luv` is available.
+- Default to `runtime = "auto"`, selecting luv-native.
 - Done when: Lua integration tests and Go/JS interop pass under native luv.
 
-Note: Native luv TCP is now the default when available. Proxy mode remains available via `LUA_LIBP2P_TCP_LUV_PROXY=1`. Runtime tests and interop targets cover native/proxy variants.
+Note: Native luv TCP is the host runtime transport. Runtime tests and interop targets cover the luv-native path.
 
 ## Milestone 13: Kademlia DHT Public Crawl
 Status: In Progress

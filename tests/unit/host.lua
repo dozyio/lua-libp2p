@@ -30,14 +30,17 @@ local function run()
   if not default_host then
     return nil, default_host_err
   end
-  local has_luv = pcall(require, "luv")
-  local expected_default_runtime = has_luv and "luv" or "poll"
-  if default_host._runtime ~= expected_default_runtime then
-    return nil, "host should default to luv when available and poll otherwise"
+  if default_host._runtime ~= "luv" then
+    return nil, "host should default to luv"
+  end
+
+  local poll_host, poll_err = host.new({ runtime = "poll" })
+  if poll_host ~= nil or not poll_err then
+    return nil, "expected removed poll runtime to be rejected"
   end
 
   local bad_circuit_host, bad_circuit_err = host.new({
-    runtime = "poll",
+    runtime = "luv",
     identity = keypair,
     listen_addrs = { "/p2p-circuit" },
     blocking = false,
@@ -46,8 +49,31 @@ local function run()
     return nil, "expected /p2p-circuit listen addr without autorelay to fail"
   end
 
+  local circuit_only_autorelay_service = {
+    new = function()
+      return { start = function() return true end }
+    end,
+  }
+  local circuit_only_host, circuit_only_host_err = host.new({
+    runtime = "luv",
+    identity = keypair,
+    listen_addrs = { "/p2p-circuit" },
+    services = {
+      autorelay = { module = circuit_only_autorelay_service },
+    },
+    blocking = false,
+  })
+  if not circuit_only_host then
+    return nil, circuit_only_host_err
+  end
+  local circuit_started, circuit_start_err = circuit_only_host:start()
+  if not circuit_started then
+    return nil, circuit_start_err
+  end
+  circuit_only_host:stop()
+
   local default_discovery_host, default_discovery_host_err = host.new({
-    runtime = "poll",
+    runtime = "luv",
     identity = keypair,
     peer_discovery = {
       bootstrap = { module = peer_discovery_bootstrap, config = {} },
@@ -64,7 +90,7 @@ local function run()
   end
 
   local discovery_host, discovery_host_err = host.new({
-    runtime = "poll",
+    runtime = "luv",
     identity = keypair,
     peer_discovery = {
       bootstrap = {
@@ -101,7 +127,7 @@ local function run()
   end
 
   local missing_dep_host, missing_dep_err = host.new({
-    runtime = "poll",
+    runtime = "luv",
     identity = keypair,
     services = {
       kad_dht = { module = kad_dht_service },
@@ -138,12 +164,39 @@ local function run()
     return nil, "host task stats should include completed bootstrap dial tasks"
   end
   local host_stats = discovery_host:stats()
-  if host_stats.runtime ~= "poll" or host_stats.tasks.total ~= bootstrap_stats.total then
+  if host_stats.runtime ~= "luv" or host_stats.tasks.total ~= bootstrap_stats.total then
     return nil, "host stats should expose runtime and task stats"
   end
   if not host_stats.connections or host_stats.connections.max_parallel_dials == nil then
     return nil, "host stats should expose connection manager stats"
   end
+
+  local failed_discovery_host = assert(host.new({
+    runtime = "luv",
+    identity = keypair,
+    peer_discovery = {
+      bootstrap = {
+        module = peer_discovery_bootstrap,
+        config = {
+          list = {
+            "/ip4/127.0.0.1/tcp/4003/p2p/12D3KooWCryG7Mon9orvQxcS1rYZjotPgpwoJNHHKcLLfE4Hf5mV",
+          },
+          timeout = 0,
+        },
+      },
+    },
+    blocking = false,
+  }))
+  function failed_discovery_host:dial()
+    return nil, nil, require("lua_libp2p.error").new("io", "forced bootstrap failure")
+  end
+  assert(failed_discovery_host:start())
+  assert(failed_discovery_host:poll_once(0))
+  local failed_tasks = failed_discovery_host:list_tasks()
+  if #failed_tasks ~= 1 or failed_tasks[1].name ~= "host.bootstrap_dial" or failed_tasks[1].result ~= false then
+    return nil, "bootstrap dial task should report false when dial returns nil,error"
+  end
+  failed_discovery_host:stop()
   discovery_host._identify_inflight["peer-a"] = true
   discovery_host._identify_inflight["peer-b"] = true
   if discovery_host:task_stats().identify_inflight ~= 2 then
@@ -153,7 +206,7 @@ local function run()
   discovery_host:stop()
 
   local limited_host = assert(host.new({
-    runtime = "poll",
+    runtime = "luv",
     identity = keypair,
     services = {
       ping = { module = ping_service },
@@ -190,7 +243,7 @@ local function run()
   end
 
   local multi_dial_host = assert(host.new({
-    runtime = "poll",
+    runtime = "luv",
     identity = keypair,
     blocking = false,
   }))
@@ -230,8 +283,15 @@ local function run()
     return nil, "connection manager should apply per-address dial timeout"
   end
 
+  local ipv6_ranked = multi_dial_host.connection_manager:rank_addrs({
+    "/ip6/2001:db8::1/tcp/4001/p2p/" .. multi_peer_id,
+  })
+  if ipv6_ranked[1] == nil or ipv6_ranked[1]:sub(1, 5) ~= "/ip6/" then
+    return nil, "connection manager should retain direct ipv6 tcp addresses"
+  end
+
   local selection_host = assert(host.new({
-    runtime = "poll",
+    runtime = "luv",
     identity = keypair,
     blocking = false,
   }))
@@ -281,7 +341,7 @@ local function run()
   end
 
   local prune_host = assert(host.new({
-    runtime = "poll",
+    runtime = "luv",
     identity = keypair,
     blocking = false,
     dial_queue = {
@@ -311,7 +371,7 @@ local function run()
   end
 
   local weighted_host = assert(host.new({
-    runtime = "poll",
+    runtime = "luv",
     identity = keypair,
     blocking = false,
     dial_queue = {
@@ -343,7 +403,7 @@ local function run()
   end
 
   local watermark_host = assert(host.new({
-    runtime = "poll",
+    runtime = "luv",
     identity = keypair,
     blocking = false,
     dial_queue = {
@@ -375,7 +435,7 @@ local function run()
   end
 
   local all_protected_host = assert(host.new({
-    runtime = "poll",
+    runtime = "luv",
     identity = keypair,
     blocking = false,
     dial_queue = {
@@ -396,7 +456,7 @@ local function run()
   end
 
   local cleanup_host = assert(host.new({
-    runtime = "poll",
+    runtime = "luv",
     identity = keypair,
     blocking = false,
   }))
@@ -412,7 +472,7 @@ local function run()
   end
 
   local direction_host = assert(host.new({
-    runtime = "poll",
+    runtime = "luv",
     identity = keypair,
     blocking = false,
     dial_queue = {
@@ -450,7 +510,7 @@ local function run()
   end
 
   local per_peer_host = assert(host.new({
-    runtime = "poll",
+    runtime = "luv",
     identity = keypair,
     blocking = false,
     dial_queue = {
@@ -470,7 +530,7 @@ local function run()
   end
 
   local protected_inbound_host = assert(host.new({
-    runtime = "poll",
+    runtime = "luv",
     identity = keypair,
     blocking = false,
     dial_queue = {
@@ -491,7 +551,7 @@ local function run()
   end
 
   local total_timeout_host = assert(host.new({
-    runtime = "poll",
+    runtime = "luv",
     identity = keypair,
     blocking = false,
   }))
@@ -516,7 +576,7 @@ local function run()
       return nil, identity_err
     end
     local typed_host, typed_host_err = host.new({
-      runtime = "poll",
+      runtime = "luv",
       identity = identity,
       blocking = false,
     })
@@ -529,7 +589,7 @@ local function run()
   end
 
   local h, h_err = host.new({
-    runtime = "poll",
+    runtime = "luv",
     identity = keypair,
     listen_addrs = { "/ip4/127.0.0.1/tcp/0" },
     transports = { "tcp" },
@@ -584,7 +644,7 @@ local function run()
     }
   end
   local upnp_host, upnp_host_err = host.new({
-    runtime = "poll",
+    runtime = "luv",
     identity = keypair,
     services = {
       upnp_nat = {
@@ -696,7 +756,7 @@ local function run()
     return nil, "get_multiaddrs should preserve terminal p2p address"
   end
 
-  h._start_blocking = true
+  h._start_blocking = false
   h._start_max_iterations = 1
   h._start_poll_interval = 0
   started, start_err = h:start()

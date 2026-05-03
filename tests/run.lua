@@ -19,7 +19,6 @@ local tests = {
   (require("tests.integration.host_luv_scheduler_pump_ping_subprocess")),
   (require("tests.integration.host_luv_scheduler_identify_autorelay_dht_pressure")),
   (require("tests.integration.host_luv_scheduler_pump_stream_error_kinds_subprocess")),
-  (require("tests.integration.host_poll_runtime_stream_error_kinds_subprocess")),
   (require("tests.integration.host_oversized_mss")),
   (require("tests.integration.mss_tcp_framing")),
   (require("tests.integration.ping_tcp")),

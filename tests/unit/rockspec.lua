@@ -31,7 +31,6 @@ local function run()
     "lua_libp2p.protocol_identify.protocol",
     "lua_libp2p.protocol_ping.protocol",
     "lua_libp2p.protocol_perf.protocol",
-    "lua_libp2p.relay",
     "lua_libp2p.transport_circuit_relay_v2.autorelay",
     "lua_libp2p.transport_circuit_relay_v2.client",
     "lua_libp2p.protocol_identify.service",
@@ -47,8 +46,20 @@ local function run()
   }
 
   for _, module_name in ipairs(required) do
-    if type(modules[module_name]) ~= "string" or modules[module_name] == "" then
+    local path = modules[module_name]
+    if type(path) ~= "string" or path == "" then
       return nil, "rockspec is missing module export: " .. module_name
+    end
+
+    local file = io.open(path, "r")
+    if not file then
+      return nil, "rockspec module path does not exist: " .. module_name .. " -> " .. path
+    end
+    file:close()
+
+    local require_ok, require_err = pcall(require, module_name)
+    if not require_ok then
+      return nil, "rockspec module is not requireable: " .. module_name .. ": " .. tostring(require_err)
     end
   end
 

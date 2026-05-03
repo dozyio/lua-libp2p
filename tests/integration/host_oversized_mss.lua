@@ -13,7 +13,7 @@ end
 
 local function run()
   local h, host_err = host_mod.new({
-    runtime = "poll",
+    runtime = "luv",
     listen_addrs = { "/ip4/127.0.0.1/tcp/0" },
     blocking = false,
     accept_timeout = 0.05,

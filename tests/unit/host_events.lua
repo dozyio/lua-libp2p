@@ -8,7 +8,7 @@ local function run()
 
   local host, host_err = host_mod.new({
     identity = keypair,
-    runtime = "poll",
+    runtime = "luv",
     on = {
       peer_connected = function(payload)
         if payload and payload.peer_id == "peer-a" then
@@ -97,6 +97,29 @@ local function run()
   end
   if called ~= 0 then
     return nil, "removed handler should not be called"
+  end
+
+  local rollback_host = assert(host_mod.new({
+    identity = keypair,
+    runtime = "luv",
+    on = {
+      connection_opened = function()
+        error("forced event failure")
+      end,
+    },
+  }))
+  local rollback_entry, rollback_err = rollback_host:_register_connection({ close = function() return true end }, {
+    remote_peer_id = "peer-rollback",
+    direction = "outbound",
+  })
+  if rollback_entry ~= nil or not rollback_err then
+    return nil, "event failure should reject connection registration"
+  end
+  if #rollback_host._connections ~= 0
+    or rollback_host._connections_by_peer["peer-rollback"] ~= nil
+    or rollback_host.connection_manager:stats().connections ~= 0
+  then
+    return nil, "failed connection registration should rollback host and manager indexes"
   end
 
   if not host:unsubscribe(bus_disconnected) then
@@ -209,6 +232,51 @@ local function run()
   if not unwatch_called then
     return nil, "read wake should unregister readable watcher"
   end
+
+  local socket = require("socket")
+  local server = assert(socket.bind("127.0.0.1", 0))
+  server:settimeout(0)
+  local _, port = assert(server:getsockname())
+  local client = assert(socket.tcp())
+  client:settimeout(0)
+  client:connect("127.0.0.1", port)
+  local accepted
+  for _ = 1, 100 do
+    accepted = server:accept()
+    if accepted then
+      break
+    end
+    socket.sleep(0.001)
+  end
+  if not accepted then
+    client:close()
+    server:close()
+    return nil, "test tcp accept should complete"
+  end
+  accepted:settimeout(0)
+  local luv_wait_host = assert(host_mod.new({
+    identity = keypair,
+    runtime = "luv",
+  }))
+  local luv_readable = { _socket = accepted }
+  local luv_read_resumed = false
+  local luv_read_task = assert(luv_wait_host:spawn_task("test.luv_read_wait", function(ctx)
+    ctx:wait_read(luv_readable)
+    luv_read_resumed = true
+    return true
+  end))
+  assert(luv_wait_host:_run_background_tasks({ max_resumes = 1 }))
+  if luv_read_task.status ~= "waiting_read" then
+    return nil, "luv read task should park before socket readiness"
+  end
+  assert(client:send("x"))
+  assert(luv_wait_host:poll_once(0.05))
+  if luv_read_task.status ~= "completed" or not luv_read_resumed then
+    return nil, "luv runtime should wake readable task waiters from socket readiness"
+  end
+  accepted:close()
+  client:close()
+  server:close()
   local dial_unwatch_called = false
   local dialable = {}
   function dialable:watch_luv_connect(on_connect)
@@ -332,7 +400,7 @@ local function run()
 
   local wait_host = assert(host_mod.new({
     identity = keypair,
-    runtime = "poll",
+    runtime = "luv",
   }))
   local run_task = assert(wait_host:spawn_task("test.run_until_task", function()
     return "run-result"
@@ -454,7 +522,7 @@ local function run()
 
   local close_host = assert(host_mod.new({
     identity = keypair,
-    runtime = "poll",
+    runtime = "luv",
   }))
   local close_cleanup = { read = false, dial = false, write = false, task = false }
   local close_readable = {}
@@ -509,7 +577,7 @@ local function run()
 
   local fairness_host = assert(host_mod.new({
     identity = keypair,
-    runtime = "poll",
+    runtime = "luv",
     task_resume_budget = 12,
   }))
   local fairness_readables = {}
@@ -554,7 +622,7 @@ local function run()
 
   local dial_queue_host = assert(host_mod.new({
     identity = keypair,
-    runtime = "poll",
+    runtime = "luv",
     dial_queue = {
       max_parallel_dials = 1,
     },
@@ -612,7 +680,7 @@ local function run()
 
   local full_queue_host = assert(host_mod.new({
     identity = keypair,
-    runtime = "poll",
+    runtime = "luv",
     dial_queue = {
       max_parallel_dials = 0,
       max_dial_queue_length = 1,

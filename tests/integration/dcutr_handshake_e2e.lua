@@ -6,7 +6,7 @@ local identify_service = require("lua_libp2p.protocol_identify.service")
 local function new_host()
   local identity = assert(ed25519.generate_keypair())
   local host, host_err = host_mod.new({
-    runtime = "poll",
+    runtime = "luv",
     identity = identity,
     blocking = false,
     listen_addrs = { "/ip4/127.0.0.1/tcp/0" },

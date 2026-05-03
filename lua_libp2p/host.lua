@@ -10,14 +10,12 @@ local error_mod = require("lua_libp2p.error")
 local log = require("lua_libp2p.log")
 local host_runtime_luv = require("lua_libp2p.host_runtime_luv")
 local host_runtime_luv_native = require("lua_libp2p.host_runtime_luv_native")
-local host_runtime_poll = require("lua_libp2p.host_runtime_poll")
 local multiaddr = require("lua_libp2p.multiaddr")
 local peerstore = require("lua_libp2p.peerstore")
 local identify = require("lua_libp2p.protocol_identify.protocol")
 local key_pb = require("lua_libp2p.crypto.key_pb")
 local relay_proto = require("lua_libp2p.transport_circuit_relay_v2.protocol")
 local upgrader = require("lua_libp2p.network.upgrader")
-local tcp_poll = require("lua_libp2p.transport_tcp.transport")
 local tcp_luv = require("lua_libp2p.transport_tcp.luv")
 
 local M = {}
@@ -385,11 +383,6 @@ local function runtime_luv_sync_watchers(host)
 end
 
 local RUNTIME_IMPLS = {
-  poll = {
-    start = host_runtime_poll.start,
-    stop = host_runtime_poll.stop,
-    poll_once = host_runtime_poll.poll_once,
-  },
   luv = {
     start = runtime_luv_start,
     stop = runtime_luv_stop,
@@ -399,11 +392,7 @@ local RUNTIME_IMPLS = {
 }
 
 local function default_runtime_name()
-  local ok_luv = pcall(require, "luv")
-  if ok_luv then
-    return "luv"
-  end
-  return "poll"
+  return "luv"
 end
 
 local function extract_peer_id_from_multiaddr(addr)
@@ -432,6 +421,15 @@ end
 local function contains_circuit_listen_addr(addrs)
   for _, addr in ipairs(addrs or {}) do
     if addr == "/p2p-circuit" then
+      return true
+    end
+  end
+  return false
+end
+
+local function contains_non_circuit_listen_addr(addrs)
+  for _, addr in ipairs(addrs or {}) do
+    if addr ~= "/p2p-circuit" then
       return true
     end
   end
@@ -571,7 +569,7 @@ function Host:new(config)
   if runtime_impl == nil then
     return nil, error_mod.new("input", "unsupported host runtime", {
       runtime = runtime_name,
-      supported = { "auto", "poll", "luv" },
+      supported = { "auto", "luv" },
     })
   end
   local start_blocking = cfg.blocking
@@ -654,7 +652,7 @@ function Host:new(config)
     _identify_inflight = {},
     _runtime = runtime_name,
     _runtime_impl = runtime_impl,
-    _tcp_transport = runtime_name == "luv" and tcp_luv or tcp_poll,
+    _tcp_transport = tcp_luv,
     _luv_tick_timer = nil,
     _luv_watchers = {},
     _luv_ready = {},
@@ -1462,6 +1460,28 @@ function Host:_register_connection(conn, state)
     self._connections_by_peer[peer_id][connection_id] = entry
   end
 
+  local function rollback_registration()
+    for i = #self._connections, 1, -1 do
+      if self._connections[i] == entry then
+        table.remove(self._connections, i)
+        break
+      end
+    end
+    self._connections_by_id[connection_id] = nil
+    if peer_id and self._connections_by_peer[peer_id] then
+      self._connections_by_peer[peer_id][connection_id] = nil
+      if next(self._connections_by_peer[peer_id]) == nil then
+        self._connections_by_peer[peer_id] = nil
+      end
+    end
+    if entry._connection_manager_tracked
+      and self.connection_manager
+      and type(self.connection_manager.on_connection_closed) == "function"
+    then
+      self.connection_manager:on_connection_closed(entry)
+    end
+  end
+
   local ok, emit_err = emit_event(self, "peer_connected", {
     connection = entry.conn,
     connection_id = connection_id,
@@ -1469,6 +1489,7 @@ function Host:_register_connection(conn, state)
     peer_id = peer_id,
   })
   if not ok then
+    rollback_registration()
     return nil, emit_err
   end
 
@@ -1479,19 +1500,25 @@ function Host:_register_connection(conn, state)
     peer_id = peer_id,
   })
   if not opened_ok then
+    rollback_registration()
     return nil, opened_err
   end
 
   if self._running and self._runtime_impl and self._runtime_impl.sync_watchers then
     local sync_ok, sync_err = self._runtime_impl.sync_watchers(self)
     if not sync_ok then
+      rollback_registration()
       return nil, sync_err
     end
   end
 
-  if self._scheduler_connection_pump and host_runtime_luv_native.is_native_host(self) then
+  if self._scheduler_connection_pump
+    and host_runtime_luv_native.is_native_host(self)
+    and (type(entry.conn.pump_once) == "function" or type(entry.conn.process_one) == "function")
+  then
     local _, pump_err = host_runtime_luv_native.start_connection_pump_task(self, entry, is_nonfatal_stream_error)
     if pump_err then
+      rollback_registration()
       return nil, pump_err
     end
   end
@@ -1499,8 +1526,10 @@ function Host:_register_connection(conn, state)
   if self.connection_manager and type(self.connection_manager.on_connection_opened) == "function" then
     local tracked, track_err = self.connection_manager:on_connection_opened(entry)
     if not tracked then
+      rollback_registration()
       return nil, track_err
     end
+    entry._connection_manager_tracked = true
   end
 
   return entry
@@ -2640,6 +2669,23 @@ function Host:new_stream(peer_or_addr, protocols, opts)
 end
 
 function Host:_poll_once_with_ready_map(timeout, ready_map)
+  if ready_map then
+    for connection in pairs(self._task_read_waiters) do
+      if ready_map[connection] then
+        self:_wake_task_readers(connection)
+      end
+    end
+    for connection in pairs(self._task_write_waiters) do
+      if ready_map[connection] then
+        self:_wake_task_writers(connection)
+      end
+    end
+    for connection in pairs(self._task_dial_waiters) do
+      if ready_map[connection] then
+        self:_wake_task_dialers(connection)
+      end
+    end
+  end
 
   local function remove_pending_relay_inbound(index, pending)
     if self._pending_relay_inbound[index] == pending then
@@ -2941,16 +2987,14 @@ function Host:_poll_once_with_ready_map(timeout, ready_map)
   return true
 end
 
-function Host:_poll_once_poll(timeout)
-  local ready_map, ready_err = host_runtime_poll.build_ready_map(self, timeout)
-  if not ready_map and ready_err then
-    return nil, ready_err
-  end
-  return self:_poll_once_with_ready_map(timeout, ready_map)
-end
-
 function Host:_poll_once_luv(timeout)
   local ok_luv, uv = pcall(require, "luv")
+  if ok_luv and self._runtime_impl and self._runtime_impl.sync_watchers then
+    local sync_ok, sync_err = self._runtime_impl.sync_watchers(self)
+    if not sync_ok then
+      return nil, sync_err
+    end
+  end
   if ok_luv then
     local ok, err = pcall(function()
       return uv.run("nowait")
@@ -3012,8 +3056,8 @@ function Host:_run_bootstrap_discovery_if_due()
           addr = (peer.addrs and peer.addrs[1]) or nil,
           subsystem = "host",
         })
-        local ok, dial_err = pcall(function()
-          self:dial({
+        local ok, dial_conn, _, dial_err = pcall(function()
+          return self:dial({
             peer_id = peer.peer_id,
             addrs = peer.addrs,
           }, {
@@ -3022,20 +3066,21 @@ function Host:_run_bootstrap_discovery_if_due()
             ctx = ctx,
           })
         end)
-        if ok then
+        if ok and dial_conn then
           log.info("bootstrap dial succeeded", {
             peer_id = peer.peer_id,
             subsystem = "host",
           })
         else
+          local cause = ok and dial_err or dial_conn
           log.warn("bootstrap dial failed", {
             peer_id = peer.peer_id,
-            cause = tostring(dial_err),
+            cause = tostring(cause),
             subsystem = "host",
           })
         end
         -- Bootstrap dials are opportunistic; identify events seed interested services.
-        return ok == true
+        return ok == true and dial_conn ~= nil
       end, {
         service = "host",
         peer_id = peer.peer_id,
@@ -3122,7 +3167,7 @@ function Host:poll_once(timeout)
   if self._runtime_impl and self._runtime_impl.poll_once then
     return self._runtime_impl.poll_once(self, timeout)
   end
-  return self:_poll_once_poll(timeout)
+  return nil, error_mod.new("state", "host runtime has no poll_once implementation", { runtime = self._runtime })
 end
 
 --- Start the host runtime.
@@ -3135,7 +3180,7 @@ function Host:start()
     if not ok then
       return nil, bind_err
     end
-    if not self._listeners[1] then
+    if not self._listeners[1] and (not self.autorelay or contains_non_circuit_listen_addr(self.listen_addrs)) then
       return nil, error_mod.new("state", "no listeners bound")
     end
   end

@@ -34,7 +34,12 @@ local function is_dialable_tcp_addr(addr)
   end
   local host_part = parsed.components[1]
   local tcp_part = parsed.components[2]
-  if host_part.protocol ~= "ip4" and host_part.protocol ~= "dns" and host_part.protocol ~= "dns4" and host_part.protocol ~= "dns6" then
+  if host_part.protocol ~= "ip4"
+    and host_part.protocol ~= "ip6"
+    and host_part.protocol ~= "dns"
+    and host_part.protocol ~= "dns4"
+    and host_part.protocol ~= "dns6"
+  then
     return false
   end
   if tcp_part.protocol ~= "tcp" then
