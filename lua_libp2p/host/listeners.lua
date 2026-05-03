@@ -40,6 +40,9 @@ function M.install(Host)
         multiaddr = addr,
         accept_timeout = self._accept_timeout,
         io_timeout = self._io_timeout,
+        nodelay = self._tcp_options and self._tcp_options.nodelay,
+        keepalive = self._tcp_options and self._tcp_options.keepalive,
+        keepalive_initial_delay = self._tcp_options and self._tcp_options.keepalive_initial_delay,
       })
       if not listener then
         close_all(next_listeners)

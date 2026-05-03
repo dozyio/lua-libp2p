@@ -142,6 +142,15 @@ local function contains_non_circuit_listen_addr(addrs)
   return false
 end
 
+local function tcp_options_from_config(cfg)
+  local options = cfg.tcp or {}
+  return {
+    nodelay = options.nodelay,
+    keepalive = options.keepalive,
+    keepalive_initial_delay = options.keepalive_initial_delay,
+  }
+end
+
 function Host:new(config)
   local cfg = config or {}
   local runtime_name = cfg.runtime or "auto"
@@ -221,6 +230,7 @@ function Host:new(config)
     _connect_timeout = cfg.connect_timeout or 6,
     _io_timeout = cfg.io_timeout or 10,
     _accept_timeout = cfg.accept_timeout or 0,
+    _tcp_options = tcp_options_from_config(cfg),
     _service_options = {
       identify = cfg.identify or {},
       autonat = cfg.autonat or {},
@@ -975,7 +985,9 @@ end
 -- Scheduler/runtime tuning keys include: `event_queue_max`, `task_resume_budget`,
 -- `accept_timeout`, `max_iterations`, `poll_interval`, and `on_started`.
 -- Network behavior keys include: `dial_timeout`, `connect_timeout`, `connection_manager`,
--- `autonat`, `kad_dht`, `autorelay`, `upnp_nat`, `pcp`, `nat_pmp`, and `dcutr`.
+-- `tcp`, `autonat`, `kad_dht`, `autorelay`, `upnp_nat`, `pcp`, `nat_pmp`, and `dcutr`.
+-- `tcp.nodelay` and `tcp.keepalive` default to enabled; `tcp.keepalive_initial_delay`
+-- defaults to 0 when keepalive is enabled.
 -- @treturn table|nil host
 -- @treturn[opt] table err
 function M.new(config)

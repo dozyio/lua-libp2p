@@ -84,6 +84,8 @@ end
 --- Start a listener using native luv TCP.
 -- `opts.multiaddr` or `opts.host`/`opts.port` selects bind endpoint.
 -- `opts.accept_timeout` and `opts.io_timeout` tune socket timeouts.
+-- `opts.nodelay` and `opts.keepalive` default to enabled; `keepalive_initial_delay`
+-- defaults to 0 when keepalive is enabled.
 -- @param target Optional listen target (string or table).
 -- @tparam[opt] table opts
 -- @treturn table|nil listener
@@ -99,6 +101,8 @@ end
 --- Dial using native luv TCP.
 -- `opts.port` is used when `target` is host string.
 -- `opts.timeout`, `opts.io_timeout`, and `opts.ctx` control dial/IO timing.
+-- `opts.nodelay` and `opts.keepalive` default to enabled; `keepalive_initial_delay`
+-- defaults to 0 when keepalive is enabled.
 -- @param target Dial target (multiaddr, host string, or table).
 -- @tparam[opt] table opts
 -- @treturn table|nil conn
