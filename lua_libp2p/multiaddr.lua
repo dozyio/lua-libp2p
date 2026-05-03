@@ -1,3 +1,5 @@
+--- Multiaddr parsing, formatting, and helpers.
+-- @module lua_libp2p.multiaddr
 local error_mod = require("lua_libp2p.error")
 local peerid = require("lua_libp2p.peerid")
 local varint = require("lua_libp2p.multiformats.varint")
@@ -45,11 +47,81 @@ local function parse_ip4_parts(value)
   return parts
 end
 
-local function validate_ip6(value)
-  if not value:match(":") then
-    return nil, "invalid ip6 address"
+local function split_colon_groups(value)
+  local out = {}
+  if value == "" then
+    return out
   end
-  if not value:match("^[%x:%.]+$") then
+  for group in value:gmatch("[^:]+") do
+    out[#out + 1] = group
+  end
+  return out
+end
+
+local function parse_ip6_groups(value)
+  local text = tostring(value or ""):lower():gsub("%%.+$", "")
+  if text == "" or not text:find(":", 1, true) then
+    return nil
+  end
+  if text:find("::", 1, true) and text:find("::", text:find("::", 1, true) + 2, true) then
+    return nil
+  end
+
+  if text:find("%.", 1, false) then
+    local prefix, ipv4 = text:match("^(.*:)([^:]+%.%d+%.%d+%.%d+)$")
+    if not prefix then
+      return nil
+    end
+    local parts = parse_ip4_parts(ipv4)
+    if not parts then
+      return nil
+    end
+    text = prefix .. string.format("%x:%x", parts[1] * 256 + parts[2], parts[3] * 256 + parts[4])
+  end
+
+  local left, right = text:match("^(.-)::(.-)$")
+  local groups = {}
+  if left ~= nil then
+    local left_groups = split_colon_groups(left)
+    local right_groups = split_colon_groups(right)
+    if #left_groups + #right_groups > 8 then
+      return nil
+    end
+    for _, group in ipairs(left_groups) do
+      groups[#groups + 1] = group
+    end
+    for _ = 1, 8 - #left_groups - #right_groups do
+      groups[#groups + 1] = "0"
+    end
+    for _, group in ipairs(right_groups) do
+      groups[#groups + 1] = group
+    end
+  else
+    groups = split_colon_groups(text)
+    if #groups ~= 8 then
+      return nil
+    end
+  end
+
+  if #groups ~= 8 then
+    return nil
+  end
+  local out = {}
+  for i, group in ipairs(groups) do
+    if group == "" or #group > 4 or not group:match("^[%x]+$") then
+      return nil
+    end
+    local n = tonumber(group, 16)
+    if not n or n < 0 or n > 0xffff then
+      return nil
+    end
+    out[i] = n
+  end
+  return out
+end
+
+local function validate_ip6(value)
+  if not parse_ip6_groups(value) then
     return nil, "invalid ip6 address"
   end
   return true
@@ -216,6 +288,10 @@ local function normalize_text(text)
   return normalized
 end
 
+--- Parse a multiaddr string into components.
+-- @tparam string text Multiaddr text.
+-- @treturn table|nil parsed
+-- @treturn[opt] table err
 function M.parse(text)
   if type(text) ~= "string" then
     return nil, error_mod.new("input", "multiaddr must be a string")
@@ -281,6 +357,10 @@ function M.parse(text)
   }
 end
 
+--- Format a parsed multiaddr back to text.
+-- @tparam table|string addr Parsed object or address string.
+-- @treturn string|nil text
+-- @treturn[opt] table err
 function M.format(addr)
   if type(addr) ~= "table" or type(addr.components) ~= "table" then
     return nil, error_mod.new("input", "multiaddr object must contain components")
@@ -318,6 +398,7 @@ function M.format(addr)
   return "/" .. table.concat(out, "/")
 end
 
+--- Encapsulate one multiaddr inside another.
 function M.encapsulate(base, extra)
   local left, left_err
   if type(base) == "string" then
@@ -349,6 +430,7 @@ function M.encapsulate(base, extra)
   return M.format({ components = components })
 end
 
+--- Remove a trailing suffix multiaddr.
 function M.decapsulate(base, suffix)
   local left, left_err = M.parse(base)
   if not left then
@@ -381,6 +463,112 @@ function M.decapsulate(base, suffix)
   return M.format({ components = kept })
 end
 
+local function parse_input(input)
+  if type(input) == "string" then
+    return M.parse(input)
+  end
+  if type(input) == "table" and type(input.components) == "table" then
+    return input
+  end
+  return nil, error_mod.new("input", "invalid multiaddr object")
+end
+
+local function copy_components(components, first, last)
+  local out = {}
+  for i = first or 1, last or #components do
+    local c = components[i]
+    out[#out + 1] = { protocol = c.protocol, value = c.value }
+  end
+  return out
+end
+
+--- Extract relay components from a relay destination address.
+function M.relay_info(input)
+  local addr, parse_err = parse_input(input)
+  if not addr then
+    return nil, parse_err
+  end
+
+  local circuit_index = nil
+  for i, component in ipairs(addr.components) do
+    if component.protocol == "p2p-circuit" then
+      circuit_index = i
+      break
+    end
+  end
+  if not circuit_index then
+    return nil, error_mod.new("input", "multiaddr does not include /p2p-circuit")
+  end
+
+  local relay_peer_index = nil
+  for i = circuit_index - 1, 1, -1 do
+    if addr.components[i].protocol == "p2p" then
+      relay_peer_index = i
+      break
+    end
+  end
+  if not relay_peer_index then
+    return nil, error_mod.new("input", "relay multiaddr must include relay /p2p peer id before /p2p-circuit")
+  end
+
+  local destination_peer_id = nil
+  if addr.components[circuit_index + 1] and addr.components[circuit_index + 1].protocol == "p2p" then
+    destination_peer_id = addr.components[circuit_index + 1].value
+  end
+
+  local relay_addr, relay_addr_err = M.format({ components = copy_components(addr.components, 1, relay_peer_index) })
+  if not relay_addr then
+    return nil, relay_addr_err
+  end
+  local circuit_addr, circuit_addr_err = M.format({ components = copy_components(addr.components, 1, circuit_index) })
+  if not circuit_addr then
+    return nil, circuit_addr_err
+  end
+
+  return {
+    relay_peer_id = addr.components[relay_peer_index].value,
+    relay_addr = relay_addr,
+    circuit_addr = circuit_addr,
+    destination_peer_id = destination_peer_id,
+    circuit_index = circuit_index,
+  }
+end
+
+--- Check whether an address is a relay (`/p2p-circuit`) address.
+function M.is_relay_addr(input)
+  return M.relay_info(input) ~= nil
+end
+
+--- Build a relay reservation address from a relay peer address.
+function M.relay_reservation_addr(relay_addr)
+  local info = M.relay_info(relay_addr)
+  if info then
+    return info.circuit_addr
+  end
+  return M.encapsulate(relay_addr, "/p2p-circuit")
+end
+
+--- Build a relay destination address for a target peer.
+function M.relay_destination_addr(relay_addr, destination_peer_id)
+  if type(destination_peer_id) ~= "string" or destination_peer_id == "" then
+    return nil, error_mod.new("input", "destination peer id must be non-empty")
+  end
+  local ok, reason = validate_peer_id(destination_peer_id)
+  if not ok then
+    return nil, error_mod.new("input", "invalid destination peer id", { reason = reason })
+  end
+  local reservation, reservation_err = M.relay_reservation_addr(relay_addr)
+  if not reservation then
+    return nil, reservation_err
+  end
+  local info = M.relay_info(reservation)
+  if info and info.destination_peer_id then
+    reservation = info.circuit_addr
+  end
+  return M.encapsulate(reservation, "/p2p/" .. destination_peer_id)
+end
+
+--- Convert multiaddr into `{ host, port }` TCP endpoint.
 function M.to_tcp_endpoint(input)
   local addr = input
   if type(addr) == "string" then
@@ -399,7 +587,12 @@ function M.to_tcp_endpoint(input)
   end
 
   local host_part = addr.components[1]
-  if host_part.protocol ~= "ip4" and host_part.protocol ~= "dns" and host_part.protocol ~= "dns4" and host_part.protocol ~= "dns6" then
+  if host_part.protocol ~= "ip4"
+    and host_part.protocol ~= "ip6"
+    and host_part.protocol ~= "dns"
+    and host_part.protocol ~= "dns4"
+    and host_part.protocol ~= "dns6"
+  then
     return nil, error_mod.new("input", "unsupported tcp host protocol", { protocol = host_part.protocol })
   end
 
@@ -450,6 +643,7 @@ local function first_host_component(input)
   return nil
 end
 
+--- Return true when address is private/loopback/link-local.
 function M.is_private_addr(input)
   local host = first_host_component(input)
   if not host then
@@ -486,6 +680,7 @@ function M.is_private_addr(input)
   return dns_name == "localhost" or dns_name:match("%.localhost$") ~= nil or dns_name:match("%.local$") ~= nil
 end
 
+--- Return true when address is considered public-routable.
 function M.is_public_addr(input)
   local host = first_host_component(input)
   if not host then
@@ -504,6 +699,30 @@ local function ip4_from_bytes(bytes)
     return nil, error_mod.new("decode", "ip4 byte length must be 4")
   end
   return string.format("%d.%d.%d.%d", bytes:byte(1), bytes:byte(2), bytes:byte(3), bytes:byte(4))
+end
+
+local function ip6_to_bytes(value)
+  local groups = parse_ip6_groups(value)
+  if not groups then
+    return nil, error_mod.new("input", "invalid ip6 address")
+  end
+  local out = {}
+  for _, group in ipairs(groups) do
+    out[#out + 1] = string.char(math.floor(group / 256), group % 256)
+  end
+  return table.concat(out)
+end
+
+local function ip6_from_bytes(bytes)
+  if #bytes ~= 16 then
+    return nil, error_mod.new("decode", "ip6 byte length must be 16")
+  end
+  local groups = {}
+  for i = 1, 16, 2 do
+    local a, b = bytes:byte(i), bytes:byte(i + 1)
+    groups[#groups + 1] = string.format("%x", a * 256 + b)
+  end
+  return table.concat(groups, ":")
 end
 
 local function port_to_bytes(text)
@@ -528,7 +747,7 @@ local function encode_value(protocol, value)
     return ip4_to_bytes(value)
   end
   if kind == "ip6" then
-    return nil, error_mod.new("unsupported", "ip6 binary encoding not implemented yet")
+    return ip6_to_bytes(value)
   end
   if kind == "port" then
     return port_to_bytes(value)
@@ -573,7 +792,15 @@ local function decode_value(protocol, bytes, offset)
     return value, finish + 1
   end
   if kind == "ip6" then
-    return nil, nil, error_mod.new("unsupported", "ip6 binary decoding not implemented yet")
+    local finish = i + 15
+    if finish > #bytes then
+      return nil, nil, error_mod.new("decode", "truncated ip6 value")
+    end
+    local value, err = ip6_from_bytes(bytes:sub(i, finish))
+    if not value then
+      return nil, nil, err
+    end
+    return value, finish + 1
   end
   if kind == "port" then
     local finish = i + 1
@@ -603,6 +830,7 @@ local function decode_value(protocol, bytes, offset)
   return raw, finish + 1
 end
 
+--- Encode multiaddr text to binary bytes.
 function M.to_bytes(input)
   local addr = input
   if type(addr) == "string" then
@@ -644,6 +872,7 @@ function M.to_bytes(input)
   return table.concat(parts)
 end
 
+--- Decode binary multiaddr bytes to text and components.
 function M.from_bytes(bytes)
   if type(bytes) ~= "string" or bytes == "" then
     return nil, error_mod.new("input", "multiaddr bytes must be non-empty")

@@ -32,10 +32,16 @@ if not client then
 end
 
 local started_at = os.time()
-local result, value_err = client.dht:find_value(key, {
+local op, op_err = client.dht:find_value(key, {
   alpha = opts.alpha,
   disjoint_paths = opts.disjoint_paths,
 })
+local result, value_err
+if op then
+  result, value_err = op:result({ timeout = opts.timeout })
+else
+  value_err = op_err
+end
 if not result then
   common.stop(client)
   io.stderr:write("find_value failed: " .. tostring(value_err) .. "\n")

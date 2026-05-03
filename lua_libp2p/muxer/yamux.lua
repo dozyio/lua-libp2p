@@ -1,4 +1,7 @@
+--- Yamux stream multiplexer implementation.
+-- @module lua_libp2p.muxer.yamux
 local error_mod = require("lua_libp2p.error")
+local log = require("lua_libp2p.log")
 
 local M = {}
 
@@ -180,7 +183,66 @@ function Stream:new(session, stream_id)
     remote_closed = false,
     reset = false,
     acked = false,
+    _read_watch_callbacks = {},
+    _write_watch_callbacks = {},
+    _next_watch_id = 1,
   }, self)
+end
+
+function Stream:watch_luv_readable(on_readable)
+  if type(on_readable) ~= "function" then
+    return nil, error_mod.new("input", "on_readable callback is required")
+  end
+  local watch_id = self._next_watch_id
+  self._next_watch_id = watch_id + 1
+  self._read_watch_callbacks[watch_id] = on_readable
+  if #self.recv_buf > 0 or #self.recvq > 0 or self.remote_closed or self.reset then
+    on_readable()
+  end
+  return function()
+    self._read_watch_callbacks[watch_id] = nil
+    return true
+  end
+end
+
+function Stream:watch_luv_write(on_write)
+  if type(on_write) ~= "function" then
+    return nil, error_mod.new("input", "on_write callback is required")
+  end
+  local watch_id = self._next_watch_id
+  self._next_watch_id = watch_id + 1
+  self._write_watch_callbacks[watch_id] = on_write
+  if self.send_window > 0 or self.local_closed or self.reset then
+    on_write()
+  end
+  return function()
+    self._write_watch_callbacks[watch_id] = nil
+    return true
+  end
+end
+
+function Stream:_notify_readable()
+  self.session._stream_read_waiters[self.id] = nil
+  for _, cb in pairs(self._read_watch_callbacks) do
+    cb()
+  end
+end
+
+function Stream:_notify_writable()
+  self.session._stream_write_waiters[self.id] = nil
+  for _, cb in pairs(self._write_watch_callbacks) do
+    cb()
+  end
+end
+
+function Stream:_mark_read_waiter()
+  self.session._stream_read_waiters[self.id] = true
+  self.session._has_waiters = true
+end
+
+function Stream:_mark_write_waiter()
+  self.session._stream_write_waiters[self.id] = true
+  self.session._has_waiters = true
 end
 
 function Stream:read(length)
@@ -192,31 +254,26 @@ function Stream:read(length)
   end
 
   while #self.recv_buf < length do
-    if #self.recvq > 0 then
-      self.recv_buf = self.recv_buf .. table.remove(self.recvq, 1)
+      if #self.recvq > 0 then
+        self.recv_buf = self.recv_buf .. table.remove(self.recvq, 1)
     else
       if self.remote_closed then
+        if #self.recv_buf > 0 then
+          local out = self.recv_buf
+          self.recv_buf = ""
+          return out
+        end
         return nil, error_mod.new("closed", "yamux stream closed during read")
       end
       if self.session._pump_error then
         return nil, self.session._pump_error
       end
       if can_yield() then
-        self.session._has_waiters = true
-        coroutine.yield({ kind = "yamux_stream_wait", session = self.session, stream_id = self.id })
-        goto continue_read_wait
+        self:_mark_read_waiter()
+        coroutine.yield({ type = "read", connection = self, stream_id = self.id })
+      else
+        return nil, error_mod.new("busy", "yamux stream read requires scheduler waiter context")
       end
-      local _, err = self.session:process_one()
-      if err then
-        return nil, err
-      end
-      if type(coroutine.isyieldable) == "function" and coroutine.isyieldable() then
-        coroutine.yield({ kind = "yamux_stream_wait", session = self.session, stream_id = self.id })
-      end
-      if self.reset then
-        return nil, error_mod.new("closed", "yamux stream reset during read")
-      end
-      ::continue_read_wait::
     end
   end
 
@@ -243,18 +300,11 @@ function Stream:write(payload)
         return nil, self.session._pump_error
       end
       if can_yield() then
-        self.session._has_waiters = true
-        coroutine.yield({ kind = "yamux_window_wait", session = self.session, stream_id = self.id })
-        goto continue_window_wait
+        self:_mark_write_waiter()
+        coroutine.yield({ type = "write", connection = self, stream_id = self.id })
+      else
+        return nil, error_mod.new("busy", "yamux stream write requires scheduler waiter context")
       end
-      local _, proc_err = self.session:process_one()
-      if proc_err then
-        return nil, proc_err
-      end
-      if self.reset then
-        return nil, error_mod.new("closed", "yamux stream reset during write")
-      end
-      ::continue_window_wait::
     end
 
     local remaining = #payload - offset + 1
@@ -335,9 +385,20 @@ end
 local Session = {}
 Session.__index = Session
 
+--- Create yamux session.
+-- `opts.is_client` (`boolean`) picks odd/even stream id side.
+-- `opts.initial_stream_window` (`number`) overrides default window.
+-- `opts.max_ack_backlog` / `opts.max_accept_backlog` bound queues.
+-- `opts.scheduler_driven` (`boolean`) forces scheduler waiter mode.
 function Session:new(conn, opts)
   local options = opts or {}
   local is_client = not not options.is_client
+  local scheduler_driven = false
+  if options.scheduler_driven ~= nil then
+    scheduler_driven = options.scheduler_driven == true
+  elseif type(conn) == "table" then
+    scheduler_driven = type(conn.watch_luv_readable) == "function" or type(conn.watch_luv_write) == "function"
+  end
   return setmetatable({
     conn = conn,
     is_client = is_client,
@@ -352,11 +413,42 @@ function Session:new(conn, opts)
     _processing = false,
     _pump_error = nil,
     _has_waiters = false,
+    _stream_read_waiters = {},
+    _stream_write_waiters = {},
+    _scheduler_driven = scheduler_driven,
   }, self)
 end
 
 function Session:has_waiters()
-  return self._has_waiters == true
+  if self._has_waiters == true then
+    return true
+  end
+  return next(self._stream_read_waiters) ~= nil or next(self._stream_write_waiters) ~= nil
+end
+
+function Session:has_stream_waiters()
+  return next(self._stream_read_waiters) ~= nil or next(self._stream_write_waiters) ~= nil
+end
+
+function Session:_wake_all_stream_waiters()
+  for _, stream in pairs(self.streams or {}) do
+    stream:_notify_readable()
+    stream:_notify_writable()
+  end
+end
+
+function Session:watch_luv_readable(on_readable)
+  if self.conn and type(self.conn.watch_luv_readable) == "function" then
+    return self.conn:watch_luv_readable(on_readable)
+  end
+  return nil, error_mod.new("unsupported", "yamux session connection does not support luv readable watches")
+end
+
+function Session:watch_luv_write(on_write)
+  if self.conn and type(self.conn.watch_luv_write) == "function" then
+    return self.conn:watch_luv_write(on_write)
+  end
+  return nil, error_mod.new("unsupported", "yamux session connection does not support luv write watches")
 end
 
 function Session:_is_local_stream_id(stream_id)
@@ -494,19 +586,24 @@ function Session:_process_one_unlocked()
     stream.local_closed = true
     stream.remote_closed = true
     self.inflight[frame.stream_id] = nil
+    stream:_notify_readable()
+    stream:_notify_writable()
   end
   if has_flag(frame.flags, M.FLAG.FIN) then
     stream.remote_closed = true
+    stream:_notify_readable()
   end
 
   if frame.type == M.TYPE.WINDOW_UPDATE then
     stream.send_window = stream.send_window + frame.length
+    stream:_notify_writable()
   elseif frame.type == M.TYPE.DATA then
     if #frame.payload ~= frame.length then
       return nil, error_mod.new("protocol", "yamux data frame length mismatch")
     end
     if frame.length > 0 then
       stream.recvq[#stream.recvq + 1] = frame.payload
+      stream:_notify_readable()
       stream.recv_window = stream.recv_window - frame.length
       local ok, err = M.write_frame(self.conn, {
         type = M.TYPE.WINDOW_UPDATE,
@@ -531,16 +628,16 @@ function Session:process_one()
   if self._pump_error then
     return nil, self._pump_error
   end
-  self._has_waiters = false
+  self._has_waiters = self:has_stream_waiters()
   if self._processing then
     if type(coroutine.isyieldable) == "function" and coroutine.isyieldable() then
       while self._processing do
-        coroutine.yield({ kind = "yamux_read_pump", session = self })
+        coroutine.yield({ type = "read", connection = self })
       end
       return true
     end
     self._has_waiters = true
-    return nil, error_mod.new("timeout", "yamux read pump is already active")
+    return nil, error_mod.new("busy", "yamux read pump is already active")
   end
 
   self._processing = true
@@ -551,14 +648,62 @@ function Session:process_one()
 
   if not result[1] then
     self._pump_error = error_mod.new("protocol", "yamux read pump panicked", { cause = result[2] })
+    self:_wake_all_stream_waiters()
     return nil, self._pump_error
   end
   if result[2] == nil and result[3] and not (error_mod.is_error(result[3]) and result[3].kind == "timeout") then
     self._pump_error = result[3]
+    log.debug("yamux pump error set", {
+      subsystem = "yamux",
+      cause = tostring(result[3]),
+      kind = error_mod.is_error(result[3]) and result[3].kind or nil,
+    })
+    self:_wake_all_stream_waiters()
   end
+  self._has_waiters = self:has_stream_waiters()
   return result[2], result[3]
 end
 
+function Session:pump_ready(max_frames)
+  local limit = max_frames or 64
+  local processed = 0
+  self._pump_owner_active = true
+  while processed < limit do
+    local frame, err = self:process_one()
+    if not frame then
+      if err and error_mod.is_error(err) and (err.kind == "timeout" or err.kind == "busy") then
+        self._pump_owner_active = false
+        return processed
+      end
+      self._pump_owner_active = false
+      return nil, err
+    end
+    processed = processed + 1
+  end
+  self._pump_owner_active = false
+  return processed
+end
+
+function Session:close()
+  if not self._pump_error then
+    self._pump_error = error_mod.new("closed", "yamux session closed")
+    log.debug("yamux session close set pump error", {
+      subsystem = "yamux",
+      cause = tostring(self._pump_error),
+    })
+  end
+  self:_wake_all_stream_waiters()
+  if self.conn and type(self.conn.close) == "function" then
+    return self.conn:close()
+  end
+  return true
+end
+
+--- Construct yamux session wrapper.
+-- Forwards `opts.<field>` to @{Session:new}.
+-- @tparam table conn
+-- @tparam[opt] table opts
+-- @treturn table session
 function M.new_session(conn, opts)
   return Session:new(conn, opts)
 end

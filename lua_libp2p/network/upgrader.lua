@@ -1,9 +1,12 @@
+--- Connection upgrader for security + multiplexing.
+-- Negotiates security transport then stream muxer.
+-- @module lua_libp2p.network.upgrader
 local error_mod = require("lua_libp2p.error")
 local connection = require("lua_libp2p.network.connection")
 local muxer_registry = require("lua_libp2p.muxer")
-local mss = require("lua_libp2p.protocol.mss")
-local noise = require("lua_libp2p.security.noise")
-local plaintext = require("lua_libp2p.protocol.plaintext")
+local mss = require("lua_libp2p.multistream_select.protocol")
+local noise = require("lua_libp2p.connection_encrypter_noise.protocol")
+local plaintext = require("lua_libp2p.connection_encrypter_plaintext.protocol")
 
 local M = {}
 
@@ -72,7 +75,7 @@ local function negotiate_inbound(conn, supported)
     end
   end
 
-  local protocol_id, _, neg_err = router:negotiate(conn)
+  local protocol_id, _, _, neg_err = router:negotiate(conn)
   if not protocol_id then
     return nil, neg_err
   end
@@ -152,6 +155,19 @@ local function run_security_handshake(raw_conn, is_outbound, selected_security, 
   })
 end
 
+--- Upgrade an outbound raw transport connection.
+-- @tparam table raw_conn Raw transport connection.
+-- @tparam[opt] table opts Upgrader options.
+-- `opts.local_keypair` (`table`): local identity keypair.
+-- `opts.expected_remote_peer_id` (`string`): optional remote peer id check.
+-- `opts.security_protocols` (`table<string>`): security protocol preference list.
+-- `opts.muxer_protocols` (`table<string>`): muxer protocol preference list.
+-- `opts.initial_stream_window` (`number`): yamux initial stream window.
+-- `opts.max_ack_backlog` (`number`): yamux outbound ack backlog limit.
+-- `opts.max_accept_backlog` (`number`): yamux inbound accept backlog limit.
+-- @treturn table|nil conn Upgraded connection.
+-- @treturn[opt] table state Negotiated metadata.
+-- @treturn[opt] table err
 function M.upgrade_outbound(raw_conn, opts)
   local options = opts or {}
 
@@ -206,6 +222,13 @@ function M.upgrade_outbound(raw_conn, opts)
   return conn, state
 end
 
+--- Upgrade an inbound raw transport connection.
+-- @tparam table raw_conn Raw transport connection.
+-- @tparam[opt] table opts Upgrader options.
+-- Uses the same `opts.<field>` values as @{upgrade_outbound}.
+-- @treturn table|nil conn
+-- @treturn[opt] table state
+-- @treturn[opt] table err
 function M.upgrade_inbound(raw_conn, opts)
   local options = opts or {}
 

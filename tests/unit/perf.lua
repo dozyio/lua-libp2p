@@ -1,5 +1,5 @@
 local error_mod = require("lua_libp2p.error")
-local perf = require("lua_libp2p.protocol.perf")
+local perf = require("lua_libp2p.protocol_perf.protocol")
 
 local function new_pair()
   local a = {

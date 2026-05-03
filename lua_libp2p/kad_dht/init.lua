@@ -1,58 +1,43 @@
+--- Kademlia DHT service and client operations.
+-- @module lua_libp2p.kad_dht
 local error_mod = require("lua_libp2p.error")
+local bootstrap = require("lua_libp2p.bootstrap")
 local dnsaddr = require("lua_libp2p.dnsaddr")
 local discovery = require("lua_libp2p.discovery")
-local discovery_bootstrap = require("lua_libp2p.discovery.bootstrap")
+local discovery_bootstrap = require("lua_libp2p.peer_discovery_bootstrap")
 local kbucket = require("lua_libp2p.kbucket")
 local multiaddr = require("lua_libp2p.multiaddr")
+local operation = require("lua_libp2p.operation")
 local peerid = require("lua_libp2p.peerid")
 local protocol = require("lua_libp2p.kad_dht.protocol")
+local log = require("lua_libp2p.log")
 
 local M = {}
 local compare_distance
+M.provides = { "peer_routing", "kad_dht" }
+M.requires = { "identify", "ping" }
 
 M.PROTOCOL_ID = "/ipfs/kad/1.0.0"
 M.DEFAULT_K = 20
 M.DEFAULT_ALPHA = 10
 M.DEFAULT_DISJOINT_PATHS = 10
 M.DEFAULT_ADDRESS_FILTER = "public"
-M.DEFAULT_BOOTSTRAPPERS = {
-  "/ip4/104.131.131.82/tcp/4001/p2p/QmaCpDMGvV2BGHeYERUEnRQAwe3N8SzbUtfsmvsqQLuvuJ",
-  "/dnsaddr/bootstrap.libp2p.io/p2p/QmNnooDu7bfjPFoTZYxMNLWUQJyrVwtbZg5gBMjTezGAJN",
-  "/dnsaddr/bootstrap.libp2p.io/p2p/QmQCU2EcMqAqQPR2i9bChDtGNJchTbq5TbXJJ16u19uLTa",
-  "/dnsaddr/bootstrap.libp2p.io/p2p/QmbLHAnMoJPWSCR5Zhtx6BHJX9KiKNN6L6K6TQK6KiBovQ",
-  "/dnsaddr/bootstrap.libp2p.io/p2p/QmbLHAnMoJPWSCR5Zhtx6BHJX9KiKNN6tpvbUcqanj75Nb",
-  "/dnsaddr/bootstrap.libp2p.io/p2p/QmcZf59bWwK5XFi76CZX8cbJ4BhTzzA3gU1ZjYZcYW3dwt",
-}
+M.DEFAULT_MAINTENANCE_ENABLED = false
+M.DEFAULT_MAINTENANCE_INTERVAL_SECONDS = 30
+M.DEFAULT_MAINTENANCE_MIN_RECHECK_SECONDS = 60
+M.DEFAULT_MAINTENANCE_MAX_CHECKS = 10
+M.DEFAULT_MAINTENANCE_WALK_EVERY = 4
+M.DEFAULT_MAX_FAILED_CHECKS_BEFORE_EVICT = 2
 
-local function copy_list(values)
-  local out = {}
-  for i, value in ipairs(values or {}) do
-    out[i] = value
-  end
-  return out
-end
-
-function M.default_bootstrappers(opts)
-  local options = opts or {}
-  local list = copy_list(M.DEFAULT_BOOTSTRAPPERS)
-  if not options.dialable_only then
-    return list
-  end
-
-  local out = {}
-  for _, addr in ipairs(list) do
-    local endpoint = multiaddr.to_tcp_endpoint(addr)
-    if endpoint then
-      out[#out + 1] = addr
-    end
-  end
-  return out
-end
-
+--- Create default bootstrap peer discovery source.
+-- `opts.bootstrappers` (`table<string>`) overrides bootstrap list.
+-- `opts.dnsaddr_resolver` (`function`) resolves dnsaddr entries.
+-- `opts.dialable_only` (`boolean`) filters to dialable addresses.
+-- `opts.ignore_resolve_errors` (`boolean`) tolerates resolver failures.
 function M.default_peer_discovery(opts)
   local options = opts or {}
   local bootstrap_source, bootstrap_err = discovery_bootstrap.new({
-    list = options.bootstrappers or M.DEFAULT_BOOTSTRAPPERS,
+    list = options.bootstrappers or bootstrap.DEFAULT_BOOTSTRAPPERS,
     dnsaddr_resolver = options.dnsaddr_resolver,
     dialable_only = options.dialable_only,
     ignore_resolve_errors = options.ignore_resolve_errors,
@@ -65,6 +50,9 @@ function M.default_peer_discovery(opts)
   })
 end
 
+--- Resolve bootstrap addresses (including dnsaddr where configured).
+-- `opts.dnsaddr_resolver` (`function`) resolves dnsaddr entries.
+-- `opts.ignore_resolve_errors` (`boolean`) tolerates resolver failures.
 function M.resolve_bootstrap_addrs(addrs, opts)
   local options = opts or {}
   if type(addrs) ~= "table" then
@@ -100,19 +88,15 @@ end
 local DHT = {}
 DHT.__index = DHT
 
+--- Start KAD service hooks and optional maintenance.
+-- @treturn true|nil ok
+-- @treturn[opt] table err
 function DHT:start()
   if self._running then
     return true
   end
 
-  if self.host and type(self.host.add_service) == "function" then
-    local identify_ok, identify_err = self.host:add_service("identify")
-    if not identify_ok then
-      return nil, identify_err
-    end
-  end
-
-  if self.host and type(self.host.handle) == "function" then
+  if self.mode == "server" and self.host and type(self.host.handle) == "function" then
     local ok, err = self.host:handle(self.protocol_id, function(stream, ctx)
       return self:_handle_rpc(stream, ctx)
     end)
@@ -122,18 +106,74 @@ function DHT:start()
   end
 
   self._running = true
+
+  if self._maintenance_enabled and self.host and type(self.host.spawn_task) == "function" then
+    local task, task_err = self.host:spawn_task("kad.maintenance", function(ctx)
+      local tick = 0
+      while self._running do
+        tick = tick + 1
+        local refresh_report, refresh_err = self:refresh_once({
+          min_recheck_seconds = self._maintenance_min_recheck_seconds,
+          max_checks = self._maintenance_max_checks,
+          protocol_check_opts = {
+            timeout = self._maintenance_protocol_check_timeout,
+            stream_opts = { ctx = ctx },
+          },
+        })
+        if not refresh_report and refresh_err then
+          log.debug("kad dht maintenance refresh failed", {
+            cause = tostring(refresh_err),
+            subsystem = "kad_dht",
+          })
+        else
+          local emit_event = self.host and self.host.emit
+          if type(emit_event) == "function" then
+            emit_event(self.host, "kad_dht:maintenance:refresh", refresh_report)
+          end
+        end
+
+        if self._maintenance_walk_every > 0 and (tick % self._maintenance_walk_every) == 0 then
+          local walk_op = self:random_walk({
+            alpha = self.alpha,
+            disjoint_paths = self.disjoint_paths,
+            find_node_opts = { ctx = ctx },
+          })
+          if walk_op and type(walk_op.result) == "function" then
+            local walk_report = walk_op:result({ ctx = ctx, timeout = self._maintenance_walk_timeout })
+            if self.host and type(self.host.emit) == "function" then
+              self.host:emit("kad_dht:maintenance:walk", walk_report)
+            end
+          end
+        end
+
+        local sleep_ok, sleep_err = ctx:sleep(self._maintenance_interval_seconds)
+        if sleep_ok == nil and sleep_err then
+          return nil, sleep_err
+        end
+      end
+      return true
+    end, { service = "kad_dht" })
+    if not task then
+      return nil, task_err
+    end
+    self._maintenance_task = task
+  end
+
   return true
 end
 
+--- Stop KAD service activity.
+-- @treturn true
 function DHT:stop()
   if self.host and type(self.host.off) == "function" then
-    if self._host_on_connected then
-      self.host:off("peer_connected", self._host_on_connected)
-    end
-    if self._host_on_disconnected then
-      self.host:off("peer_disconnected", self._host_on_disconnected)
+    if self._host_on_protocols_updated then
+      self.host:off("peer_protocols_updated", self._host_on_protocols_updated)
     end
   end
+  if self._maintenance_task and self.host and type(self.host.cancel_task) == "function" then
+    self.host:cancel_task(self._maintenance_task.id)
+  end
+  self._maintenance_task = nil
   self._running = false
   return true
 end
@@ -142,13 +182,30 @@ function DHT:is_running()
   return self._running
 end
 
+--- Add a peer to the routing table.
+-- `opts` is forwarded to kbucket insertion policy.
+-- @tparam string peer_id
+-- @tparam[opt] table opts
+-- @treturn true|nil added
+-- @treturn[opt] table err
 function DHT:add_peer(peer_id, opts)
   local added, err = self.routing_table:try_add_peer(peer_id, opts)
   if added and type(peer_id) == "string" and peer_id ~= "" then
     local now = os.time()
     self._peer_health[peer_id] = self._peer_health[peer_id] or {}
     self._peer_health[peer_id].stale = false
+    self._peer_health[peer_id].failed_checks = 0
     self._peer_health[peer_id].last_connected_at = self._peer_health[peer_id].last_connected_at or now
+    log.debug("kad dht peer added", {
+      peer_id = peer_id,
+      subsystem = "kad_dht",
+    })
+  elseif err then
+    log.debug("kad dht peer rejected", {
+      peer_id = tostring(peer_id),
+      cause = tostring(err),
+      subsystem = "kad_dht",
+    })
   end
   return added, err
 end
@@ -183,15 +240,25 @@ local function rpc_target_peer_id(peer_or_addr)
   return nil
 end
 
+--- Remove a peer from routing table and health tracking.
+-- @tparam string peer_id
+-- @treturn boolean removed
 function DHT:remove_peer(peer_id)
   self._peer_health[peer_id] = nil
   return self.routing_table:remove_peer(peer_id)
 end
 
+--- Lookup a peer in local routing table.
+-- @tparam string peer_id
+-- @treturn table|nil peer
 function DHT:find_peer(peer_id)
   return self.routing_table:find_peer(peer_id)
 end
 
+--- Find closest peers from local routing table.
+-- @tparam string key Target key or peer id bytes/text.
+-- @tparam[opt] number count Max peers.
+-- @treturn table peers
 function DHT:find_closest_peers(key, count)
   local want = count or self.k
   return self.routing_table:nearest_peers(key, want)
@@ -262,8 +329,8 @@ local function is_dialable_tcp_addr(addr)
     return false
   end
   for i = 3, #parsed.components do
-    local protocol = parsed.components[i].protocol
-    if protocol ~= "p2p" then
+    local proto = parsed.components[i].protocol
+    if proto ~= "p2p" then
       return false
     end
   end
@@ -404,7 +471,34 @@ function DHT:_handle_rpc(stream)
   return true
 end
 
-function DHT:find_node(peer_or_addr, target_key, opts)
+--- Internal FIND_NODE RPC wrapper.
+-- `opts.timeout`, `opts.ctx`, `opts.stream_opts`, `opts.max_message_size`.
+function DHT:_find_node(peer_or_addr, target_key, opts)
+  opts = opts or {}
+  if not opts.ctx
+    and not opts._internal_task_ctx
+    and self.host
+    and type(self.host.spawn_task) == "function"
+    and type(self.host.run_until_task) == "function"
+  then
+    local task, task_err = self.host:spawn_task("kad.find_node.inline", function(ctx)
+      local task_opts = {}
+      for k, v in pairs(opts) do
+        task_opts[k] = v
+      end
+      task_opts.ctx = ctx
+      task_opts._internal_task_ctx = true
+      return self:_find_node(peer_or_addr, target_key, task_opts)
+    end, { service = "kad_dht" })
+    if not task then
+      return nil, task_err
+    end
+    return self.host:run_until_task(task, {
+      timeout = opts.timeout,
+      poll_interval = opts.poll_interval,
+    })
+  end
+
   if not self.host or type(self.host.new_stream) ~= "function" then
     return nil, error_mod.new("state", "find_node requires host with new_stream")
   end
@@ -497,7 +591,34 @@ function DHT:_decode_response_peers(response, purpose)
   return decode_list(response.closer_peers), decode_list(response.provider_peers)
 end
 
+--- Internal generic KAD RPC helper.
+-- `opts.timeout`, `opts.ctx`, `opts.stream_opts`, `opts.max_message_size`.
 function DHT:_rpc(peer_or_addr, request, expected_type, opts)
+  opts = opts or {}
+  if not opts.ctx
+    and not opts._internal_task_ctx
+    and self.host
+    and type(self.host.spawn_task) == "function"
+    and type(self.host.run_until_task) == "function"
+  then
+    local task, task_err = self.host:spawn_task("kad.rpc.inline", function(ctx)
+      local task_opts = {}
+      for k, v in pairs(opts) do
+        task_opts[k] = v
+      end
+      task_opts.ctx = ctx
+      task_opts._internal_task_ctx = true
+      return self:_rpc(peer_or_addr, request, expected_type, task_opts)
+    end, { service = "kad_dht" })
+    if not task then
+      return nil, task_err
+    end
+    return self.host:run_until_task(task, {
+      timeout = opts.timeout,
+      poll_interval = opts.poll_interval,
+    })
+  end
+
   if not self.host or type(self.host.new_stream) ~= "function" then
     return nil, error_mod.new("state", "kad rpc requires host with new_stream")
   end
@@ -537,7 +658,10 @@ function DHT:_rpc(peer_or_addr, request, expected_type, opts)
   return response
 end
 
-function DHT:get_value(peer_or_addr, key, opts)
+--- Internal GET_VALUE RPC wrapper.
+-- `opts` uses same transport fields as @{_rpc}.
+-- `opts.timeout`, `opts.ctx`, `opts.stream_opts`, and `opts.max_message_size` are honored.
+function DHT:_get_value(peer_or_addr, key, opts)
   if type(key) ~= "string" or key == "" then
     return nil, error_mod.new("input", "GET_VALUE key must be non-empty bytes")
   end
@@ -556,7 +680,10 @@ function DHT:get_value(peer_or_addr, key, opts)
   }
 end
 
-function DHT:get_providers(peer_or_addr, key, opts)
+--- Internal GET_PROVIDERS RPC wrapper.
+-- `opts` uses same transport fields as @{_rpc}.
+-- `opts.timeout`, `opts.ctx`, `opts.stream_opts`, and `opts.max_message_size` are honored.
+function DHT:_get_providers(peer_or_addr, key, opts)
   if type(key) ~= "string" or key == "" then
     return nil, error_mod.new("input", "GET_PROVIDERS key must be non-empty bytes")
   end
@@ -594,14 +721,6 @@ local function seed_candidates_from_routing_table(self, key, count)
   return out
 end
 
-local function supports_luv_concurrency(self)
-  local ok_luv, uv = pcall(require, "luv")
-  if not ok_luv then
-    return false
-  end
-  return self.host and self.host._runtime == "luv" and self.host._tcp_transport and self.host._tcp_transport.BACKEND == "luv-native", uv
-end
-
 function DHT:_sort_query_candidates(target_hash, candidates)
   table.sort(candidates, function(a, b)
     local da = self:_distance_to_target(a.peer_id or "", target_hash) or string.rep("\255", 32)
@@ -613,7 +732,7 @@ end
 function DHT:_strict_lookup_complete(target_hash, states, k)
   local peers = {}
   local heard_or_waiting = 0
-  for peer_id, state in pairs(states) do
+  for _, state in pairs(states) do
     if state.state ~= "unreachable" then
       peers[#peers + 1] = state
       if state.state == "heard" or state.state == "waiting" then
@@ -637,6 +756,9 @@ function DHT:_strict_lookup_complete(target_hash, states, k)
   return true, "closest_queried"
 end
 
+--- Internal iterative lookup engine.
+-- `opts.alpha`, `opts.k`, `opts.disjoint_paths`, `opts.query_timeout_seconds`,
+-- `opts.max_query_rounds`, `opts.ctx`, and `opts.yield` tune execution.
 function DHT:_run_client_lookup(key, seed_peers, query_func, opts)
   local options = opts or {}
   local target_bytes, target_err = protocol.peer_bytes(key)
@@ -680,6 +802,7 @@ function DHT:_run_client_lookup(key, seed_peers, query_func, opts)
     queried = 0,
     responses = 0,
     failed = 0,
+    cancelled = 0,
     errors = {},
     closest_peers = {},
     queried_peers = {},
@@ -688,8 +811,10 @@ function DHT:_run_client_lookup(key, seed_peers, query_func, opts)
   }
   local alpha = options.alpha or self.alpha
   local max_inflight = alpha * (options.disjoint_paths or self.disjoint_paths or 1)
+  local strict_k = options.lookup_k or self.k
   local stop = false
   local active = 0
+  local yield = type(options.yield) == "function" and options.yield or nil
 
   local function complete(peer, ok, response_or_err)
     active = active - 1
@@ -732,7 +857,175 @@ function DHT:_run_client_lookup(key, seed_peers, query_func, opts)
     return { co = co, peer = peer }
   end
 
-  local concurrent, uv = supports_luv_concurrency(self)
+  if options.scheduler_task == true and options.ctx and self.host and type(self.host.spawn_task) == "function" then
+    local tasks = {}
+
+    local function spawn_task(peer)
+      peer.state = "waiting"
+      active = active + 1
+      if active > result.active_peak then
+        result.active_peak = active
+      end
+      result.queried = result.queried + 1
+      local task, task_err = self.host:spawn_task("kad.client_query", function(task_ctx)
+        local response, err = query_func(peer, task_ctx)
+        if not response then
+          return nil, err
+        end
+        return response
+      end, { service = "kad_dht" })
+      if not task then
+        complete(peer, false, task_err)
+        return
+      end
+      tasks[#tasks + 1] = { task = task, peer = peer }
+    end
+
+    local function fill_tasks()
+      self:_sort_query_candidates(target_hash, queue)
+      while #queue > 0 and active < max_inflight and not stop do
+        local peer = table.remove(queue, 1)
+        if peer.state == "heard" then
+          spawn_task(peer)
+        end
+      end
+    end
+
+    local function reap_tasks()
+      for i = #tasks, 1, -1 do
+        local item = tasks[i]
+        local task = item.task
+        if task.status == "completed" then
+          complete(item.peer, true, task.result)
+          table.remove(tasks, i)
+        elseif task.status == "failed" then
+          complete(item.peer, false, task.error or task.status)
+          table.remove(tasks, i)
+        elseif task.status == "cancelled" then
+          active = active - 1
+          item.peer.state = "unreachable"
+          result.cancelled = result.cancelled + 1
+          table.remove(tasks, i)
+        end
+      end
+    end
+
+    local function cancel_active_tasks()
+      if not (self.host and type(self.host.cancel_task) == "function") then
+        return
+      end
+      for _, item in ipairs(tasks) do
+        local task = item.task
+        if task and task.status ~= "completed" and task.status ~= "failed" and task.status ~= "cancelled" then
+          self.host:cancel_task(task.id)
+          result.cancelled = result.cancelled + 1
+        end
+      end
+      tasks = {}
+      active = 0
+    end
+
+    local function running_tasks()
+      local out = {}
+      for _, item in ipairs(tasks) do
+        local task = item.task
+        if task and task.status ~= "completed" and task.status ~= "failed" and task.status ~= "cancelled" then
+          out[#out + 1] = task
+        end
+      end
+      return out
+    end
+
+    while true do
+      reap_tasks()
+      fill_tasks()
+      reap_tasks()
+
+      local done, reason = self:_strict_lookup_complete(target_hash, states, strict_k)
+      if stop then
+        cancel_active_tasks()
+        result.termination = result.termination or "application"
+        break
+      end
+      if done then
+        cancel_active_tasks()
+        result.termination = reason
+        break
+      end
+      if active == 0 and #queue == 0 then
+        result.termination = "starvation"
+        break
+      end
+
+      local waiting = running_tasks()
+      local checkpoint_ok, checkpoint_err
+      if #waiting > 0 and type(options.ctx.await_any_task) == "function" then
+        checkpoint_ok, checkpoint_err = options.ctx:await_any_task(waiting)
+      else
+        checkpoint_ok, checkpoint_err = options.ctx:checkpoint()
+      end
+      if checkpoint_ok == nil and checkpoint_err then
+        result.termination = "yield_error"
+        result.errors[#result.errors + 1] = checkpoint_err
+        break
+      end
+    end
+
+    self:_sort_query_candidates(target_hash, result.closest_peers)
+    return result
+  elseif options.scheduler_task == true then
+    while not stop do
+      self:_sort_query_candidates(target_hash, queue)
+      local peer
+      while #queue > 0 and not peer do
+        local candidate = table.remove(queue, 1)
+        if candidate.state == "heard" then
+          peer = candidate
+        end
+      end
+
+      if not peer then
+        local done, reason = self:_strict_lookup_complete(target_hash, states, strict_k)
+        result.termination = done and reason or "starvation"
+        break
+      end
+
+      peer.state = "waiting"
+      active = active + 1
+      if active > result.active_peak then
+        result.active_peak = active
+      end
+      result.queried = result.queried + 1
+
+      local response, response_err = query_func(peer)
+      complete(peer, response ~= nil, response or response_err)
+
+      if yield then
+        local yield_ok, yield_err = yield()
+        if yield_ok == nil and yield_err then
+          result.termination = "yield_error"
+          result.errors[#result.errors + 1] = yield_err
+          stop = true
+        end
+      end
+
+      local done, reason = self:_strict_lookup_complete(target_hash, states, strict_k)
+      if stop then
+        if not result.termination then
+          result.termination = "application"
+        end
+        break
+      end
+      if done then
+        result.termination = reason
+        break
+      end
+    end
+
+    self:_sort_query_candidates(target_hash, result.closest_peers)
+    return result
+  end
+
   local workers = {}
   local function step_lookup()
     self:_sort_query_candidates(target_hash, queue)
@@ -756,12 +1049,22 @@ function DHT:_run_client_lookup(key, seed_peers, query_func, opts)
       end
     end
 
-    local done, reason = self:_strict_lookup_complete(target_hash, states, self.k)
+    if yield then
+      local yield_ok, yield_err = yield()
+      if yield_ok == nil and yield_err then
+        result.termination = "yield_error"
+        result.errors[#result.errors + 1] = yield_err
+        stop = true
+        return true
+      end
+    end
+
+    local done, reason = self:_strict_lookup_complete(target_hash, states, strict_k)
     if stop then
       result.termination = "application"
       return true
     end
-    if done and active == 0 then
+    if done then
       result.termination = reason
       return true
     end
@@ -773,35 +1076,30 @@ function DHT:_run_client_lookup(key, seed_peers, query_func, opts)
     return false
   end
 
-  if concurrent then
-    local finished = false
-    local timer = assert(uv.new_timer())
-    timer:start(0, 10, function()
-      finished = step_lookup()
-      if finished then
-        timer:stop()
-        timer:close()
-      end
-    end)
-    while not finished do
-      uv.run("once")
-    end
-  else
-    while not step_lookup() do
-      if #workers == 0 and #queue == 0 then
-        break
-      end
+  while not step_lookup() do
+    if #workers == 0 and #queue == 0 then
+      break
     end
   end
 
   return result
 end
 
-function DHT:find_value(key, opts)
+--- Internal iterative FIND_VALUE.
+-- `opts` forwarded to @{_run_client_lookup} and query functions.
+function DHT:_find_value(key, opts)
   local options = opts or {}
   local found
-  local lookup, lookup_err = self:_run_client_lookup(key, options.peers or seed_candidates_from_routing_table(self, key, self.k), function(peer)
-    local result, err = self:get_value(peer.addr or (peer.addrs and peer.addrs[1]) or { peer_id = peer.peer_id, addrs = peer.addrs }, key, options)
+  local lookup, lookup_err = self:_run_client_lookup(key, options.peers or seed_candidates_from_routing_table(self, key, self.k), function(peer, ctx)
+    local query_options = options
+    if ctx then
+      query_options = {}
+      for k, v in pairs(options) do
+        query_options[k] = v
+      end
+      query_options.ctx = ctx
+    end
+    local result, err = self:_get_value(peer.addr or (peer.addrs and peer.addrs[1]) or { peer_id = peer.peer_id, addrs = peer.addrs }, key, query_options)
     if not result then
       return nil, err
     end
@@ -821,9 +1119,19 @@ function DHT:find_value(key, opts)
   return { record = nil, closer_peers = lookup.closest_peers, lookup = lookup, errors = lookup.errors }
 end
 
-function DHT:get_closest_peers(key, opts)
+--- Internal iterative GET_CLOSEST_PEERS.
+-- `opts` forwarded to @{_run_client_lookup} and query functions.
+function DHT:_get_closest_peers(key, opts)
   local options = opts or {}
-  local lookup, lookup_err = self:_run_client_lookup(key, options.peers or seed_candidates_from_routing_table(self, key, self.k), function(peer)
+  local lookup, lookup_err = self:_run_client_lookup(key, options.peers or seed_candidates_from_routing_table(self, key, self.k), function(peer, ctx)
+    local query_options = options
+    if ctx then
+      query_options = {}
+      for k, v in pairs(options) do
+        query_options[k] = v
+      end
+      query_options.ctx = ctx
+    end
     local target = peer.peer_id and { peer_id = peer.peer_id, addrs = peer.addrs } or (peer.addr or (peer.addrs and peer.addrs[1]))
     local target_bytes, key_err = protocol.peer_bytes(key)
     if not target_bytes then
@@ -832,7 +1140,7 @@ function DHT:get_closest_peers(key, opts)
     local response, err = self:_rpc(target or { peer_id = peer.peer_id, addrs = peer.addrs }, {
       type = protocol.MESSAGE_TYPE.FIND_NODE,
       key = target_bytes,
-    }, protocol.MESSAGE_TYPE.FIND_NODE, options)
+    }, protocol.MESSAGE_TYPE.FIND_NODE, query_options)
     if not response then
       return nil, err
     end
@@ -858,11 +1166,21 @@ function DHT:get_closest_peers(key, opts)
   return out, lookup
 end
 
-function DHT:find_providers(key, opts)
+--- Internal iterative FIND_PROVIDERS.
+-- `opts` forwarded to @{_run_client_lookup} and query functions.
+function DHT:_find_providers(key, opts)
   local options = opts or {}
   local providers = {}
-  local lookup, lookup_err = self:_run_client_lookup(key, options.peers or seed_candidates_from_routing_table(self, key, self.k), function(peer)
-    local result, err = self:get_providers(peer.addr or (peer.addrs and peer.addrs[1]) or { peer_id = peer.peer_id, addrs = peer.addrs }, key, options)
+  local lookup, lookup_err = self:_run_client_lookup(key, options.peers or seed_candidates_from_routing_table(self, key, self.k), function(peer, ctx)
+    local query_options = options
+    if ctx then
+      query_options = {}
+      for k, v in pairs(options) do
+        query_options[k] = v
+      end
+      query_options.ctx = ctx
+    end
+    local result, err = self:_get_providers(peer.addr or (peer.addrs and peer.addrs[1]) or { peer_id = peer.peer_id, addrs = peer.addrs }, key, query_options)
     if not result then
       return nil, err
     end
@@ -880,13 +1198,149 @@ function DHT:find_providers(key, opts)
   return { providers = providers, provider_peers = providers, closer_peers = lookup.closest_peers, lookup = lookup, errors = lookup.errors }
 end
 
+--- Spawn a scheduler-backed query task wrapper.
+-- `opts.result_count` controls operation nil/error arity.
+function DHT:_spawn_query_task(task_name, fn, opts)
+  if not (self.host and type(self.host.spawn_task) == "function") then
+    return nil, error_mod.new("state", "kad_dht requires host task scheduler")
+  end
+  local task, task_err = self.host:spawn_task(task_name, fn, {
+    service = "kad_dht",
+  })
+  if not task then
+    return nil, task_err
+  end
+  return operation.new(self.host, task, opts)
+end
+
+--- Find a peer by id via lookup.
+-- `opts` supports `timeout`, `ctx`, and `stream_opts`.
+-- @tparam string|table peer_or_addr Query target.
+-- @tparam string target_key Peer id to find.
+-- @tparam[opt] table opts
+-- @treturn table|nil op Operation.
+-- @treturn[opt] table err
+function DHT:find_node(peer_or_addr, target_key, opts)
+  local options = opts or {}
+  return self:_spawn_query_task("kad.find_node", function(ctx)
+    local task_opts = {}
+    for k, v in pairs(options) do
+      task_opts[k] = v
+    end
+    task_opts.ctx = task_opts.ctx or ctx
+    return self:_find_node(peer_or_addr, target_key, task_opts)
+  end)
+end
+
+--- Query a peer for value records.
+-- `opts` supports `timeout`, `ctx`, and `stream_opts`.
+-- @treturn table|nil op
+-- @treturn[opt] table err
+function DHT:get_value(peer_or_addr, key, opts)
+  local options = opts or {}
+  return self:_spawn_query_task("kad.get_value", function(ctx)
+    local task_opts = {}
+    for k, v in pairs(options) do
+      task_opts[k] = v
+    end
+    task_opts.ctx = task_opts.ctx or ctx
+    return self:_get_value(peer_or_addr, key, task_opts)
+  end)
+end
+
+--- Query a peer for provider records.
+-- `opts` supports `timeout`, `ctx`, and `stream_opts`.
+-- @treturn table|nil op
+-- @treturn[opt] table err
+function DHT:get_providers(peer_or_addr, key, opts)
+  local options = opts or {}
+  return self:_spawn_query_task("kad.get_providers", function(ctx)
+    local task_opts = {}
+    for k, v in pairs(options) do
+      task_opts[k] = v
+    end
+    task_opts.ctx = task_opts.ctx or ctx
+    return self:_get_providers(peer_or_addr, key, task_opts)
+  end)
+end
+
+--- Lookup value through iterative query.
+-- `opts` supports lookup controls like `alpha`, `k`, `disjoint_paths`,
+-- `seed_peers`, `find_node_opts`, `query_timeout_seconds`, `max_query_rounds`,
+-- and scheduler `ctx`/`yield`.
+-- @treturn table|nil op
+-- @treturn[opt] table err
+function DHT:find_value(key, opts)
+  local options = opts or {}
+  return self:_spawn_query_task("kad.find_value", function(ctx)
+    local task_opts = {}
+    for k, v in pairs(options) do
+      task_opts[k] = v
+    end
+    task_opts.scheduler_task = true
+    task_opts.ctx = task_opts.ctx or ctx
+    task_opts.yield = task_opts.yield or function()
+      return ctx:checkpoint()
+    end
+    return self:_find_value(key, task_opts)
+  end)
+end
+
+--- Lookup closest peers through iterative query.
+-- Uses same options as @{find_value}.
+-- `opts.result_count` is fixed internally to include report and peers.
+-- @treturn table|nil op
+-- @treturn[opt] table err
+function DHT:get_closest_peers(key, opts)
+  local options = opts or {}
+  return self:_spawn_query_task("kad.get_closest_peers", function(ctx)
+    local task_opts = {}
+    for k, v in pairs(options) do
+      task_opts[k] = v
+    end
+    task_opts.scheduler_task = true
+    task_opts.ctx = task_opts.ctx or ctx
+    task_opts.yield = task_opts.yield or function()
+      return ctx:checkpoint()
+    end
+    return self:_get_closest_peers(key, task_opts)
+  end, { result_count = 2 })
+end
+
+--- Lookup providers through iterative query.
+-- Uses same options as @{find_value}.
+-- `opts` may include `seed_peers`, `alpha`, `k`, `query_timeout_seconds`, and `ctx`.
+-- @treturn table|nil op
+-- @treturn[opt] table err
+function DHT:find_providers(key, opts)
+  local options = opts or {}
+  return self:_spawn_query_task("kad.find_providers", function(ctx)
+    local task_opts = {}
+    for k, v in pairs(options) do
+      task_opts[k] = v
+    end
+    task_opts.scheduler_task = true
+    task_opts.ctx = task_opts.ctx or ctx
+    task_opts.yield = task_opts.yield or function()
+      return ctx:checkpoint()
+    end
+    return self:_find_providers(key, task_opts)
+  end)
+end
+
+--- Resolve bootstrap targets into dialable addresses.
+-- `opts` supports `peer_discovery`, `bootstrappers`, `dnsaddr_resolver`,
+-- and `ignore_resolve_errors`.
+-- @tparam[opt] table opts
+-- @treturn table|nil addrs
+-- @treturn[opt] table err
 function DHT:bootstrap_targets(opts)
   local options = opts or {}
   local discoverer = options.peer_discovery or self.peer_discovery
   if not discoverer then
     local discover_err
     discoverer, discover_err = M.default_peer_discovery({
-      bootstrappers = options.bootstrappers or self.bootstrappers or M.DEFAULT_BOOTSTRAPPERS,
+      bootstrappers = options.bootstrappers or self.bootstrappers or bootstrap.DEFAULT_BOOTSTRAPPERS,
       dnsaddr_resolver = options.dnsaddr_resolver or self._dnsaddr_resolver,
       ignore_resolve_errors = options.ignore_resolve_errors,
       dialable_only = true,
@@ -914,6 +1368,11 @@ function DHT:bootstrap_targets(opts)
   return out
 end
 
+--- Discover peers from configured discovery source.
+-- `opts.ignore_source_errors` (`boolean`) suppresses source failures.
+-- @tparam[opt] table opts
+-- @treturn table|nil peers
+-- @treturn[opt] table err
 function DHT:discover_peers(opts)
   local options = opts or {}
   local discoverer = options.peer_discovery or self.peer_discovery
@@ -923,34 +1382,73 @@ function DHT:discover_peers(opts)
   return discoverer:discover(options)
 end
 
-function DHT:_on_peer_connected(payload)
+function DHT:_on_peer_protocols_updated(payload)
   local peer_id = payload and payload.peer_id
   if type(peer_id) ~= "string" or peer_id == "" then
     return true
   end
+  local protocols = payload.protocols or {}
+  local supports_kad = false
+  for _, protocol_id in ipairs(protocols) do
+    if protocol_id == self.protocol_id then
+      supports_kad = true
+      break
+    end
+  end
+  if not supports_kad then
+    return true
+  end
 
-  local now = os.time()
+  local addrs = nil
+  if self.host and self.host.peerstore then
+    addrs = self:_filter_addrs(self.host.peerstore:get_addrs(peer_id), {
+      peer_id = peer_id,
+      purpose = "protocol_update",
+    })
+  end
+  local added, add_err = self:add_peer(peer_id, {
+    addrs = addrs,
+    allow_replace = true,
+  })
   local health = self._peer_health[peer_id] or {}
-  health.last_connected_at = now
+  health.last_verified_at = os.time()
+  health.failed_checks = 0
   health.stale = false
   self._peer_health[peer_id] = health
+  if not added and add_err and not is_capacity_error(add_err) then
+    return nil, add_err
+  end
   return true
 end
 
-function DHT:_on_peer_disconnected(payload)
-  local peer_id = payload and payload.peer_id
-  if type(peer_id) ~= "string" or peer_id == "" then
-    return true
+--- Internal peer protocol support probe.
+-- `opts.timeout`, `opts.ctx`, and `opts.stream_opts` tune identify query.
+function DHT:_supports_kad_protocol(peer_or_addr, opts)
+  opts = opts or {}
+  if not opts.ctx
+    and not opts._internal_task_ctx
+    and self.host
+    and type(self.host.spawn_task) == "function"
+    and type(self.host.run_until_task) == "function"
+  then
+    local task, task_err = self.host:spawn_task("kad.supports_protocol.inline", function(ctx)
+      local task_opts = {}
+      for k, v in pairs(opts) do
+        task_opts[k] = v
+      end
+      task_opts.ctx = ctx
+      task_opts._internal_task_ctx = true
+      return self:_supports_kad_protocol(peer_or_addr, task_opts)
+    end, { service = "kad_dht" })
+    if not task then
+      return nil, task_err
+    end
+    return self.host:run_until_task(task, {
+      timeout = opts.timeout,
+      poll_interval = opts.poll_interval,
+    })
   end
 
-  local health = self._peer_health[peer_id] or {}
-  health.last_disconnected_at = os.time()
-  health.stale = true
-  self._peer_health[peer_id] = health
-  return true
-end
-
-function DHT:_supports_kad_protocol(peer_or_addr, opts)
   if not self.host or type(self.host.new_stream) ~= "function" then
     return nil, error_mod.new("state", "protocol check requires host with new_stream")
   end
@@ -978,8 +1476,12 @@ function DHT:_supports_kad_protocol(peer_or_addr, opts)
   return true
 end
 
-function DHT:bootstrap(opts)
+--- Internal bootstrap dial workflow.
+-- `opts.bootstrap_target_count`, `opts.dial_timeout`, `opts.ignore_dial_errors`,
+-- `opts.ctx`, and `opts.yield` control sequencing.
+function DHT:_bootstrap(opts)
   local options = opts or {}
+  local yield = type(options.yield) == "function" and options.yield or nil
   if not self.host or type(self.host.dial) ~= "function" then
     return nil, error_mod.new("state", "bootstrap requires host with dial")
   end
@@ -1089,6 +1591,12 @@ function DHT:bootstrap(opts)
       if type(options.max_success) == "number" and options.max_success > 0 and result.connected >= options.max_success then
         return result
       end
+      if yield then
+        local yield_ok, yield_err = yield()
+        if yield_ok == nil and yield_err then
+          return nil, yield_err
+        end
+      end
 
       ::continue_addrs::
     end
@@ -1097,13 +1605,23 @@ function DHT:bootstrap(opts)
   return result
 end
 
+--- Refresh peer liveness/protocol support and evict stale peers.
+-- `opts` supports `min_recheck_seconds`, `max_checks`,
+-- `max_failed_checks_before_evict`, and `protocol_check_opts`.
+-- @tparam[opt] table opts
+-- @treturn table|nil report
+-- @treturn[opt] table err
 function DHT:refresh_once(opts)
   local options = opts or {}
   local now = os.time()
   local min_recheck = options.min_recheck_seconds or 60
   local max_checks = options.max_checks or self.alpha
+  local max_failed_checks_before_evict = options.max_failed_checks_before_evict or self._max_failed_checks_before_evict
   if type(max_checks) ~= "number" or max_checks <= 0 then
     return nil, error_mod.new("input", "max_checks must be > 0")
+  end
+  if type(max_failed_checks_before_evict) ~= "number" or max_failed_checks_before_evict <= 0 then
+    return nil, error_mod.new("input", "max_failed_checks_before_evict must be > 0")
   end
 
   local peers = self.routing_table:all_peers()
@@ -1122,7 +1640,8 @@ function DHT:refresh_once(opts)
 
     local peer_id = entry.peer_id
     local health = self._peer_health[peer_id] or {}
-    local stale = health.stale == true
+    local failed_checks = tonumber(health.failed_checks) or (health.stale == true and 1 or 0)
+    local stale = failed_checks > 0
     local last_verified = health.last_verified_at or 0
     local recent = (now - last_verified) < min_recheck
     if not stale and recent then
@@ -1133,13 +1652,15 @@ function DHT:refresh_once(opts)
     report.checked = report.checked + 1
     local ok, check_err = self:_supports_kad_protocol(peer_id, options.protocol_check_opts)
     if ok then
+      health.failed_checks = 0
       health.stale = false
       health.last_verified_at = now
       self._peer_health[peer_id] = health
       report.healthy = report.healthy + 1
     else
       report.errors[#report.errors + 1] = check_err
-      if stale then
+      failed_checks = failed_checks + 1
+      if failed_checks >= max_failed_checks_before_evict then
         local removed, remove_err = self:remove_peer(peer_id)
         if removed then
           report.removed = report.removed + 1
@@ -1147,6 +1668,7 @@ function DHT:refresh_once(opts)
           report.errors[#report.errors + 1] = remove_err
         end
       else
+        health.failed_checks = failed_checks
         health.stale = true
         health.last_disconnected_at = health.last_disconnected_at or now
         self._peer_health[peer_id] = health
@@ -1203,7 +1725,10 @@ function DHT:_distance_to_target(peer_id, target_hash)
   return xor_distance(target_hash, hashed)
 end
 
-function DHT:random_walk(opts)
+--- Internal random-walk execution.
+-- `opts.count`, `opts.alpha`, `opts.disjoint_paths`, `opts.find_node_opts`,
+-- `opts.ctx`, and `opts.yield` tune walk behavior.
+function DHT:_random_walk(opts)
   local options = opts or {}
   local report = {
     queried = 0,
@@ -1235,21 +1760,6 @@ function DHT:random_walk(opts)
   end
 
   local initial_peers = self.routing_table:all_peers()
-  if #initial_peers == 0 and options.bootstrap_if_empty then
-    local bootstrap_report, bootstrap_err = self:bootstrap({
-      peer_discovery = options.peer_discovery,
-      dnsaddr_resolver = options.dnsaddr_resolver,
-      ignore_discovery_errors = options.ignore_discovery_errors,
-      allow_replace = options.allow_replace,
-      fail_fast = options.fail_fast,
-      max_success = options.max_success,
-    })
-    if not bootstrap_report then
-      return nil, bootstrap_err
-    end
-    initial_peers = self.routing_table:all_peers()
-  end
-
   if options.legacy_walker ~= true then
     local seeds = {}
     local initial_peer_ids = {}
@@ -1268,11 +1778,13 @@ function DHT:random_walk(opts)
         seeds[#seeds + 1] = { peer_id = entry.peer_id }
       end
     end
-    local closest, lookup = self:get_closest_peers(target_key, {
+    local closest, lookup = self:_get_closest_peers(target_key, {
       peers = seeds,
       alpha = alpha,
       disjoint_paths = disjoint_paths,
       count = self.k,
+      scheduler_task = options.scheduler_task,
+      ctx = options.ctx,
     })
     if not closest then
       return nil, lookup
@@ -1419,93 +1931,9 @@ function DHT:random_walk(opts)
     end
   end
 
-  local ok_luv, uv = pcall(require, "luv")
-  local use_luv_concurrency = ok_luv
-    and self.host
-    and self.host._runtime == "luv"
-    and self.host._tcp_transport
-    and self.host._tcp_transport.BACKEND == "luv-native"
+  local _ = queue_has_entries and next_from_path and query_target_for and apply_query_result
 
-  if use_luv_concurrency then
-    local active_by_path = {}
-    for i = 1, disjoint_paths do
-      active_by_path[i] = 0
-    end
-    local workers = {}
-    local done = false
-
-    local function spawn_worker(path_index, entry)
-      queued[entry.peer_id] = nil
-      if queried_peers[entry.peer_id] then
-        return
-      end
-      queried_peers[entry.peer_id] = true
-      report.queried = report.queried + 1
-      active_by_path[path_index] = active_by_path[path_index] + 1
-      workers[#workers + 1] = {
-        path_index = path_index,
-        entry = entry,
-        co = coroutine.create(function()
-          return self:find_node(query_target_for(entry), target_key, options.find_node_opts)
-        end),
-      }
-    end
-
-    local function fill_workers()
-      for path_index = 1, disjoint_paths do
-        while active_by_path[path_index] < alpha do
-          local entry = next_from_path(path_index)
-          if not entry then
-            break
-          end
-          spawn_worker(path_index, entry)
-        end
-      end
-    end
-
-    local timer = assert(uv.new_timer())
-    timer:start(0, 10, function()
-      fill_workers()
-
-      for i = #workers, 1, -1 do
-        local worker = workers[i]
-        local ok, closest, closest_err = coroutine.resume(worker.co)
-        if not ok then
-          local panic = closest
-          closest = nil
-          closest_err = error_mod.new("protocol", "kad query coroutine failed", { cause = panic })
-        end
-        if coroutine.status(worker.co) == "dead" then
-          table.remove(workers, i)
-          active_by_path[worker.path_index] = active_by_path[worker.path_index] - 1
-          if closest then
-            apply_query_result(worker.path_index, worker.entry, closest)
-          else
-            report.failed = report.failed + 1
-            report.errors[#report.errors + 1] = closest_err
-            if options.fail_fast then
-              done = true
-            end
-          end
-        end
-      end
-
-      if done or (#workers == 0 and not queue_has_entries()) then
-        timer:stop()
-        timer:close()
-        done = true
-      end
-    end)
-
-    while not done do
-      uv.run("once")
-    end
-
-    if options.fail_fast and #report.errors > 0 then
-      return nil, report.errors[#report.errors]
-    end
-    return report
-  end
+  local yield = type(options.yield) == "function" and options.yield or nil
 
   local active = true
   while active do
@@ -1540,7 +1968,13 @@ function DHT:random_walk(opts)
             query_target = entry.peer_id
           end
 
-          local closest, closest_err = self:find_node(query_target, target_key, options.find_node_opts)
+          local closest, closest_err = self:_find_node(query_target, target_key, options.find_node_opts)
+          if yield then
+            local yield_ok, yield_err = yield()
+            if yield_ok == nil and yield_err then
+              return nil, yield_err
+            end
+          end
           if not closest then
             report.failed = report.failed + 1
             report.errors[#report.errors + 1] = closest_err
@@ -1578,6 +2012,51 @@ function DHT:random_walk(opts)
   return report
 end
 
+--- Execute a scheduler-backed random walk query.
+-- `opts` supports walk/query controls like `count`, `alpha`, `disjoint_paths`,
+-- `find_node_opts`, and scheduler `ctx`/`yield`.
+-- @tparam[opt] table opts
+-- @treturn table|nil op
+-- @treturn[opt] table err
+function DHT:random_walk(opts)
+  if not (self.host and type(self.host.spawn_task) == "function") then
+    return nil, error_mod.new("state", "kad_dht random_walk requires host task scheduler")
+  end
+  local options = opts or {}
+  local task, task_err = self.host:spawn_task("kad.random_walk", function(ctx)
+    local task_opts = {}
+    for k, v in pairs(options) do
+      task_opts[k] = v
+    end
+    task_opts.scheduler_task = true
+    task_opts.ctx = task_opts.ctx or ctx
+    task_opts.yield = task_opts.yield or function()
+      return ctx:checkpoint()
+    end
+    task_opts.find_node_opts = task_opts.find_node_opts or {}
+    task_opts.find_node_opts.ctx = task_opts.find_node_opts.ctx or ctx
+    return self:_random_walk(task_opts)
+  end, {
+    service = "kad_dht",
+  })
+  if not task then
+    return nil, task_err
+  end
+  return operation.new(self.host, task)
+end
+
+--- Build a KAD service instance.
+-- Common `opts`: `mode`, `k`, `alpha`, `disjoint_paths`, `protocol_id`,
+-- `address_filter`, `peer_discovery`, `bootstrappers`, `routing_table`,
+-- and maintenance controls (`maintenance_enabled`, `maintenance_interval_seconds`, etc.).
+-- Additional options: `local_peer_id`, `dnsaddr_resolver`,
+-- `max_message_size`, and protocol-check tuning values.
+-- `opts.maintenance_enabled` defaults to `false`; interval/check knobs use
+-- `maintenance_*` names from module defaults.
+-- @tparam table host Host instance.
+-- @tparam[opt] table opts
+-- @treturn table|nil dht
+-- @treturn[opt] table err
 function M.new(host, opts)
   local options = opts or {}
 
@@ -1617,40 +2096,43 @@ function M.new(host, opts)
     alpha = options.alpha or M.DEFAULT_ALPHA,
     disjoint_paths = options.disjoint_paths or M.DEFAULT_DISJOINT_PATHS,
     max_message_size = options.max_message_size or protocol.MAX_MESSAGE_SIZE,
+    mode = options.mode or "client",
     address_filter = address_filter,
     bootstrappers = options.bootstrappers,
     peer_discovery = options.peer_discovery,
     routing_table = rt,
     _peer_health = {},
     _dnsaddr_resolver = options.dnsaddr_resolver,
-    _host_on_connected = nil,
-    _host_on_disconnected = nil,
+    _host_on_protocols_updated = nil,
+    _maintenance_enabled = options.maintenance_enabled == true or M.DEFAULT_MAINTENANCE_ENABLED,
+    _maintenance_interval_seconds = options.maintenance_interval_seconds or M.DEFAULT_MAINTENANCE_INTERVAL_SECONDS,
+    _maintenance_min_recheck_seconds = options.maintenance_min_recheck_seconds or M.DEFAULT_MAINTENANCE_MIN_RECHECK_SECONDS,
+    _maintenance_max_checks = options.maintenance_max_checks or M.DEFAULT_MAINTENANCE_MAX_CHECKS,
+    _maintenance_walk_every = options.maintenance_walk_every or M.DEFAULT_MAINTENANCE_WALK_EVERY,
+    _maintenance_walk_timeout = options.maintenance_walk_timeout or 20,
+    _maintenance_protocol_check_timeout = options.maintenance_protocol_check_timeout or 4,
+    _max_failed_checks_before_evict = options.max_failed_checks_before_evict or M.DEFAULT_MAX_FAILED_CHECKS_BEFORE_EVICT,
+    _maintenance_task = nil,
     _running = false,
   }, DHT)
 
   if host and type(host.on) == "function" then
-    self_obj._host_on_connected = function(payload)
-      return self_obj:_on_peer_connected(payload)
+    self_obj._host_on_protocols_updated = function(payload)
+      return self_obj:_on_peer_protocols_updated(payload)
     end
-    self_obj._host_on_disconnected = function(payload)
-      return self_obj:_on_peer_disconnected(payload)
-    end
-    local ok, on_err = host:on("peer_connected", self_obj._host_on_connected)
+    local ok, on_err = host:on("peer_protocols_updated", self_obj._host_on_protocols_updated)
     if not ok then
-      return nil, on_err
-    end
-    ok, on_err = host:on("peer_disconnected", self_obj._host_on_disconnected)
-    if not ok then
-      if type(host.off) == "function" then
-        host:off("peer_connected", self_obj._host_on_connected)
-      end
       return nil, on_err
     end
   end
 
-  if not self_obj.peer_discovery and (self_obj.bootstrappers or self_obj._dnsaddr_resolver) then
+  if not self_obj.peer_discovery and host and host.peer_discovery then
+    self_obj.peer_discovery = host.peer_discovery
+  end
+
+  if not self_obj.peer_discovery and self_obj.bootstrappers then
     local default_discovery, discovery_err = M.default_peer_discovery({
-      bootstrappers = self_obj.bootstrappers or M.DEFAULT_BOOTSTRAPPERS,
+      bootstrappers = self_obj.bootstrappers or bootstrap.DEFAULT_BOOTSTRAPPERS,
       dnsaddr_resolver = self_obj._dnsaddr_resolver,
       ignore_resolve_errors = true,
       dialable_only = true,

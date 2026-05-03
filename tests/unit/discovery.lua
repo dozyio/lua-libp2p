@@ -1,4 +1,4 @@
-local bootstrap = require("lua_libp2p.discovery.bootstrap")
+local bootstrap = require("lua_libp2p.peer_discovery_bootstrap")
 local discovery = require("lua_libp2p.discovery")
 
 local function run()

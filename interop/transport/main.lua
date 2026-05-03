@@ -7,7 +7,8 @@ package.path = table.concat({
 }, ";")
 
 local host_mod = require("lua_libp2p.host")
-local ping = require("lua_libp2p.protocol.ping")
+local ping_service = require("lua_libp2p.protocol_ping.service")
+local ping = require("lua_libp2p.protocol_ping.protocol")
 
 local ok_socket, socket = pcall(require, "socket")
 
@@ -62,8 +63,8 @@ local function parse_runtime(raw)
   if value == nil or value == "" then
     value = "luv"
   end
-  if value ~= "luv" and value ~= "poll" then
-    fatal("invalid HOST_RUNTIME env var, expected 'luv' or 'poll': " .. tostring(value))
+  if value ~= "luv" then
+    fatal("invalid HOST_RUNTIME env var, expected 'luv': " .. tostring(value))
   end
   return value
 end
@@ -248,7 +249,9 @@ local function run_listener(cfg)
     listen_addrs = { "/ip4/" .. cfg.listener_ip .. "/tcp/0" },
     security_transports = { security_protocol },
     muxers = { muxer_protocol },
-    services = { "ping" },
+    services = {
+      ping = { module = ping_service },
+    },
     blocking = false,
     connect_timeout = 5,
     io_timeout = 5,
@@ -303,12 +306,20 @@ local function run_listener(cfg)
     fatal("failed to publish listener multiaddr to redis: " .. tostring(push_err))
   end
 
-  while true do
-    local polled, poll_err = h:poll_once(0.1)
-    if not polled then
-      fatal(poll_err)
+  local run_task, run_task_err = h:spawn_task("interop.transport.listener", function(ctx)
+    while true do
+      local slept, sleep_err = ctx:sleep(0.1)
+      if slept == nil and sleep_err then
+        return nil, sleep_err
+      end
     end
-    sleep_seconds(0.01)
+  end, { service = "interop" })
+  if not run_task then
+    fatal(run_task_err)
+  end
+  local _, run_err = h:run_until_task(run_task, { poll_interval = 0.05 })
+  if run_err then
+    fatal(run_err)
   end
 end
 

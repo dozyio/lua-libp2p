@@ -1,6 +1,6 @@
-local mss = require("lua_libp2p.protocol.mss")
-local ping = require("lua_libp2p.protocol.ping")
-local tcp = require("lua_libp2p.transport.tcp")
+local mss = require("lua_libp2p.multistream_select.protocol")
+local ping = require("lua_libp2p.protocol_ping.protocol")
+local tcp = require("lua_libp2p.transport_tcp.transport")
 
 local function run()
   local listener, listen_err = tcp.listen({

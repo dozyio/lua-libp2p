@@ -1,6 +1,6 @@
 local hex = require("tests.helpers.hex")
 local keys = require("lua_libp2p.crypto.keys")
-local plaintext = require("lua_libp2p.protocol.plaintext")
+local plaintext = require("lua_libp2p.connection_encrypter_plaintext.protocol")
 local peerid = require("lua_libp2p.peerid")
 
 local function new_scripted_conn(incoming)

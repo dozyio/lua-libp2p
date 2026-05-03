@@ -1,3 +1,5 @@
+--- Multiformats entrypoint.
+-- @module lua_libp2p.multiformats
 local M = {
   varint = require("lua_libp2p.multiformats.varint"),
   multihash = require("lua_libp2p.multiformats.multihash"),

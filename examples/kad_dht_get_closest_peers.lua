@@ -27,18 +27,24 @@ local target = opts.target or client.host:peer_id().id
 io.stdout:write("target: " .. tostring(target) .. "\n")
 
 local started_at = os.time()
-local peers, lookup = client.dht:get_closest_peers(target, {
+local op, op_err = client.dht:get_closest_peers(target, {
   alpha = opts.alpha,
   disjoint_paths = opts.disjoint_paths,
   count = opts.count,
 })
+local peers, report, result_err
+if op then
+  peers, report, result_err = op:result({ timeout = opts.timeout })
+else
+  result_err = op_err
+end
 if not peers then
   common.stop(client)
-  io.stderr:write("get_closest_peers failed: " .. tostring(lookup) .. "\n")
+  io.stderr:write("get_closest_peers failed: " .. tostring(result_err) .. "\n")
   os.exit(1)
 end
 
-common.print_lookup("get_closest_peers", lookup)
+common.print_lookup("get_closest_peers", report)
 io.stdout:write("  duration: " .. tostring(os.time() - started_at) .. "s\n")
 io.stdout:write("closest peers:\n")
 for _, peer in ipairs(peers) do

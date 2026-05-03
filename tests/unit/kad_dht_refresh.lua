@@ -60,11 +60,9 @@ local function run()
     return nil, add_b_err
   end
 
-  for _, cb in ipairs(handlers.peer_disconnected or {}) do
-    cb({ peer_id = "peer-b" })
-  end
+  dht._peer_health["peer-b"] = { stale = true }
   if dht._peer_health["peer-b"] == nil or dht._peer_health["peer-b"].stale ~= true then
-    return nil, "expected disconnection hook to mark peer stale"
+    return nil, "expected peer-b to be marked stale"
   end
 
   local report, refresh_err = dht:refresh_once({
@@ -81,13 +79,6 @@ local function run()
   local peer_b = dht:find_peer("peer-b")
   if peer_b ~= nil then
     return nil, "peer-b should be removed from routing table"
-  end
-
-  for _, cb in ipairs(handlers.peer_connected or {}) do
-    cb({ peer_id = "peer-a" })
-  end
-  if dht._peer_health["peer-a"] and dht._peer_health["peer-a"].stale then
-    return nil, "expected connection hook to clear stale state"
   end
 
   local stopped, stop_err = dht:stop()

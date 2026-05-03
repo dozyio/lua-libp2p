@@ -10,7 +10,12 @@ This repo currently includes:
 - Shared error and logging helpers
 - Ed25519, RSA, ECDSA, and Secp256k1 identity + PeerId + multiformat helpers
 - Multiaddr parsing/formatting + binary codec subset (`/ip4`, `/ip6`, `/dns*`, `/tcp`, `/udp`, `/quic-v1`, `/p2p`)
-- Peer discovery abstraction + bootstrap discovery source (dnsaddr-capable via resolver injection)
+- Peer discovery abstraction + host-level bootstrap discovery config (dnsaddr-capable by default)
+- Address manager for listen, announce, no-announce, observed, and relay advertisement sources
+- AutoNAT v2 client service for address reachability checks and dial-back nonce verification
+- UPnP IGD/SSDP NAT mapping service for creating public TCP/UDP port mappings from private transport listen addrs
+- Circuit relay v2 client/AutoRelay support for reservations, relayed address advertisement, Stop handling, and reservation lifecycle events
+- AutoRelay currently does not use AutoNAT reachability decisions; observed addresses are collected through identify but are not advertised by default
 - Multibase/multiformat primitives (base58btc, base32, varint, multihash, CIDv1)
 - Signed envelope + peer record encode/sign/verify primitives
 - Kademlia kbucket routing-table module (`lua_libp2p.kbucket`)
@@ -28,26 +33,37 @@ This repo currently includes:
 - connection upgrader pipeline (security + muxer negotiation) for plaintext+yamux and noise+yamux
 - host/node API with lifecycle (`start`/`stop`) and stream operations (`dial`, `new_stream`, `handle`)
 - Host behavior is configured at `new(...)`; `start()` takes no options
+- `host:dial(target, { force = true })` opens a fresh connection attempt instead of reusing or coalescing an existing connection; use `require_unlimited_connection = true` when a relayed limited connection must not be reused.
 - Lightweight integration test harness
 
 ## Project layout
 
 - `lua_libp2p/init.lua`: package entry point
-- `lua_libp2p/transport`: transport abstractions
-- `lua_libp2p/security`: secure channel abstractions
+- `lua_libp2p/transport_tcp`: TCP transport implementations (`luv`, `luv-native`, and socket compatibility helpers)
+- `lua_libp2p/connection_encrypter_noise`: Noise connection encrypter protocol
+- `lua_libp2p/connection_encrypter_plaintext`: Plaintext v2 connection encrypter protocol
 - `lua_libp2p/muxer`: stream multiplexer abstractions
-- `lua_libp2p/protocol`: protocol implementations
+- `lua_libp2p/protocol_identify`: identify protocol + service
+- `lua_libp2p/protocol_ping`: ping protocol + service
+- `lua_libp2p/protocol_perf`: perf protocol + service
+- `lua_libp2p/multistream_select`: multistream-select protocol
 - `lua_libp2p/crypto`: key and signature helpers
 - `lua_libp2p/multiformats`: varint, multibase, multihash, cid helpers
 - `lua_libp2p/multiaddr.lua`: multiaddr parsing/formatting/utilities
 - `lua_libp2p/dnsaddr.lua`: dnsaddr resolution abstraction utilities (resolver-injected)
-- `lua_libp2p/discovery`: pluggable peer discovery manager + bootstrap source
+- `lua_libp2p/autonat`: AutoNAT v2 client service
+- `lua_libp2p/upnp`: SSDP discovery, UPnP IGD SOAP client, and UPnP NAT service
+- `lua_libp2p/bootstrap.lua`: default bootstrap peer list and bootstrapper helpers
+- `lua_libp2p/address_manager.lua`: advertised address selection and relay address tracking
+- `lua_libp2p/discovery`: pluggable peer discovery manager
+- `lua_libp2p/peer_discovery_bootstrap`: bootstrap peer discovery source
 - `lua_libp2p/network`: connection/stream abstraction layer
 - `lua_libp2p/record`: signed envelopes and peer routing records
-- `lua_libp2p/host.lua`: host/node setup (`start`, `dial`, `new_stream`, `handle`, `close`)
+- `lua_libp2p/host/init.lua`: host/node setup (`start`, `dial`, `new_stream`, `handle`, `close`)
 - `lua_libp2p/peerstore`: peer metadata storage
 - `lua_libp2p/kbucket.lua`: Kademlia kbucket routing table module
 - `lua_libp2p/kad_dht`: Kademlia DHT module and wire helpers
+- `lua_libp2p/transport_circuit_relay_v2`: circuit relay v2 protocol, client, and AutoRelay
 - `tests`: test harness and integration tests
 
 ## Runtime assumptions
@@ -64,17 +80,84 @@ This repo currently includes:
 - Tests run with the Lua interpreter directly
 
 Host runtime note:
-- `runtime = "auto"` is the default. It selects `luv` when the `luv` module is available, otherwise `poll`.
-- `runtime = "poll"` keeps the poll/select scheduler.
-- `runtime = "luv"` enables a libuv-backed internal scheduler and uses the native `luv` TCP transport when `luv` is available.
+- `runtime = "auto"` is the default and resolves to `luv`.
+- `runtime = "luv"` enables a libuv-backed internal scheduler and uses the native `luv` TCP transport.
 - With `runtime = "luv"` and `blocking = false`, a uv loop must be running in the process.
-- Set `LUA_LIBP2P_TCP_LUV_PROXY=1` to force the compatibility proxy transport under `runtime = "luv"`.
-- Proxy mode is a temporary fallback/debug path; native luv TCP is the recommended and faster luv runtime transport.
 
 Networking note:
 - `lua_libp2p.network.MESSAGE_SIZE_MAX` is `4 * 1024 * 1024` bytes, matching the 4 MiB practical KAD RPC cap used by Go/JS implementations.
 - The connection abstraction is stream-session based, not yamux-specific. TCP+Noise+Yamux is the current default stack, but future transports with native stream multiplexing, such as QUIC, can provide their own session implementation.
 - A stream session is expected to provide `open_stream()`, `accept_stream_now()`, optional `process_one()`, optional `has_waiters()`, and optional `close()`.
+
+## AutoRelay, Bootstrap, And Addresses
+
+Host behavior is configured in `host.new(...)`; `start()` takes no options. Bootstrap discovery is configured at the host level and is shared by services such as the Kademlia DHT and AutoRelay.
+
+Enable bootstrap discovery with the default public libp2p bootstrappers:
+
+```lua
+local host = require("lua_libp2p.host")
+local identify_service = require("lua_libp2p.protocol_identify.service")
+local kad_dht_service = require("lua_libp2p.kad_dht")
+local peer_discovery_bootstrap = require("lua_libp2p.peer_discovery_bootstrap")
+
+local h = assert(host.new({
+  services = {
+    identify = { module = identify_service },
+    kad_dht = { module = kad_dht_service },
+  },
+  peer_discovery = {
+    bootstrap = {
+      module = peer_discovery_bootstrap,
+      config = {}, -- empty config means use lua_libp2p.bootstrap defaults
+    },
+  },
+}))
+
+assert(h:start())
+```
+
+Bootstrap config notes:
+- `/dnsaddr` bootstrap peers are resolved by `lua_libp2p.dnsaddr.default_resolver` unless a resolver is supplied.
+- Bootstrap peers are merged into the host peerstore and tagged as `bootstrap`.
+- Bootstrap discovery dials on startup by default; set `dial_on_start = false` to only seed the peerstore.
+- DHT service config defaults `kad_dht.peer_discovery` to `host.peer_discovery`.
+
+Address manager status:
+- The host owns `host.address_manager`.
+- It tracks listen addrs, explicit announce addrs, no-announce addrs, observed addrs, and relay addrs.
+- Private addresses are automatically marked `status = "private"` with JS-style address metadata such as `type = "transport"` or `type = "observed"`.
+- Public mappings added by UPnP use `type = "ip-mapping"`; relayed reservation addresses use `type = "transport"`.
+- `host:get_multiaddrs_raw()` returns selected advertised addrs without appending the local peer id.
+- `host:get_multiaddrs()` appends `/p2p/<self>` where needed.
+- Observed addrs from identify are collected but are not advertised by default.
+- Relayed `/p2p-circuit` addrs are advertised only while an AutoRelay reservation is active.
+
+AutoNAT v2 client status:
+- `services = { autonat = { module = require("lua_libp2p.autonat.client") } }` installs the client-side `/libp2p/autonat/2/dial-back` handler.
+- `host.autonat:check(server, { addrs = { ... } })` opens `/libp2p/autonat/2/dial-request` to an AutoNAT v2 server.
+- Dial-back nonce verification is tracked per request; the client responds with `DialBackResponse OK` for matching pending nonces.
+- Anti-amplification `DialDataRequest` is supported with configurable byte caps.
+- Results are stored on the address manager when available and emitted via `autonat:address:checked`, `autonat:address:reachable`, `autonat:address:unreachable`, and `autonat:request:failed` events.
+- AutoNAT v2 server mode is not implemented.
+
+UPnP NAT status:
+- `services = { upnp_nat = { module = require("lua_libp2p.upnp.nat") } }` enables SSDP gateway discovery and UPnP IGD SOAP port mapping.
+- The service maps eligible private, non-loopback IP transport listen addrs and adds external addresses to the address manager as `type = "ip-mapping"`.
+- By default mapped addresses are added as unverified and should be confirmed by AutoNAT before advertisement.
+- Set `upnp_nat = { auto_confirm_address = true }` to immediately advertise mapped addresses, useful for local testing.
+- Events emitted: `upnp_nat:mapping:active` and `upnp_nat:mapping:failed`.
+- If the gateway external IP is private, the service reports likely double NAT and does not add mappings.
+
+AutoRelay status:
+- Circuit relay v2 Hop/Stop protocol codecs and stream helpers are implemented.
+- `services = { autorelay = { module = require("lua_libp2p.transport_circuit_relay_v2.autorelay") } }` installs the Stop handler and enables relay reservation management.
+- `/p2p-circuit` in `listen_addrs` requires the `autorelay` service and is treated as a relay listen capability, not a TCP listener.
+- AutoRelay discovers relay candidates from peers advertising `/libp2p/circuit/relay/0.2.0/hop` and can also reserve explicitly configured relays.
+- Active reservations publish relayed `/p2p-circuit` addrs through the address manager; removed reservations remove those addrs.
+- AutoRelay emits reservation lifecycle events: `relay:reservation:active`, `relay:reservation:removed`, and `relay:reservation:failed`.
+- Default reservation target is small (`max_reservations = 2`), so seeing one or two active relay peers is expected.
+- AutoRelay does not currently gate reservations on AutoNAT reachability results.
 
 ## Install dependencies (LuaRocks)
 
@@ -142,7 +225,6 @@ Or via Make:
 ```bash
 make test
 make test-luv-native
-make test-luv-proxy
 ```
 
 Yamux interop check against go-yamux:
@@ -152,21 +234,16 @@ make interop-yamux-go
 make interop-yamux-go-reverse
 make interop-yamux-go-luv-native
 make interop-yamux-go-reverse-luv-native
-make interop-yamux-go-luv-proxy
-make interop-yamux-go-reverse-luv-proxy
 
 # Noise interop checks against go-libp2p Noise
 make interop-noise-go
 make interop-noise-go-reverse
 make interop-noise-go-luv-native
 make interop-noise-go-reverse-luv-native
-make interop-noise-go-luv-proxy
-make interop-noise-go-reverse-luv-proxy
 
 # JS perf interop check against lua host
 make interop-perf-js
 make interop-perf-js-luv-native
-make interop-perf-js-luv-proxy
 ```
 
 Note: multiaddr conformance tests include a go/js-derived vector set plus an explicit

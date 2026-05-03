@@ -1,24 +1,13 @@
-local tcp_luv = require("lua_libp2p.transport.tcp_luv")
+local tcp_luv = require("lua_libp2p.transport_tcp.luv")
 
 local function run()
-  if tcp_luv.BACKEND ~= "luv-native" and tcp_luv.BACKEND ~= "luv-proxy" then
+  if tcp_luv.BACKEND ~= "luv-native" then
     return nil, "unexpected tcp_luv backend marker"
   end
 
   local has_luv, uv = pcall(require, "luv")
   if not has_luv then
-    if tcp_luv.BACKEND ~= "luv-proxy" then
-      return nil, "expected luv-proxy marker when luv is unavailable"
-    end
-    return true
-  end
-
-  if tcp_luv.BACKEND ~= "luv-native" and tcp_luv.BACKEND ~= "luv-proxy" then
-    return nil, "unexpected backend marker when luv is available"
-  end
-
-  if tcp_luv.BACKEND ~= "luv-native" then
-    return true
+    return nil, "luv is required for tcp_luv"
   end
 
   local real_new_tcp = uv.new_tcp

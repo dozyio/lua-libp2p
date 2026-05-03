@@ -1,3 +1,5 @@
+--- Stream muxer registry.
+-- @module lua_libp2p.muxer
 local error_mod = require("lua_libp2p.error")
 local yamux = require("lua_libp2p.muxer.yamux")
 
@@ -34,6 +36,14 @@ function M.get(protocol_id)
   return registry[protocol_id]
 end
 
+--- Create a muxer session for a negotiated protocol.
+-- `opts` supports `is_client`, `initial_stream_window`, `max_ack_backlog`,
+-- and `max_accept_backlog`.
+-- @tparam string protocol_id
+-- @tparam table raw_conn
+-- @tparam[opt] table opts
+-- @treturn table|nil session
+-- @treturn[opt] table err
 function M.new_session(protocol_id, raw_conn, opts)
   local impl = registry[protocol_id]
   if not impl then

@@ -4,14 +4,12 @@ package.path = table.concat({
   package.path,
 }, ";")
 
-local runtime = os.getenv("LUA_LIBP2P_INTEROP_RUNTIME") or "poll"
+local runtime = os.getenv("LUA_LIBP2P_INTEROP_RUNTIME") or "luv"
 local tcp
 if runtime == "luv" then
-  tcp = require("lua_libp2p.transport.tcp_luv")
-elseif runtime == "poll" then
-  tcp = require("lua_libp2p.transport.tcp")
+  tcp = require("lua_libp2p.transport_tcp.luv")
 else
-  io.stderr:write("invalid LUA_LIBP2P_INTEROP_RUNTIME, expected 'luv' or 'poll'\n")
+  io.stderr:write("invalid LUA_LIBP2P_INTEROP_RUNTIME, expected 'luv'\n")
   os.exit(2)
 end
 local yamux = require("lua_libp2p.muxer.yamux")

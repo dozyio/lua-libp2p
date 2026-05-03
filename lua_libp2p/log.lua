@@ -1,3 +1,5 @@
+--- Lightweight structured logging helpers.
+-- @module lua_libp2p.log
 local M = {}
 
 local LEVELS = {
@@ -26,6 +28,10 @@ local function stringify_fields(fields)
   return table.concat(parts, " ")
 end
 
+--- Set minimum log level.
+-- @tparam string name One of `debug|info|warn|error`.
+-- @treturn true|nil ok
+-- @treturn[opt] string err
 function M.set_level(name)
   local level = LEVELS[name]
   if not level then
@@ -35,6 +41,12 @@ function M.set_level(name)
   return true
 end
 
+--- Emit a structured log line.
+-- @tparam string level_name One of `debug|info|warn|error`.
+-- @tparam string message Log message.
+-- @tparam[opt] table fields Key/value metadata.
+-- @treturn true|nil ok
+-- @treturn[opt] string err
 function M.log(level_name, message, fields)
   local level = LEVELS[level_name]
   if not level then
@@ -54,18 +66,22 @@ function M.log(level_name, message, fields)
   return true
 end
 
+--- Shortcut for `debug` level logging.
 function M.debug(message, fields)
   return M.log("debug", message, fields)
 end
 
+--- Shortcut for `info` level logging.
 function M.info(message, fields)
   return M.log("info", message, fields)
 end
 
+--- Shortcut for `warn` level logging.
 function M.warn(message, fields)
   return M.log("warn", message, fields)
 end
 
+--- Shortcut for `error` level logging.
 function M.error(message, fields)
   return M.log("error", message, fields)
 end

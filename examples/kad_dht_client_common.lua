@@ -4,14 +4,13 @@ package.path = table.concat({
   package.path,
 }, ";")
 
-local discovery = require("lua_libp2p.discovery")
-local discovery_bootstrap = require("lua_libp2p.discovery.bootstrap")
 local host_mod = require("lua_libp2p.host")
-local kad_dht = require("lua_libp2p.kad_dht")
+local identify_service = require("lua_libp2p.protocol_identify.service")
+local ping_service = require("lua_libp2p.protocol_ping.service")
+local kad_dht_service = require("lua_libp2p.kad_dht")
+local peer_discovery_bootstrap = require("lua_libp2p.peer_discovery_bootstrap")
 
 local M = {}
-
-M.DEFAULT_BOOTSTRAP = "/ip4/104.131.131.82/tcp/4001/p2p/QmaCpDMGvV2BGHeYERUEnRQAwe3N8SzbUtfsmvsqQLuvuJ"
 
 function M.parse_args(args)
   local opts = {
@@ -69,10 +68,6 @@ function M.parse_args(args)
     end
   end
 
-  if #opts.bootstrappers == 0 then
-    opts.bootstrappers[1] = M.DEFAULT_BOOTSTRAP
-  end
-
   return opts
 end
 
@@ -95,6 +90,21 @@ function M.key_from_opts(opts)
     return opts.key
   end
   return nil, "provide --key <bytes-as-text> or --key-hex <hex>"
+end
+
+local function bootstrap_config(opts)
+  if #opts.bootstrappers > 0 then
+    return {
+      list = opts.bootstrappers,
+      dialable_only = true,
+      ignore_resolve_errors = true,
+      dial_on_start = true,
+    }
+  end
+  return {
+    ignore_resolve_errors = true,
+    dial_on_start = true,
+  }
 end
 
 local function print_error_summary(errors)
@@ -123,6 +133,7 @@ function M.print_lookup(label, lookup)
   io.stdout:write("  queried: " .. tostring(lookup and lookup.queried or 0) .. "\n")
   io.stdout:write("  responses: " .. tostring(lookup and lookup.responses or 0) .. "\n")
   io.stdout:write("  failed: " .. tostring(lookup and lookup.failed or 0) .. "\n")
+  io.stdout:write("  cancelled: " .. tostring(lookup and lookup.cancelled or 0) .. "\n")
   io.stdout:write("  active_peak: " .. tostring(lookup and lookup.active_peak or 0) .. "\n")
   io.stdout:write("  termination: " .. tostring(lookup and lookup.termination or "unknown") .. "\n")
   if lookup and lookup.errors and #lookup.errors > 0 then
@@ -131,11 +142,47 @@ function M.print_lookup(label, lookup)
   end
 end
 
+function M.wait_for_routing_table(host, dht, opts)
+  local options = opts or {}
+  local timeout = options.timeout or 30
+  local min_peers = options.min_peers or 1
+  local ctx = options.ctx
+  local started_at = os.time()
+  while os.time() - started_at < timeout do
+    if #(dht.routing_table:all_peers()) >= min_peers then
+      return true
+    end
+    local ok, err = host:sleep(0.25, { ctx = ctx })
+    if ok == nil and err then
+      return nil, err
+    end
+  end
+  return nil, "timed out waiting for DHT routing table peers"
+end
+
 function M.new_client(opts)
   local host, host_err = host_mod.new({
     runtime = "luv",
+    peer_discovery = {
+      bootstrap = {
+        module = peer_discovery_bootstrap,
+        config = bootstrap_config(opts),
+      },
+    },
     listen_addrs = { "/ip4/127.0.0.1/tcp/0" },
-    services = { "identify" },
+    services = {
+      identify = { module = identify_service },
+      ping = { module = ping_service },
+      kad_dht = {
+        module = kad_dht_service,
+        config = {
+          mode = "client",
+          alpha = opts.alpha,
+          disjoint_paths = opts.disjoint_paths,
+          address_filter = opts.address_filter,
+        },
+      },
+    },
     blocking = false,
     connect_timeout = opts.connect_timeout,
     io_timeout = opts.io_timeout,
@@ -150,49 +197,17 @@ function M.new_client(opts)
     return nil, start_err
   end
 
-  local bootstrap_source, source_err = discovery_bootstrap.new({
-    list = opts.bootstrappers,
-    dialable_only = true,
-    ignore_resolve_errors = true,
+  local dht = host.kad_dht
+
+  local seeded, bootstrap_err = M.wait_for_routing_table(host, dht, {
+    timeout = opts.bootstrap_timeout or 30,
   })
-  if not bootstrap_source then
-    host:stop()
-    return nil, source_err
-  end
-
-  local peer_discovery, discovery_err = discovery.new({ sources = { bootstrap_source } })
-  if not peer_discovery then
-    host:stop()
-    return nil, discovery_err
-  end
-
-  local dht, dht_err = kad_dht.new(host, {
-    peer_discovery = peer_discovery,
-    alpha = opts.alpha,
-    disjoint_paths = opts.disjoint_paths,
-    address_filter = opts.address_filter,
-  })
-  if not dht then
-    host:stop()
-    return nil, dht_err
-  end
-
-  local dht_started, dht_start_err = dht:start()
-  if not dht_started then
-    host:stop()
-    return nil, dht_start_err
-  end
-
-  local bootstrap_report, bootstrap_err = dht:bootstrap()
-  if not bootstrap_report then
+  if not seeded then
     host:stop()
     return nil, bootstrap_err
   end
 
-  io.stdout:write("bootstrap: attempted=" .. tostring(bootstrap_report.attempted)
-    .. " connected=" .. tostring(bootstrap_report.connected)
-    .. " added=" .. tostring(bootstrap_report.added)
-    .. " failed=" .. tostring(bootstrap_report.failed) .. "\n")
+  io.stdout:write("routing table seeded: peers=" .. tostring(#(dht.routing_table:all_peers())) .. "\n")
 
   return {
     host = host,

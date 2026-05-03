@@ -5,9 +5,9 @@ package.path = table.concat({
 }, ";")
 
 local host_mod = require("lua_libp2p.host")
-local identify = require("lua_libp2p.protocol.identify")
+local identify_service = require("lua_libp2p.protocol_identify.service")
 local multiaddr = require("lua_libp2p.multiaddr")
-local ping = require("lua_libp2p.protocol.ping")
+local ping_service = require("lua_libp2p.protocol_ping.service")
 local peerid = require("lua_libp2p.peerid")
 
 local target = arg[1]
@@ -16,23 +16,25 @@ if not target then
   os.exit(2)
 end
 
-local host, host_err = host_mod.new({})
+local host, host_err = host_mod.new({
+  services = {
+    identify = { module = identify_service },
+    ping = { module = ping_service },
+  },
+})
 if not host then
   io.stderr:write("host init failed: " .. tostring(host_err) .. "\n")
   os.exit(1)
 end
 
-local id_stream, selected, _, id_err = host:new_stream(target, { identify.ID })
-if not id_stream then
-  io.stderr:write("identify stream failed: " .. tostring(id_err) .. "\n")
+local identify_result, identify_err = host.services.identify:identify(target)
+if not identify_result then
+  io.stderr:write(tostring(identify_err) .. "\n")
   os.exit(1)
 end
 
-local id_msg, read_err = identify.read(id_stream)
-if not id_msg then
-  io.stderr:write("identify read failed: " .. tostring(read_err) .. "\n")
-  os.exit(1)
-end
+local id_msg = identify_result.message
+local selected = identify_result.protocol
 
 io.stdout:write("identify protocol: " .. tostring(selected) .. "\n")
 io.stdout:write("agentVersion: " .. tostring(id_msg.agentVersion) .. "\n")
@@ -60,18 +62,12 @@ for _, addr_bytes in ipairs(id_msg.listenAddrs or {}) do
   end
 end
 
-local p_stream, p_selected, _, p_err = host:new_stream(target, { ping.ID })
-if not p_stream then
-  io.stderr:write("ping stream failed: " .. tostring(p_err) .. "\n")
+local ping_result, ping_err = host.services.ping:ping(target)
+if not ping_result then
+  io.stderr:write(tostring(ping_err) .. "\n")
   os.exit(1)
 end
 
-local result, ping_err = ping.ping_once(p_stream)
-if not result then
-  io.stderr:write("ping failed: " .. tostring(ping_err) .. "\n")
-  os.exit(1)
-end
-
-io.stdout:write(string.format("ping protocol: %s rtt=%.6fs\n", tostring(p_selected), result.rtt_seconds))
+io.stdout:write(string.format("ping protocol: %s rtt=%.6fs\n", tostring(ping_result.protocol), ping_result.rtt_seconds))
 
 host:close()

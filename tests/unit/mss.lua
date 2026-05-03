@@ -1,5 +1,5 @@
 local error_mod = require("lua_libp2p.error")
-local mss = require("lua_libp2p.protocol.mss")
+local mss = require("lua_libp2p.multistream_select.protocol")
 local varint = require("lua_libp2p.multiformats.varint")
 
 local function new_scripted_conn(incoming)

@@ -8,13 +8,14 @@ local NONFATAL_KINDS = { "timeout", "closed", "decode", "protocol", "unsupported
 local function new_host()
   local keypair = assert(ed25519.generate_keypair())
   local h, err = host_mod.new({
-    runtime = "poll",
+    runtime = "luv",
     identity = keypair,
     listen_addrs = {},
   })
   if not h then
     error(err)
   end
+  h._tcp_transport = { BACKEND = "test" }
   return h
 end
 
@@ -37,7 +38,7 @@ local function run_inner()
     h._connections = { { conn = conn, state = { remote_peer_id = "peer-a" } } }
     h._connections_by_peer["peer-a"] = h._connections[1]
 
-    local ok, err = h:poll_once(0)
+    local ok, err = h:_poll_once_with_ready_map(0)
     if not ok then
       return nil, string.format("expected nonfatal process error '%s' to continue: %s", kind, tostring(err))
     end
@@ -75,7 +76,7 @@ local function run_inner()
     h._connections = { { conn = conn, state = { remote_peer_id = "peer-b" } } }
     h._connections_by_peer["peer-b"] = h._connections[1]
 
-    local ok, err = h:poll_once(0)
+    local ok, err = h:_poll_once_with_ready_map(0)
     if not ok then
       return nil, string.format("expected nonfatal stream error '%s' to continue: %s", kind, tostring(err))
     end
@@ -101,15 +102,16 @@ local function run_inner()
       state = {},
     })
 
-    local ok, err = h:_run_handler_tasks()
+    local ok, err = h:_run_background_tasks()
     if not ok then
       return nil, string.format("expected nonfatal handler error '%s' to continue: %s", kind, tostring(err))
     end
     if not closed then
       return nil, string.format("nonfatal handler error '%s' should close connection", kind)
     end
-    if #h._handler_tasks ~= 0 then
-      return nil, "handler task should be removed after completion"
+    local task = h:list_tasks()[1]
+    if not task or task.status ~= "completed" then
+      return nil, "handler task should complete after nonfatal error"
     end
   end
 
@@ -124,9 +126,13 @@ local function run_inner()
       state = {},
     })
 
-    local ok, err = h:_run_handler_tasks()
-    if ok or not err then
-      return nil, "expected fatal handler task error to fail host"
+    local ok, err = h:_run_background_tasks()
+    if not ok then
+      return nil, err
+    end
+    local task = h:list_tasks()[1]
+    if not task or task.status ~= "failed" then
+      return nil, "expected fatal handler task error to fail task"
     end
   end
 

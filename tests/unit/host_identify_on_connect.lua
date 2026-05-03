@@ -1,6 +1,7 @@
 local ed25519 = require("lua_libp2p.crypto.ed25519")
 local host_mod = require("lua_libp2p.host")
-local identify = require("lua_libp2p.protocol.identify")
+local identify = require("lua_libp2p.protocol_identify.protocol")
+local identify_service = require("lua_libp2p.protocol_identify.service")
 
 local function new_buffer_conn(initial)
   local conn = {
@@ -39,7 +40,7 @@ local function run()
   local keypair = assert(ed25519.generate_keypair())
   local host, host_err = host_mod.new({
     identity = keypair,
-    services = { "identify" },
+    services = { identify = identify_service },
   })
   if not host then
     return nil, host_err
@@ -76,12 +77,17 @@ local function run()
     return nil, register_err
   end
 
-  local ran, run_err = host:_run_handler_tasks()
-  if not ran then
-    return nil, run_err
+  local ev, ev_err
+  for _ = 1, 8 do
+    local bg_ok, bg_err = host:_run_background_tasks()
+    if not bg_ok then
+      return nil, bg_err
+    end
+    ev, ev_err = host:next_event(sub)
+    if ev or ev_err then
+      break
+    end
   end
-
-  local ev, ev_err = host:next_event(sub)
   if ev_err then
     return nil, ev_err
   end

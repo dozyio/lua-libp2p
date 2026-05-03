@@ -1,3 +1,5 @@
+--- Peer record codec and envelope helpers.
+-- @module lua_libp2p.record.peer_record
 local error_mod = require("lua_libp2p.error")
 local multiaddr = require("lua_libp2p.multiaddr")
 local peerid = require("lua_libp2p.peerid")
@@ -127,6 +129,7 @@ local function decode_address_info(payload)
   return out
 end
 
+--- Encode a peer record payload.
 function M.encode(record)
   if type(record) ~= "table" then
     return nil, error_mod.new("input", "peer record must be a table")
@@ -175,6 +178,7 @@ function M.encode(record)
   return table.concat(parts)
 end
 
+--- Decode a peer record payload.
 function M.decode(payload)
   if type(payload) ~= "string" then
     return nil, error_mod.new("input", "peer record payload must be bytes")
@@ -247,6 +251,9 @@ function M.decode(payload)
   return out
 end
 
+--- Sign a peer record with an ed25519 keypair.
+-- `opts.domain` overrides envelope domain; defaults to `M.DOMAIN`.
+-- `opts.payload_type` overrides payload type; defaults to `M.PAYLOAD_TYPE`.
 function M.sign_ed25519(keypair, record, opts)
   local options = opts or {}
   local payload, payload_err = M.encode(record)
@@ -259,6 +266,9 @@ function M.sign_ed25519(keypair, record, opts)
   return signed_envelope.sign_ed25519(keypair, domain, payload_type, payload)
 end
 
+--- Verify a signed peer record envelope.
+-- `opts.domain` and `opts.payload_type` enforce expected envelope metadata.
+-- `opts.expected_peer_id` enforces expected peer identity.
 function M.verify_signed_envelope(envelope_or_bytes, opts)
   local options = opts or {}
   local envelope = envelope_or_bytes

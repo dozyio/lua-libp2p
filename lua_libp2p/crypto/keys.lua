@@ -1,3 +1,5 @@
+--- Key loading and signing helpers.
+-- @module lua_libp2p.crypto.keys
 local ed25519 = require("lua_libp2p.crypto.ed25519")
 local error_mod = require("lua_libp2p.error")
 local key_pb = require("lua_libp2p.crypto.key_pb")
@@ -237,6 +239,13 @@ function M.peer_id(identity)
   return peerid.from_public_key_proto(proto)
 end
 
+--- Generate new identity keypair.
+-- `opts.bits` (`number`) configures RSA key size (default `2048`).
+-- `opts.curve` (`string`) configures ECDSA curve (default `prime256v1`).
+-- @tparam[opt] string key_type `ed25519|rsa|ecdsa|secp256k1`.
+-- @tparam[opt] table opts
+-- @treturn table|nil keypair
+-- @treturn[opt] table err
 function M.generate_keypair(key_type, opts)
   local _, name = normalize_type(key_type or "ed25519")
   local options = opts or {}
@@ -297,9 +306,9 @@ function M.sign(identity, message)
   if type(message) ~= "string" then
     return nil, error_mod.new("input", "signature message must be bytes")
   end
-  local code, name = normalize_type(type(identity) == "table" and (identity.type or identity.key_type) or nil)
-  if not code and type(identity) == "table" and type(identity.public_key) == "string" and #identity.public_key == 32 then
-    code, name = key_pb.KEY_TYPE.Ed25519, "ed25519"
+  local _, name = normalize_type(type(identity) == "table" and (identity.type or identity.key_type) or nil)
+  if not name and type(identity) == "table" and type(identity.public_key) == "string" and #identity.public_key == 32 then
+    name = "ed25519"
   end
   if name == "ed25519" then
     return ed25519.sign(identity, message)

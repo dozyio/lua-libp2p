@@ -1,6 +1,6 @@
 local host_mod = require("lua_libp2p.host")
-local mss = require("lua_libp2p.protocol.mss")
-local tcp = require("lua_libp2p.transport.tcp")
+local mss = require("lua_libp2p.multistream_select.protocol")
+local tcp = require("lua_libp2p.transport_tcp.transport")
 local varint = require("lua_libp2p.multiformats.varint")
 
 local function close_quiet(value)
@@ -13,7 +13,7 @@ end
 
 local function run()
   local h, host_err = host_mod.new({
-    runtime = "poll",
+    runtime = "luv",
     listen_addrs = { "/ip4/127.0.0.1/tcp/0" },
     blocking = false,
     accept_timeout = 0.05,
@@ -57,7 +57,7 @@ local function run()
     return nil, write_err
   end
 
-  local ok, poll_err = h:poll_once(0.2)
+  local ok, poll_err = h:_poll_once(0.2)
   close_quiet(attacker)
   if not ok then
     close_quiet(h)
@@ -69,7 +69,7 @@ local function run()
     return nil, "host should remain running after oversized multistream frame"
   end
 
-  ok, poll_err = h:poll_once(0)
+  ok, poll_err = h:_poll_once(0)
   if not ok then
     close_quiet(h)
     return nil, poll_err

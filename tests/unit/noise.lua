@@ -1,5 +1,5 @@
 local ed25519 = require("lua_libp2p.crypto.ed25519")
-local noise = require("lua_libp2p.security.noise")
+local noise = require("lua_libp2p.connection_encrypter_noise.protocol")
 
 local function new_scripted_conn(incoming)
   local conn = {

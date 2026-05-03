@@ -1,0 +1,327 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN"
+   "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html>
+<meta http-equiv="Content-Type" content="text/html; charset=UTF-8"/>
+<head>
+    <title>lua-libp2p API Documentation</title>
+    <link rel="stylesheet" href="../ldoc_fixed.css" type="text/css" />
+</head>
+<body>
+
+<div id="container">
+
+<div id="product">
+	<div id="product_logo"></div>
+	<div id="product_name"><big><b></b></big></div>
+	<div id="product_description"></div>
+</div> <!-- id="product" -->
+
+
+<div id="main">
+
+
+<!-- Menu -->
+
+<div id="navigation">
+<br/>
+<h1>lua-libp2p</h1>
+
+
+<ul>
+  <li><a href="../index.html">Index</a></li>
+</ul>
+
+<h2>Contents</h2>
+<ul>
+<li><a href="#Functions">Functions</a></li>
+</ul>
+
+
+<h2>Modules</h2>
+<ul class="nowrap">
+  <li><a href="../modules/lua_libp2p.html">lua_libp2p</a></li>
+  <li><a href="../modules/lua_libp2p.address_manager.html">lua_libp2p.address_manager</a></li>
+  <li><a href="../modules/lua_libp2p.autonat.html">lua_libp2p.autonat</a></li>
+  <li><a href="../modules/lua_libp2p.autonat.client.html">lua_libp2p.autonat.client</a></li>
+  <li><a href="../modules/lua_libp2p.bootstrap.html">lua_libp2p.bootstrap</a></li>
+  <li><a href="../modules/lua_libp2p.connection_encrypter_noise.protocol.html">lua_libp2p.connection_encrypter_noise.protocol</a></li>
+  <li><a href="../modules/lua_libp2p.connection_encrypter_plaintext.protocol.html">lua_libp2p.connection_encrypter_plaintext.protocol</a></li>
+  <li><a href="../modules/lua_libp2p.connection_manager.html">lua_libp2p.connection_manager</a></li>
+  <li><a href="../modules/lua_libp2p.crypto.html">lua_libp2p.crypto</a></li>
+  <li><a href="../modules/lua_libp2p.crypto.ed25519.html">lua_libp2p.crypto.ed25519</a></li>
+  <li><a href="../modules/lua_libp2p.crypto.key_pb.html">lua_libp2p.crypto.key_pb</a></li>
+  <li><a href="../modules/lua_libp2p.crypto.keys.html">lua_libp2p.crypto.keys</a></li>
+  <li><a href="../modules/lua_libp2p.datastore.html">lua_libp2p.datastore</a></li>
+  <li><a href="../modules/lua_libp2p.datastore.memory.html">lua_libp2p.datastore.memory</a></li>
+  <li><a href="../modules/lua_libp2p.discovery.html">lua_libp2p.discovery</a></li>
+  <li><a href="../modules/lua_libp2p.dnsaddr.html">lua_libp2p.dnsaddr</a></li>
+  <li><a href="../modules/lua_libp2p.error.html">lua_libp2p.error</a></li>
+  <li><a href="../modules/lua_libp2p.host.html">lua_libp2p.host</a></li>
+  <li><a href="../modules/lua_libp2p.host.advertise.html">lua_libp2p.host.advertise</a></li>
+  <li><a href="../modules/lua_libp2p.host.bootstrap.html">lua_libp2p.host.bootstrap</a></li>
+  <li><a href="../modules/lua_libp2p.host.connections.html">lua_libp2p.host.connections</a></li>
+  <li><strong>lua_libp2p.host.dialer</strong></li>
+  <li><a href="../modules/lua_libp2p.host.events.html">lua_libp2p.host.events</a></li>
+  <li><a href="../modules/lua_libp2p.host.identify.html">lua_libp2p.host.identify</a></li>
+  <li><a href="../modules/lua_libp2p.host.listeners.html">lua_libp2p.host.listeners</a></li>
+  <li><a href="../modules/lua_libp2p.host.protocols.html">lua_libp2p.host.protocols</a></li>
+  <li><a href="../modules/lua_libp2p.host.runtime_luv.html">lua_libp2p.host.runtime_luv</a></li>
+  <li><a href="../modules/lua_libp2p.host.runtime_luv_native.html">lua_libp2p.host.runtime_luv_native</a></li>
+  <li><a href="../modules/lua_libp2p.host.service_manager.html">lua_libp2p.host.service_manager</a></li>
+  <li><a href="../modules/lua_libp2p.host.tasks.html">lua_libp2p.host.tasks</a></li>
+  <li><a href="../modules/lua_libp2p.kad_dht.html">lua_libp2p.kad_dht</a></li>
+  <li><a href="../modules/lua_libp2p.kad_dht.protocol.html">lua_libp2p.kad_dht.protocol</a></li>
+  <li><a href="../modules/lua_libp2p.kbucket.html">lua_libp2p.kbucket</a></li>
+  <li><a href="../modules/lua_libp2p.log.html">lua_libp2p.log</a></li>
+  <li><a href="../modules/lua_libp2p.multiaddr.html">lua_libp2p.multiaddr</a></li>
+  <li><a href="../modules/lua_libp2p.multiformats.html">lua_libp2p.multiformats</a></li>
+  <li><a href="../modules/lua_libp2p.multiformats.base32.html">lua_libp2p.multiformats.base32</a></li>
+  <li><a href="../modules/lua_libp2p.multiformats.base58btc.html">lua_libp2p.multiformats.base58btc</a></li>
+  <li><a href="../modules/lua_libp2p.multiformats.cid.html">lua_libp2p.multiformats.cid</a></li>
+  <li><a href="../modules/lua_libp2p.multiformats.multihash.html">lua_libp2p.multiformats.multihash</a></li>
+  <li><a href="../modules/lua_libp2p.multiformats.varint.html">lua_libp2p.multiformats.varint</a></li>
+  <li><a href="../modules/lua_libp2p.multistream_select.protocol.html">lua_libp2p.multistream_select.protocol</a></li>
+  <li><a href="../modules/lua_libp2p.muxer.html">lua_libp2p.muxer</a></li>
+  <li><a href="../modules/lua_libp2p.muxer.yamux.html">lua_libp2p.muxer.yamux</a></li>
+  <li><a href="../modules/lua_libp2p.nat_pmp.client.html">lua_libp2p.nat_pmp.client</a></li>
+  <li><a href="../modules/lua_libp2p.nat_pmp.service.html">lua_libp2p.nat_pmp.service</a></li>
+  <li><a href="../modules/lua_libp2p.network.html">lua_libp2p.network</a></li>
+  <li><a href="../modules/lua_libp2p.network.connection.html">lua_libp2p.network.connection</a></li>
+  <li><a href="../modules/lua_libp2p.network.upgrader.html">lua_libp2p.network.upgrader</a></li>
+  <li><a href="../modules/lua_libp2p.operation.html">lua_libp2p.operation</a></li>
+  <li><a href="../modules/lua_libp2p.pcp.client.html">lua_libp2p.pcp.client</a></li>
+  <li><a href="../modules/lua_libp2p.pcp.service.html">lua_libp2p.pcp.service</a></li>
+  <li><a href="../modules/lua_libp2p.peer_discovery_bootstrap.html">lua_libp2p.peer_discovery_bootstrap</a></li>
+  <li><a href="../modules/lua_libp2p.peerid.html">lua_libp2p.peerid</a></li>
+  <li><a href="../modules/lua_libp2p.peerstore.html">lua_libp2p.peerstore</a></li>
+  <li><a href="../modules/lua_libp2p.peerstore.codec.html">lua_libp2p.peerstore.codec</a></li>
+  <li><a href="../modules/lua_libp2p.peerstore.datastore.html">lua_libp2p.peerstore.datastore</a></li>
+  <li><a href="../modules/lua_libp2p.protocol.html">lua_libp2p.protocol</a></li>
+  <li><a href="../modules/lua_libp2p.protocol.autonat_v2.html">lua_libp2p.protocol.autonat_v2</a></li>
+  <li><a href="../modules/lua_libp2p.protocol.dummy.html">lua_libp2p.protocol.dummy</a></li>
+  <li><a href="../modules/lua_libp2p.protocol_dcutr.protocol.html">lua_libp2p.protocol_dcutr.protocol</a></li>
+  <li><a href="../modules/lua_libp2p.protocol_dcutr.service.html">lua_libp2p.protocol_dcutr.service</a></li>
+  <li><a href="../modules/lua_libp2p.protocol_identify.protocol.html">lua_libp2p.protocol_identify.protocol</a></li>
+  <li><a href="../modules/lua_libp2p.protocol_identify.service.html">lua_libp2p.protocol_identify.service</a></li>
+  <li><a href="../modules/lua_libp2p.protocol_perf.protocol.html">lua_libp2p.protocol_perf.protocol</a></li>
+  <li><a href="../modules/lua_libp2p.protocol_perf.service.html">lua_libp2p.protocol_perf.service</a></li>
+  <li><a href="../modules/lua_libp2p.protocol_ping.protocol.html">lua_libp2p.protocol_ping.protocol</a></li>
+  <li><a href="../modules/lua_libp2p.protocol_ping.service.html">lua_libp2p.protocol_ping.service</a></li>
+  <li><a href="../modules/lua_libp2p.record.html">lua_libp2p.record</a></li>
+  <li><a href="../modules/lua_libp2p.record.peer_record.html">lua_libp2p.record.peer_record</a></li>
+  <li><a href="../modules/lua_libp2p.record.signed_envelope.html">lua_libp2p.record.signed_envelope</a></li>
+  <li><a href="../modules/lua_libp2p.relay_discovery.html">lua_libp2p.relay_discovery</a></li>
+  <li><a href="../modules/lua_libp2p.transport_circuit_relay_v2.autorelay.html">lua_libp2p.transport_circuit_relay_v2.autorelay</a></li>
+  <li><a href="../modules/lua_libp2p.transport_circuit_relay_v2.client.html">lua_libp2p.transport_circuit_relay_v2.client</a></li>
+  <li><a href="../modules/lua_libp2p.transport_circuit_relay_v2.protocol.html">lua_libp2p.transport_circuit_relay_v2.protocol</a></li>
+  <li><a href="../modules/lua_libp2p.transport_tcp.luv.html">lua_libp2p.transport_tcp.luv</a></li>
+  <li><a href="../modules/lua_libp2p.transport_tcp.luv_native.html">lua_libp2p.transport_tcp.luv_native</a></li>
+  <li><a href="../modules/lua_libp2p.transport_tcp.transport.html">lua_libp2p.transport_tcp.transport</a></li>
+  <li><a href="../modules/lua_libp2p.upnp.html">lua_libp2p.upnp</a></li>
+  <li><a href="../modules/lua_libp2p.upnp.igd.html">lua_libp2p.upnp.igd</a></li>
+  <li><a href="../modules/lua_libp2p.upnp.nat.html">lua_libp2p.upnp.nat</a></li>
+  <li><a href="../modules/lua_libp2p.upnp.ssdp.html">lua_libp2p.upnp.ssdp</a></li>
+</ul>
+
+</div>
+
+<div id="content">
+
+<h1>Module <code>lua_libp2p.host.dialer</code></h1>
+<p>Host outbound dial and stream opening internals.</p>
+<p>
+
+</p>
+
+
+<h2><a href="#Functions">Functions</a></h2>
+<table class="function_list">
+	<tr>
+	<td class="name" nowrap><a href="#Host:_dial_direct">Host:_dial_direct (peer_or_addr, opts)</a></td>
+	<td class="summary">Dial peer/address directly (non-relay-specialized path).</td>
+	</tr>
+	<tr>
+	<td class="name" nowrap><a href="#Host:_dial_relay_raw">Host:_dial_relay_raw (addr, destination_peer_id, opts)</a></td>
+	<td class="summary">Dial relay destination over explicit relay multiaddr.</td>
+	</tr>
+	<tr>
+	<td class="name" nowrap><a href="#Host:dial">Host:dial (peer_or_addr[, opts])</a></td>
+	<td class="summary">Open (or reuse) a connection to a peer target.</td>
+	</tr>
+	<tr>
+	<td class="name" nowrap><a href="#Host:new_stream">Host:new_stream (peer_or_addr, protocols[, opts])</a></td>
+	<td class="summary">Open a negotiated protocol stream.</td>
+	</tr>
+</table>
+
+<br/>
+<br/>
+
+
+    <h2 class="section-header "><a name="Functions"></a>Functions</h2>
+
+    <dl class="function">
+    <dt>
+    <a name = "Host:_dial_direct"></a>
+    <strong>Host:_dial_direct (peer_or_addr, opts)</strong>
+    </dt>
+    <dd>
+    Dial peer/address directly (non-relay-specialized path).
+ <code>opts.timeout</code>, <code>opts.io_timeout</code>, and <code>opts.ctx</code> control dial behavior.
+ <code>opts.require_unlimited_connection=true</code> rejects limited relay results.
+
+
+    <h3>Parameters:</h3>
+    <ul>
+        <li><span class="parameter">peer_or_addr</span>
+
+
+
+        </li>
+        <li><span class="parameter">opts</span>
+
+
+
+        </li>
+    </ul>
+
+
+
+
+
+</dd>
+    <dt>
+    <a name = "Host:_dial_relay_raw"></a>
+    <strong>Host:_dial_relay_raw (addr, destination_peer_id, opts)</strong>
+    </dt>
+    <dd>
+    Dial relay destination over explicit relay multiaddr.
+ <code>opts.timeout</code>, <code>opts.io_timeout</code>, and <code>opts.ctx</code> control connect/IO timing.
+ <code>opts.allow_limited_connection=true</code> allows limited relay state results.
+
+
+    <h3>Parameters:</h3>
+    <ul>
+        <li><span class="parameter">addr</span>
+
+
+
+        </li>
+        <li><span class="parameter">destination_peer_id</span>
+
+
+
+        </li>
+        <li><span class="parameter">opts</span>
+
+
+
+        </li>
+    </ul>
+
+
+
+
+
+</dd>
+    <dt>
+    <a name = "Host:dial"></a>
+    <strong>Host:dial (peer_or_addr[, opts])</strong>
+    </dt>
+    <dd>
+    Open (or reuse) a connection to a peer target.
+
+
+    <h3>Parameters:</h3>
+    <ul>
+        <li><span class="parameter">peer_or_addr</span>
+            <span class="types"><a class="type" href="https://www.lua.org/manual/5.4/manual.html#6.4">string</a> or <a class="type" href="https://www.lua.org/manual/5.4/manual.html#6.6">table</a></span>
+         Peer id, multiaddr, or dial target table.
+        </li>
+        <li><span class="parameter">opts</span>
+            <span class="types"><a class="type" href="https://www.lua.org/manual/5.4/manual.html#6.6">table</a></span>
+         Dial options.
+ Common options: <code>timeout</code>, <code>io_timeout</code>, <code>ctx</code>, <code>force</code>,
+ <code>require_unlimited_connection</code>, <code>allow_limited_connection</code>,
+ <code>bypass_connection_manager</code>.
+ <code>opts.allow_limited_connection=true</code> permits returning limited relay links.
+         (<em>optional</em>)
+        </li>
+    </ul>
+
+    <h3>Returns:</h3>
+    <ol>
+        <li>
+           <span class="types"><a class="type" href="https://www.lua.org/manual/5.4/manual.html#6.6">table</a> or <span class="type">nil</span></span>
+        conn</li>
+        <li>
+           <span class="types"><a class="type" href="https://www.lua.org/manual/5.4/manual.html#6.6">table</a></span>
+        state</li>
+        <li>
+           <span class="types"><a class="type" href="https://www.lua.org/manual/5.4/manual.html#6.6">table</a></span>
+        err</li>
+    </ol>
+
+
+
+
+</dd>
+    <dt>
+    <a name = "Host:new_stream"></a>
+    <strong>Host:new_stream (peer_or_addr, protocols[, opts])</strong>
+    </dt>
+    <dd>
+    Open a negotiated protocol stream.
+
+
+    <h3>Parameters:</h3>
+    <ul>
+        <li><span class="parameter">peer_or_addr</span>
+            <span class="types"><a class="type" href="https://www.lua.org/manual/5.4/manual.html#6.4">string</a> or <a class="type" href="https://www.lua.org/manual/5.4/manual.html#6.6">table</a></span>
+         Peer id, multiaddr, or dial target table.
+        </li>
+        <li><span class="parameter">protocols</span>
+            <span class="types"><a class="type" href="https://www.lua.org/manual/5.4/manual.html#6.6">table</a></span>
+         Ordered multistream protocol IDs.
+        </li>
+        <li><span class="parameter">opts</span>
+            <span class="types"><a class="type" href="https://www.lua.org/manual/5.4/manual.html#6.6">table</a></span>
+         Stream and dial options.
+ Common options: all <a href="../modules/lua_libp2p.host.dialer.html#Host:dial">dial</a> options plus stream-level negotiation controls.
+ <code>opts.protocol_hint</code>/<code>opts.allow_limited_connection</code> influence negotiation policy.
+         (<em>optional</em>)
+        </li>
+    </ul>
+
+    <h3>Returns:</h3>
+    <ol>
+        <li>
+           <span class="types"><a class="type" href="https://www.lua.org/manual/5.4/manual.html#6.6">table</a> or <span class="type">nil</span></span>
+        stream</li>
+        <li>
+           <span class="types"><a class="type" href="https://www.lua.org/manual/5.4/manual.html#6.4">string</a></span>
+        selected Selected protocol ID.</li>
+        <li>
+           <span class="types"><a class="type" href="https://www.lua.org/manual/5.4/manual.html#6.6">table</a></span>
+        conn Underlying connection.</li>
+        <li>
+           <span class="types"><a class="type" href="https://www.lua.org/manual/5.4/manual.html#6.6">table</a></span>
+        state<em>or</em>err Connection state or error.</li>
+    </ol>
+
+
+
+
+</dd>
+</dl>
+
+
+</div> <!-- id="content" -->
+</div> <!-- id="main" -->
+<div id="about">
+<i>generated by <a href="http://github.com/lunarmodules/LDoc">LDoc 1.5.0</a></i>
+<i style="float:right;">Last updated 2026-05-03 21:47:30 </i>
+</div> <!-- id="about" -->
+</div> <!-- id="container" -->
+</body>
+</html>
