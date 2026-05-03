@@ -1,7 +1,17 @@
-.PHONY: deps test check
+.PHONY: deps lint-deps lint test check
 
 deps:
 	luarocks make lua-libp2p-0.1.0-1.rockspec
+
+lint-deps:
+	luarocks --lua-version=5.4 install --local luacheck
+
+lint:
+	@command -v luacheck >/dev/null 2>&1 || { \
+		echo "luacheck not found; run 'make lint-deps' and load your LuaRocks path"; \
+		exit 127; \
+	}
+	luacheck lua_libp2p tests examples
 
 test:
 	lua tests/run.lua

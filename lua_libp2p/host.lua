@@ -1046,6 +1046,14 @@ function Host:_spawn_stream_negotiation_task(stream, conn, entry)
   end, { service = "host" })
 end
 
+local function map_count(values)
+  local n = 0
+  for _ in pairs(values or {}) do
+    n = n + 1
+  end
+  return n
+end
+
 function Host:_run_handler_tasks()
   for i = #self._handler_tasks, 1, -1 do
     local task = self._handler_tasks[i]
@@ -1110,14 +1118,6 @@ local function list_protocol_handlers(handlers)
   end
   table.sort(out)
   return out
-end
-
-local function map_count(values)
-  local n = 0
-  for _ in pairs(values or {}) do
-    n = n + 1
-  end
-  return n
 end
 
 function Host:_handle_identify(stream, ctx)

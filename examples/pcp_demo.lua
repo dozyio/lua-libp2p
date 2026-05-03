@@ -221,6 +221,8 @@ if not h then
 	os.exit(1)
 end
 
+local print_autonat_summary
+
 h:on("pcp:mapping:active", function(mapping)
 	print("pcp mapping active: " .. tostring(mapping.external_addr))
 	return true
@@ -344,7 +346,7 @@ h:on("connection_closed", function(payload)
 	return true
 end)
 
-local function print_autonat_summary(stats)
+function print_autonat_summary(stats)
 	print(
 		"autonat summary: checked="
 			.. tostring(stats and stats.checked or 0)

@@ -11,6 +11,7 @@ local kad_dht_service = require("lua_libp2p.kad_dht")
 local autorelay_service = require("lua_libp2p.transport_circuit_relay_v2.autorelay")
 local peer_discovery_bootstrap = require("lua_libp2p.peer_discovery_bootstrap")
 local ed25519 = require("lua_libp2p.crypto.ed25519")
+local signal = rawget(_G, "signal")
 
 local DEFAULT_KEY_PATH = "examples/.autorelay_dht_demo.ed25519.key"
 

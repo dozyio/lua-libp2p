@@ -1383,6 +1383,7 @@ end
 
 function DHT:_bootstrap(opts)
   local options = opts or {}
+  local yield = type(options.yield) == "function" and options.yield or nil
   if not self.host or type(self.host.dial) ~= "function" then
     return nil, error_mod.new("state", "bootstrap requires host with dial")
   end

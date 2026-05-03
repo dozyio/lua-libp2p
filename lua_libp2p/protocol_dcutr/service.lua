@@ -684,7 +684,8 @@ function M.new(host, opts)
           state_or_err = run_opts.state
         end
       else
-        stream, selected, _, state_or_err = host:new_stream(target, { dcutr.ID }, {
+        local ignored_conn
+        stream, selected, ignored_conn, state_or_err = host:new_stream(target, { dcutr.ID }, {
           timeout = run_opts.timeout,
           io_timeout = run_opts.io_timeout,
           ctx = run_opts.ctx,
