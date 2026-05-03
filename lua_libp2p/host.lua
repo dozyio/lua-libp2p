@@ -658,6 +658,7 @@ function Host:new(config)
     _pending_inbound = {},
     _pending_relay_inbound = {},
     _event_handlers = {},
+    _debug_connection_events = cfg.debug_connection_events == true,
     _event_queue_max = cfg.event_queue_max or DEFAULT_EVENT_QUEUE_MAX,
     _last_advertised_addrs = nil,
     _event_subscribers = {},
@@ -1021,15 +1022,17 @@ function Host:_spawn_stream_negotiation_task(stream, conn, entry)
       end
       return true
     end
-    emit_event(self, "stream:negotiated", {
-      peer_id = entry.state and entry.state.remote_peer_id or nil,
-      connection_id = entry.id,
-      protocol = protocol_id,
-      limited = self:_connection_is_limited(entry.state),
-      relay_limit_kind = entry.state and entry.state.relay and entry.state.relay.limit_kind or nil,
-      direction = entry.state and entry.state.direction or nil,
-      remote_addr = entry.state and entry.state.remote_addr or nil,
-    })
+    if self._debug_connection_events then
+      emit_event(self, "stream:negotiated", {
+        peer_id = entry.state and entry.state.remote_peer_id or nil,
+        connection_id = entry.id,
+        protocol = protocol_id,
+        limited = self:_connection_is_limited(entry.state),
+        relay_limit_kind = entry.state and entry.state.relay and entry.state.relay.limit_kind or nil,
+        direction = entry.state and entry.state.direction or nil,
+        remote_addr = entry.state and entry.state.remote_addr or nil,
+      })
+    end
     if handler then
       self:_spawn_handler_task(handler, {
         stream = stream,
@@ -1149,14 +1152,16 @@ function Host:_handle_identify(stream, ctx)
     protocols = list_protocol_handlers(self._handlers),
   }
 
-  emit_event(self, "identify:response:send", {
-    peer_id = ctx and ctx.state and ctx.state.remote_peer_id or nil,
-    connection_id = ctx and ctx.state and ctx.state.connection_id or nil,
-    limited = ctx and ctx.state and self:_connection_is_limited(ctx.state) or false,
-    relay_limit_kind = ctx and ctx.state and ctx.state.relay and ctx.state.relay.limit_kind or nil,
-    observed_addr = observed,
-    listen_addr_count = #msg.listenAddrs,
-  })
+  if self._debug_connection_events then
+    emit_event(self, "identify:response:send", {
+      peer_id = ctx and ctx.state and ctx.state.remote_peer_id or nil,
+      connection_id = ctx and ctx.state and ctx.state.connection_id or nil,
+      limited = ctx and ctx.state and self:_connection_is_limited(ctx.state) or false,
+      relay_limit_kind = ctx and ctx.state and ctx.state.relay and ctx.state.relay.limit_kind or nil,
+      observed_addr = observed,
+      listen_addr_count = #msg.listenAddrs,
+    })
+  end
 
   local wrote, write_err = identify.write(stream, msg)
   if not wrote then

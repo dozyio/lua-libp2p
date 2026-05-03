@@ -137,6 +137,7 @@ end
 local host, host_err = host_mod.new({
 	runtime = "auto",
 	identity = identity,
+	debug_connection_events = opts.debug_connections,
 	listen_addrs = {
 		"/ip4/0.0.0.0/tcp/0",
 		"/ip4/0.0.0.0/tcp/0/p2p-circuit",

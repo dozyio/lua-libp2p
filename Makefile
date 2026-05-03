@@ -162,6 +162,33 @@ interop-dcutr-go-luv-native:
 interop-dcutr-go-luv-proxy:
 	LUA_LIBP2P_TCP_LUV_PROXY=1 LUA_LIBP2P_INTEROP_RUNTIME=luv $(MAKE) interop-dcutr-go
 
+interop-dcutr-unilateral-go:
+	addr_file=$$(mktemp); err_file=$$(mktemp); \
+	( cd tests/interop/go_dcutr_unilateral && go run . ) > $$addr_file 2> $$err_file & pid=$$!; \
+	for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30; do \
+		if [ -s $$addr_file ]; then break; fi; \
+		sleep 0.2; \
+	done; \
+	if ! [ -s $$addr_file ]; then \
+		kill $$pid 2>/dev/null || true; \
+		cat $$err_file; \
+		rm -f $$addr_file $$err_file; \
+		exit 1; \
+	fi; \
+	addr=$$(head -n 1 $$addr_file | tr -d '\n'); \
+	lua tests/interop/dcutr_unilateral_go_client.lua $$addr; \
+	status=$$?; \
+	wait $$pid || true; \
+	if [ $$status -ne 0 ]; then cat $$err_file; fi; \
+	rm -f $$addr_file $$err_file; \
+	exit $$status
+
+interop-dcutr-unilateral-go-luv-native:
+	LUA_LIBP2P_INTEROP_RUNTIME=luv $(MAKE) interop-dcutr-unilateral-go
+
+interop-dcutr-unilateral-go-luv-proxy:
+	LUA_LIBP2P_TCP_LUV_PROXY=1 LUA_LIBP2P_INTEROP_RUNTIME=luv $(MAKE) interop-dcutr-unilateral-go
+
 interop-perf-js:
 	log_file=$$(mktemp); \
 	err_file=$$(mktemp); \

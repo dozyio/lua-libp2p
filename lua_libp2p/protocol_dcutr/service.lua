@@ -251,12 +251,32 @@ function M.new(host, opts)
     if not (host.peerstore and type(host.peerstore.get_addrs) == "function") then
       return {}
     end
-    local addrs = host.peerstore:get_addrs(peer_id) or {}
-    return filter_candidate_addrs(addrs, {
-      preferred_ip_proto = preferred_ip_proto_from_state(state),
-      max_candidates = options.max_candidate_addrs,
-    })
-  end
+      local addrs = host.peerstore:get_addrs(peer_id) or {}
+      local candidates = filter_candidate_addrs(addrs, {
+        preferred_ip_proto = preferred_ip_proto_from_state(state),
+        max_candidates = options.max_candidate_addrs,
+      })
+      if #candidates > 0 or options.allow_private_candidate_addrs ~= true then
+        return candidates
+      end
+      local out = {}
+      local seen = {}
+      for _, addr in ipairs(addrs) do
+        if type(addr) == "string"
+          and addr:sub(1, 1) == "/"
+          and not seen[addr]
+          and not addr_has_proto(addr, "p2p-circuit")
+          and addr_has_proto(addr, "tcp")
+        then
+          seen[addr] = true
+          out[#out + 1] = addr
+          if #out >= (options.max_candidate_addrs or 8) then
+            break
+          end
+        end
+      end
+      return out
+    end
 
   function svc:_try_start_pending(peer_id, task_ctx)
     local pending = svc._pending_auto[peer_id]
@@ -477,6 +497,23 @@ function M.new(host, opts)
       preferred_ip_proto = preferred_ip_proto_from_state(state),
       max_candidates = options.max_candidate_addrs,
     })
+    if #candidates == 0 and options.allow_private_candidate_addrs == true then
+      local seen = {}
+      for _, addr in ipairs(peer_addrs) do
+        if type(addr) == "string"
+          and addr:sub(1, 1) == "/"
+          and not seen[addr]
+          and not addr_has_proto(addr, "p2p-circuit")
+          and addr_has_proto(addr, "tcp")
+        then
+          seen[addr] = true
+          candidates[#candidates + 1] = addr
+          if #candidates >= (options.max_candidate_addrs or 8) then
+            break
+          end
+        end
+      end
+    end
     if #candidates == 0 then
       emit_event(host, "dcutr:unilateral:failed", {
         peer_id = peer_id,
