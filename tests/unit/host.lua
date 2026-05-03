@@ -11,6 +11,7 @@ local ping = require("lua_libp2p.protocol_ping.protocol")
 local kad_dht_service = require("lua_libp2p.kad_dht")
 local upnp_nat_service = require("lua_libp2p.upnp.nat")
 local peer_discovery_bootstrap = require("lua_libp2p.peer_discovery_bootstrap")
+local relay_discovery_service = require("lua_libp2p.relay_discovery")
 
 local function run()
   local keypair, key_err = ed25519.generate_keypair()
@@ -224,24 +225,31 @@ local function run()
     identity = keypair,
     services = {
       autorelay = { module = missed_need_more_service },
+      relay_discovery = { module = relay_discovery_service, config = { cooldown_seconds = 1 } },
     },
     blocking = false,
   }))
-  if not missed_need_more_host._relay_candidate_replenish.pending then
-    return nil, "host should reconcile autorelay need_more state emitted before subscription"
+  if not missed_need_more_host.relay_discovery.pending then
+    return nil, "relay discovery should reconcile autorelay need_more state emitted before subscription"
+  end
+  assert(missed_need_more_host:start())
+  if not missed_need_more_host.relay_discovery.task
+    or missed_need_more_host.relay_discovery.task.name ~= "relay_discovery.replenish"
+  then
+    return nil, "host start should schedule pending relay discovery replenishment"
   end
   missed_need_more_host._bootstrap_discovery = { dial_on_start = true }
   missed_need_more_host.kad_dht = { routing_table = { all_peers = function() return {} end } }
-  missed_need_more_host._relay_candidate_replenish.cooldown_seconds = 1
-  local replenish_ok, replenish_err = missed_need_more_host:_run_relay_candidate_replenish_once(os.time())
+  missed_need_more_host.relay_discovery.task = nil
+  local replenish_ok, replenish_err = missed_need_more_host.relay_discovery:run_once(os.time())
   if not replenish_ok then
     return nil, replenish_err
   end
-  if not missed_need_more_host._relay_candidate_replenish.pending then
+  if not missed_need_more_host.relay_discovery.pending then
     return nil, "relay candidate replenish should remain pending while bootstrap reseeds empty kad table"
   end
-  local replenish_task = missed_need_more_host._relay_candidate_replenish.task
-  if not replenish_task or replenish_task.name ~= "host.relay_candidate_replenish" then
+  local replenish_task = missed_need_more_host.relay_discovery.task
+  if not replenish_task or replenish_task.name ~= "relay_discovery.replenish" then
     return nil, "empty kad table should reschedule relay candidate replenish after bootstrap reseed"
   end
   missed_need_more_host:stop()

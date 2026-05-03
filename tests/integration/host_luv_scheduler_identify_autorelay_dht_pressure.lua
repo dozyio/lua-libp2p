@@ -3,6 +3,7 @@ local identify_service = require("lua_libp2p.protocol_identify.service")
 local ping_service = require("lua_libp2p.protocol_ping.service")
 local kad_dht_service = require("lua_libp2p.kad_dht")
 local autorelay_service = require("lua_libp2p.transport_circuit_relay_v2.autorelay")
+local relay_discovery_service = require("lua_libp2p.relay_discovery")
 local child_scripts = require("tests.support.child_scripts")
 local subprocess = require("tests.support.subprocess")
 local tcp_luv = require("lua_libp2p.transport_tcp.luv")
@@ -25,6 +26,7 @@ local function run()
       ping = ping_service,
       kad_dht = kad_dht_service,
       autorelay = autorelay_service,
+      relay_discovery = relay_discovery_service,
     },
     accept_timeout = 0.05,
   })

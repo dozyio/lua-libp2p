@@ -606,14 +606,6 @@ function Host:new(config)
     _bootstrap_discovery = nil,
     _bootstrap_discovery_done = false,
     _bootstrap_discovery_task = nil,
-    _relay_candidate_replenish = {
-      pending = false,
-      cooldown_seconds = 30,
-      next_allowed_at = 0,
-      walk_task = nil,
-      walk_inflight = false,
-      task = nil,
-    },
     _autorelay_tick_task = nil,
     address_manager = cfg.address_manager or address_manager.new({
       listen_addrs = cfg.listen_addrs or {},
@@ -629,7 +621,6 @@ function Host:new(config)
     muxers = list_copy(cfg.muxers or {}),
     _handlers = {},
     _handler_options = {},
-    _autorelay_not_enough_relays = nil,
     _services = {},
     services = {},
     components = {},
@@ -871,20 +862,6 @@ function Host:new(config)
       local provider = self_obj._services[provider_name]
       if self_obj[capability] == nil then
         self_obj[capability] = provider
-      end
-    end
-
-    if self_obj.autorelay and type(self_obj.on) == "function" then
-      self_obj._autorelay_not_enough_relays = function(payload)
-        self_obj:_request_relay_candidate_replenish(payload and payload.reason or "relay_not_enough")
-        return true
-      end
-      local token, on_err = self_obj:on("relay:not-enough-relays", self_obj._autorelay_not_enough_relays)
-      if not token then
-        return nil, on_err
-      end
-      if self_obj.autorelay.need_more_relays == true then
-        self_obj:_request_relay_candidate_replenish("initial_need_more_relays")
       end
     end
   end
@@ -3123,105 +3100,6 @@ function Host:_run_bootstrap_discovery_once()
   return true
 end
 
-function Host:_request_relay_candidate_replenish(reason)
-  if not self._relay_candidate_replenish then
-    return false
-  end
-  self._relay_candidate_replenish.pending = true
-  self._relay_candidate_replenish.reason = reason
-  if self._running then
-    local ok = self:_schedule_relay_candidate_replenish()
-    return ok == true
-  end
-  return true
-end
-
-function Host:_schedule_relay_candidate_replenish()
-  local state = self._relay_candidate_replenish
-  if not state or not state.pending then
-    return true
-  end
-  local existing = state.task
-  if existing and existing.status ~= "completed" and existing.status ~= "failed" and existing.status ~= "cancelled" then
-    return true
-  end
-  local current = os.time()
-  local delay = math.max(0, (state.next_allowed_at or 0) - current)
-  local task, task_err = self:spawn_task("host.relay_candidate_replenish", function(ctx)
-    if delay > 0 then
-      local slept, sleep_err = ctx:sleep(delay)
-      if slept == nil and sleep_err then
-        return nil, sleep_err
-      end
-    end
-    if not self._running then
-      return true
-    end
-    return self:_run_relay_candidate_replenish_once()
-  end, { service = "host" })
-  if not task then
-    return nil, task_err
-  end
-  state.task = task
-  return true
-end
-
-function Host:_run_relay_candidate_replenish_once(now)
-  local state = self._relay_candidate_replenish
-  if not state or not state.pending then
-    return true
-  end
-  if self.autorelay and self.autorelay.need_more_relays == false then
-    state.pending = false
-    state.task = nil
-    return true
-  end
-  local current = now or os.time()
-  if current < (state.next_allowed_at or 0) then
-    return true
-  end
-
-  local ktable_peers = 0
-  if self.kad_dht and self.kad_dht.routing_table and type(self.kad_dht.routing_table.all_peers) == "function" then
-    ktable_peers = #(self.kad_dht.routing_table:all_peers() or {})
-  end
-
-  if ktable_peers == 0 and self._bootstrap_discovery and self._bootstrap_discovery.dial_on_start ~= false then
-    self._bootstrap_discovery_done = false
-    state.next_allowed_at = current + (state.cooldown_seconds or 30)
-    local boot_ok, boot_err = self:_schedule_bootstrap_discovery(0)
-    if not boot_ok then
-      return nil, boot_err
-    end
-    state.task = nil
-    return self:_schedule_relay_candidate_replenish()
-  end
-
-  if self.kad_dht and type(self.kad_dht.random_walk) == "function" then
-    local walk = state.walk_task
-    if walk and walk.status ~= "completed" and walk.status ~= "failed" and walk.status ~= "cancelled" then
-      state.next_allowed_at = current + 1
-      state.task = nil
-      return self:_schedule_relay_candidate_replenish()
-    end
-    local walk_op, walk_err = self.kad_dht:random_walk({
-      alpha = self.kad_dht.alpha,
-      disjoint_paths = self.kad_dht.disjoint_paths,
-    })
-    if not walk_op then
-      return nil, walk_err
-    end
-    state.walk_task = walk_op:task()
-    state.pending = false
-    state.next_allowed_at = current + (state.cooldown_seconds or 30)
-    return true
-  end
-
-  state.pending = false
-  state.next_allowed_at = current + (state.cooldown_seconds or 30)
-  return true
-end
-
 function Host:_schedule_autorelay_tick()
   if not (self.autorelay and type(self.autorelay.tick) == "function") then
     return true
@@ -3292,10 +3170,10 @@ function Host:start()
       return nil, boot_err
     end
   end
-  if self._relay_candidate_replenish and self._relay_candidate_replenish.pending then
-    local replenish_ok, replenish_err = self:_schedule_relay_candidate_replenish()
-    if not replenish_ok then
-      return nil, replenish_err
+  if self.relay_discovery and type(self.relay_discovery.on_host_started) == "function" then
+    local relay_discovery_ok, relay_discovery_err = self.relay_discovery:on_host_started()
+    if not relay_discovery_ok then
+      return nil, relay_discovery_err
     end
   end
   local autorelay_tick_ok, autorelay_tick_err = self:_schedule_autorelay_tick()
@@ -3355,10 +3233,6 @@ end
 
 function Host:close()
   self._running = false
-  if self._autorelay_not_enough_relays and type(self.off) == "function" then
-    self:off("relay:not-enough-relays", self._autorelay_not_enough_relays)
-    self._autorelay_not_enough_relays = nil
-  end
   if self._runtime_impl and self._runtime_impl.stop then
     self._runtime_impl.stop(self)
   end

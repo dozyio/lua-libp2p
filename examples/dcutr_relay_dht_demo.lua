@@ -11,6 +11,7 @@ local dcutr_service = require("lua_libp2p.protocol_dcutr.service")
 local autonat_service = require("lua_libp2p.autonat.client")
 local kad_dht_service = require("lua_libp2p.kad_dht")
 local autorelay_service = require("lua_libp2p.transport_circuit_relay_v2.autorelay")
+local relay_discovery_service = require("lua_libp2p.relay_discovery")
 local peer_discovery_bootstrap = require("lua_libp2p.peer_discovery_bootstrap")
 local ed25519 = require("lua_libp2p.crypto.ed25519")
 
@@ -179,6 +180,7 @@ local host, host_err = host_mod.new({
 				relay_addrs = opts.relays,
 			},
 		},
+		relay_discovery = { module = relay_discovery_service },
 		dcutr = {
 			module = dcutr_service,
 			config = {

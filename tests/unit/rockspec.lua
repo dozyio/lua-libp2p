@@ -27,6 +27,7 @@ local function run()
     "lua_libp2p.kad_dht.protocol",
     "lua_libp2p.operation",
     "lua_libp2p.peerstore",
+    "lua_libp2p.relay_discovery",
     "lua_libp2p.transport_circuit_relay_v2.protocol",
     "lua_libp2p.protocol_identify.protocol",
     "lua_libp2p.protocol_ping.protocol",

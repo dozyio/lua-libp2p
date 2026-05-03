@@ -51,6 +51,7 @@ build = {
     ["lua_libp2p.record"] = "lua_libp2p/record/init.lua",
     ["lua_libp2p.record.signed_envelope"] = "lua_libp2p/record/signed_envelope.lua",
     ["lua_libp2p.record.peer_record"] = "lua_libp2p/record/peer_record.lua",
+    ["lua_libp2p.relay_discovery"] = "lua_libp2p/relay_discovery/init.lua",
     ["lua_libp2p.transport_circuit_relay_v2.autorelay"] = "lua_libp2p/transport_circuit_relay_v2/autorelay.lua",
     ["lua_libp2p.transport_circuit_relay_v2.protocol"] = "lua_libp2p/transport_circuit_relay_v2/protocol.lua",
     ["lua_libp2p.transport_circuit_relay_v2.client"] = "lua_libp2p/transport_circuit_relay_v2/client.lua",
