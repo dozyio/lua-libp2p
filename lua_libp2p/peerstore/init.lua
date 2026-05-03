@@ -1,4 +1,4 @@
---- In-memory peerstore.
+--- Peerstore.
 -- @module lua_libp2p.peerstore
 local error_mod = require("lua_libp2p.error")
 
@@ -356,10 +356,24 @@ function Store:clear_expired()
 end
 
 --- Construct a peerstore instance.
+-- Defaults to the datastore-backed implementation with an in-memory datastore.
 -- `opts.default_addr_ttl` controls default address TTL in seconds.
+-- `opts.datastore` supplies a custom datastore backend.
 -- @tparam[opt] table opts
 -- @treturn table store
 function M.new(opts)
+  local options = opts or {}
+  local datastore_store = require("lua_libp2p.peerstore.datastore")
+  if options.datastore == nil then
+    local memory_datastore = require("lua_libp2p.datastore.memory")
+    options.datastore = memory_datastore.new()
+  end
+  return datastore_store.new(options)
+end
+
+--- Construct the old direct in-memory peerstore implementation.
+-- Prefer @{new}; this helper exists for focused implementation tests.
+function M.new_memory_direct(opts)
   local options = opts or {}
   return setmetatable({
     default_addr_ttl = options.default_addr_ttl or 3600,

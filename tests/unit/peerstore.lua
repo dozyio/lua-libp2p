@@ -2,11 +2,14 @@ local peerstore = require("lua_libp2p.peerstore")
 
 local function run()
   local ps = peerstore.new({ default_addr_ttl = 60 })
+  if ps._datastore == nil then
+    return nil, "peerstore.new should default to datastore-backed memory store"
+  end
 
   local peer, merge_err = ps:merge("peer-a", {
     addrs = {
-      "/ip4/127.0.0.1/tcp/4001/p2p/peer-a",
-      "/ip4/127.0.0.1/tcp/4001/p2p/peer-a",
+      "/ip4/127.0.0.1/tcp/4001",
+      "/ip4/127.0.0.1/tcp/4001",
     },
     protocols = { "/ipfs/kad/1.0.0" },
     metadata = { agent = "test" },
@@ -37,8 +40,8 @@ local function run()
 
   local patched, patch_err = ps:patch("peer-a", {
     addrs = {
-      "/ip4/127.0.0.1/tcp/4002/p2p/peer-a",
-      "/ip4/127.0.0.1/udp/4001/quic-v1/p2p/peer-a",
+      "/ip4/127.0.0.1/tcp/4002",
+      "/ip4/127.0.0.1/udp/4001/quic-v1",
     },
     protocols = {},
   })
