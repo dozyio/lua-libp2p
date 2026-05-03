@@ -116,7 +116,6 @@ Status: Complete
 
 - Add libuv-backed host runtime with non-blocking scheduler integration.
 - Implement native luv TCP listen/dial/read/write path.
-- Keep proxy transport as fallback/debug path.
 - Default to `runtime = "auto"`, selecting luv-native.
 - Done when: Lua integration tests and Go/JS interop pass under native luv.
 

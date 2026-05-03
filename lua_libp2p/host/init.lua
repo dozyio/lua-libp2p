@@ -144,7 +144,7 @@ end
 
 function Host:new(config)
   local cfg = config or {}
-  local runtime_name = cfg.runtime or cfg.runtime_backend or "auto"
+  local runtime_name = cfg.runtime or "auto"
   if runtime_name == "auto" then
     runtime_name = default_runtime_name()
   end
@@ -202,7 +202,6 @@ function Host:new(config)
     _task_completion_waiters = {},
     _next_task_id = 1,
     _task_resume_budget = cfg.task_resume_budget or host_tasks.DEFAULT_TASK_RESUME_BUDGET,
-    _scheduler_connection_pump = runtime_name == "luv" and tcp_luv.BACKEND == "luv-native",
     _pending_inbound = {},
     _pending_relay_inbound = {},
     _debug_connection_events = cfg.debug_connection_events == true,
@@ -422,8 +421,7 @@ function Host:_register_connection(conn, state)
     end
   end
 
-  if self._scheduler_connection_pump
-    and host_runtime_luv_native.is_native_host(self)
+  if host_runtime_luv_native.is_native_host(self)
     and (type(entry.conn.pump_once) == "function" or type(entry.conn.process_one) == "function")
   then
     local _, pump_err = host_runtime_luv_native.start_connection_pump_task(self, entry, is_nonfatal_stream_error)
