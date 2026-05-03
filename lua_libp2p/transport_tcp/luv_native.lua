@@ -146,6 +146,24 @@ local function run_once_or_loop_running()
   return ok, err
 end
 
+local function enable_tcp_nodelay(tcp, enabled)
+  if enabled ~= false and tcp and type(tcp.nodelay) == "function" then
+    pcall(tcp.nodelay, tcp, true)
+  end
+end
+
+local function enable_tcp_keepalive(tcp, enabled, initial_delay)
+  if enabled ~= false and tcp and type(tcp.keepalive) == "function" then
+    pcall(tcp.keepalive, tcp, true, initial_delay or 0)
+  end
+end
+
+local function configure_tcp_socket(tcp, opts)
+  local options = opts or {}
+  enable_tcp_nodelay(tcp, options.nodelay)
+  enable_tcp_keepalive(tcp, options.keepalive, options.keepalive_initial_delay)
+end
+
 local function yield_if_possible(reason, ctx)
   if ctx then
     if reason and reason.type == "read" and type(ctx.wait_read) == "function" then
@@ -583,6 +601,7 @@ function NativeListener:new(server, opts)
     _listen_port = options.listen_port,
     _io_timeout = options.io_timeout,
     _default_accept_timeout = options.accept_timeout,
+    _tcp_options = options.tcp_options or {},
     _watch_callbacks = {},
     _next_watch_id = 1,
   }, self)
@@ -725,6 +744,11 @@ function M.listen(target, opts)
     listen_port = sockname and sockname.port or port,
     io_timeout = options.io_timeout,
     accept_timeout = options.accept_timeout,
+    tcp_options = {
+      nodelay = options.nodelay,
+      keepalive = options.keepalive,
+      keepalive_initial_delay = options.keepalive_initial_delay,
+    },
   })
 
   server:listen(128, function(err)
@@ -737,6 +761,7 @@ function M.listen(target, opts)
       client:close()
       return
     end
+    configure_tcp_socket(client, listener._tcp_options)
     local local_name = client:getsockname() or {}
     local peer_name = client:getpeername() or {}
     listener._pending[#listener._pending + 1] = NativeConnection:new(client, {
@@ -873,6 +898,7 @@ function M.dial(target, opts)
     return nil, classify_uv_error(dial_err, "native luv tcp connect failed")
   end
 
+  configure_tcp_socket(conn, options)
   local local_name = conn:getsockname() or {}
   local peer_name = conn:getpeername() or {}
   return NativeConnection:new(conn, {

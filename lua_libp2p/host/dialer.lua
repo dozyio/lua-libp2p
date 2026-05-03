@@ -180,6 +180,10 @@ function M.install(Host)
             timeout = timeout,
             io_timeout = opts.io_timeout or self._io_timeout,
             ctx = opts.ctx,
+            nodelay = opts.nodelay ~= nil and opts.nodelay or (self._tcp_options and self._tcp_options.nodelay),
+            keepalive = opts.keepalive ~= nil and opts.keepalive or (self._tcp_options and self._tcp_options.keepalive),
+            keepalive_initial_delay = opts.keepalive_initial_delay ~= nil and opts.keepalive_initial_delay
+              or (self._tcp_options and self._tcp_options.keepalive_initial_delay),
           })
         end
       end

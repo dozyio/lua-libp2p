@@ -5,8 +5,10 @@ ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y --no-install-recommends \
   ca-certificates \
   git \
+  cmake \
   build-essential \
   pkg-config \
+  libssl-dev \
   lua5.4 \
   liblua5.4-dev \
   luarocks \

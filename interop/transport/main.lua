@@ -317,7 +317,7 @@ local function run_listener(cfg)
   if not run_task then
     fatal(run_task_err)
   end
-  local _, run_err = h:run_until_task(run_task, { poll_interval = 0.05 })
+  local _, run_err = h:run_until_task(run_task, { poll_interval = 0 })
   if run_err then
     fatal(run_err)
   end
@@ -344,37 +344,51 @@ local function run_dialer(cfg)
     cfg.test_key .. "_listener_multiaddr"
   )
 
-  local started = now()
-  local stream, _, conn, stream_err = h:new_stream(listener_addr, { ping.ID }, {
-    timeout = 5,
-    io_timeout = 5,
-  })
-  if not stream then
-    fatal(stream_err)
+  local task, task_err = h:spawn_task("interop.transport.dialer", function(ctx)
+    local started = now()
+    local stream, _, conn, stream_err = h:new_stream(listener_addr, { ping.ID }, {
+      timeout = 5,
+      io_timeout = 5,
+      ctx = ctx,
+    })
+    if not stream then
+      return nil, stream_err
+    end
+
+    local ping_result, ping_err = ping.ping_once(stream)
+    if not ping_result then
+      return nil, ping_err
+    end
+
+    local finished = now()
+
+    if type(stream.close) == "function" then
+      stream:close()
+    end
+    if conn and type(conn.close) == "function" then
+      conn:close()
+    end
+
+    return {
+      handshake_plus_one_rtt_ms = (finished - started) * 1000,
+      ping_rtt_ms = ping_result.rtt_seconds * 1000,
+    }
+  end, { service = "interop" })
+  if not task then
+    fatal(task_err)
   end
 
-  local ping_result, ping_err = ping.ping_once(stream)
-  if not ping_result then
-    fatal(ping_err)
+  local result, run_err = h:run_until_task(task, { timeout = 10, poll_interval = 0 })
+  if not result then
+    fatal(run_err)
   end
 
-  local finished = now()
-
-  if type(stream.close) == "function" then
-    stream:close()
-  end
-  if conn and type(conn.close) == "function" then
-    conn:close()
-  end
   h:close()
-
-  local handshake_plus_one_rtt_ms = (finished - started) * 1000
-  local ping_rtt_ms = ping_result.rtt_seconds * 1000
 
   io.stdout:write(string.format(
     "latency:\n  handshake_plus_one_rtt: %.3f\n  ping_rtt: %.3f\n  unit: ms\n",
-    handshake_plus_one_rtt_ms,
-    ping_rtt_ms
+    result.handshake_plus_one_rtt_ms,
+    result.ping_rtt_ms
   ))
 end
 

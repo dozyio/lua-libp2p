@@ -11,6 +11,79 @@ local function run()
   end
 
   local real_new_tcp = uv.new_tcp
+  local default_nodelay_enabled
+  local default_keepalive_enabled
+  local default_keepalive_delay
+  uv.new_tcp = function()
+    return {
+      connect = function(_, _, _, cb)
+        cb(nil)
+      end,
+      nodelay = function(_, enabled)
+        default_nodelay_enabled = enabled
+      end,
+      keepalive = function(_, enabled, delay)
+        default_keepalive_enabled = enabled
+        default_keepalive_delay = delay
+      end,
+      getsockname = function()
+        return { ip = "127.0.0.1", port = 10001 }
+      end,
+      getpeername = function()
+        return { ip = "127.0.0.1", port = 10002 }
+      end,
+      close = function() return true end,
+    }
+  end
+  local default_socket_conn, default_socket_err = tcp_luv.dial({ host = "127.0.0.1", port = 9999 }, { timeout = 1 })
+  uv.new_tcp = real_new_tcp
+  if not default_socket_conn then
+    return nil, default_socket_err
+  end
+  default_socket_conn:close()
+  if default_nodelay_enabled ~= true then
+    return nil, "expected tcp_luv dial to enable TCP_NODELAY by default"
+  end
+  if default_keepalive_enabled ~= true or default_keepalive_delay ~= 0 then
+    return nil, "expected tcp_luv dial to enable keepalive with zero delay by default"
+  end
+
+  local disabled_nodelay_called = false
+  local disabled_keepalive_called = false
+  uv.new_tcp = function()
+    return {
+      connect = function(_, _, _, cb)
+        cb(nil)
+      end,
+      nodelay = function()
+        disabled_nodelay_called = true
+      end,
+      keepalive = function()
+        disabled_keepalive_called = true
+      end,
+      getsockname = function()
+        return { ip = "127.0.0.1", port = 10001 }
+      end,
+      getpeername = function()
+        return { ip = "127.0.0.1", port = 10002 }
+      end,
+      close = function() return true end,
+    }
+  end
+  local disabled_socket_conn, disabled_socket_err = tcp_luv.dial({ host = "127.0.0.1", port = 9999 }, {
+    timeout = 1,
+    nodelay = false,
+    keepalive = false,
+  })
+  uv.new_tcp = real_new_tcp
+  if not disabled_socket_conn then
+    return nil, disabled_socket_err
+  end
+  disabled_socket_conn:close()
+  if disabled_nodelay_called or disabled_keepalive_called then
+    return nil, "expected tcp_luv dial to honor disabled tcp socket options"
+  end
+
   uv.new_tcp = function()
     return {
       connect = function() end,

@@ -389,17 +389,18 @@ local function run_listener(cfg)
   if not run_task then
     fatal(run_task_err)
   end
-  local _, run_err = h:run_until_task(run_task, { poll_interval = 0.05 })
+  local _, run_err = h:run_until_task(run_task, { poll_interval = 0 })
   if run_err then
     fatal(run_err)
   end
 end
 
-local function run_one_iteration(h, listener_addr, upload_bytes, download_bytes)
+local function run_one_iteration(h, ctx, listener_addr, upload_bytes, download_bytes)
   local started = now()
   local stream, _, conn, stream_err = h:new_stream(listener_addr, { PERF_PROTOCOL_ID }, {
     timeout = 10,
     io_timeout = 10,
+    ctx = ctx,
   })
   if not stream then
     return nil, stream_err
@@ -426,17 +427,14 @@ local function run_one_iteration(h, listener_addr, upload_bytes, download_bytes)
   if type(stream.close) == "function" then
     stream:close()
   end
-  if conn and type(conn.close) == "function" then
-    conn:close()
-  end
 
   return elapsed
 end
 
-local function run_measurement(h, listener_addr, upload_bytes, download_bytes, iterations, is_latency)
+local function run_measurement(h, ctx, listener_addr, upload_bytes, download_bytes, iterations, is_latency)
   local samples = {}
   for i = 1, iterations do
-    local elapsed, err = run_one_iteration(h, listener_addr, upload_bytes, download_bytes)
+    local elapsed, err = run_one_iteration(h, ctx, listener_addr, upload_bytes, download_bytes)
     if not elapsed then
       return nil, err
     end
@@ -469,47 +467,66 @@ local function run_dialer(cfg)
     cfg.test_key .. "_listener_multiaddr"
   )
 
-  local upload_stats, upload_err = run_measurement(
-    h,
-    listener_addr,
-    cfg.upload_bytes,
-    0,
-    cfg.upload_iterations,
-    false
-  )
-  if not upload_stats then
-    fatal(upload_err)
+  local task, task_err = h:spawn_task("interop.perf.dialer", function(ctx)
+    local upload_stats, upload_err = run_measurement(
+      h,
+      ctx,
+      listener_addr,
+      cfg.upload_bytes,
+      0,
+      cfg.upload_iterations,
+      false
+    )
+    if not upload_stats then
+      return nil, upload_err
+    end
+
+    local download_stats, download_err = run_measurement(
+      h,
+      ctx,
+      listener_addr,
+      0,
+      cfg.download_bytes,
+      cfg.download_iterations,
+      false
+    )
+    if not download_stats then
+      return nil, download_err
+    end
+
+    local latency_stats, latency_err = run_measurement(
+      h,
+      ctx,
+      listener_addr,
+      1,
+      1,
+      cfg.latency_iterations,
+      true
+    )
+    if not latency_stats then
+      return nil, latency_err
+    end
+
+    return {
+      upload_stats = upload_stats,
+      download_stats = download_stats,
+      latency_stats = latency_stats,
+    }
+  end, { service = "interop" })
+  if not task then
+    fatal(task_err)
   end
 
-  local download_stats, download_err = run_measurement(
-    h,
-    listener_addr,
-    0,
-    cfg.download_bytes,
-    cfg.download_iterations,
-    false
-  )
-  if not download_stats then
-    fatal(download_err)
-  end
-
-  local latency_stats, latency_err = run_measurement(
-    h,
-    listener_addr,
-    1,
-    1,
-    cfg.latency_iterations,
-    true
-  )
-  if not latency_stats then
-    fatal(latency_err)
+  local result, run_err = h:run_until_task(task, { timeout = 120, poll_interval = 0 })
+  if not result then
+    fatal(run_err)
   end
 
   h:close()
 
-  print_measurement("upload", cfg.upload_iterations, upload_stats, "Gbps", "%.2f")
-  print_measurement("download", cfg.download_iterations, download_stats, "Gbps", "%.2f")
-  print_measurement("latency", cfg.latency_iterations, latency_stats, "ms", "%.3f")
+  print_measurement("upload", cfg.upload_iterations, result.upload_stats, "Gbps", "%.2f")
+  print_measurement("download", cfg.download_iterations, result.download_stats, "Gbps", "%.2f")
+  print_measurement("latency", cfg.latency_iterations, result.latency_stats, "ms", "%.3f")
 end
 
 local function main()
