@@ -1,5 +1,5 @@
 --- Host runtime adapter for luv loop management.
--- @module lua_libp2p.host_runtime_luv
+-- @module lua_libp2p.host.runtime_luv
 local error_mod = require("lua_libp2p.error")
 
 local ok_luv, uv = pcall(require, "luv")

@@ -31,6 +31,10 @@
   <li><a href="../index.html">Index</a></li>
 </ul>
 
+<h2>Contents</h2>
+<ul>
+<li><a href="#Functions">Functions</a></li>
+</ul>
 
 
 <h2>Modules</h2>
@@ -44,7 +48,7 @@
   <li><a href="../modules/lua_libp2p.connection_encrypter_plaintext.protocol.html">lua_libp2p.connection_encrypter_plaintext.protocol</a></li>
   <li><a href="../modules/lua_libp2p.connection_manager.html">lua_libp2p.connection_manager</a></li>
   <li><a href="../modules/lua_libp2p.crypto.html">lua_libp2p.crypto</a></li>
-  <li><strong>lua_libp2p.crypto.ed25519</strong></li>
+  <li><a href="../modules/lua_libp2p.crypto.ed25519.html">lua_libp2p.crypto.ed25519</a></li>
   <li><a href="../modules/lua_libp2p.crypto.key_pb.html">lua_libp2p.crypto.key_pb</a></li>
   <li><a href="../modules/lua_libp2p.crypto.keys.html">lua_libp2p.crypto.keys</a></li>
   <li><a href="../modules/lua_libp2p.discovery.html">lua_libp2p.discovery</a></li>
@@ -52,7 +56,7 @@
   <li><a href="../modules/lua_libp2p.error.html">lua_libp2p.error</a></li>
   <li><a href="../modules/lua_libp2p.host.html">lua_libp2p.host</a></li>
   <li><a href="../modules/lua_libp2p.host.connections.html">lua_libp2p.host.connections</a></li>
-  <li><a href="../modules/lua_libp2p.host.events.html">lua_libp2p.host.events</a></li>
+  <li><strong>lua_libp2p.host.events</strong></li>
   <li><a href="../modules/lua_libp2p.host.runtime_luv.html">lua_libp2p.host.runtime_luv</a></li>
   <li><a href="../modules/lua_libp2p.host.runtime_luv_native.html">lua_libp2p.host.runtime_luv_native</a></li>
   <li><a href="../modules/lua_libp2p.host.tasks.html">lua_libp2p.host.tasks</a></li>
@@ -112,18 +116,249 @@
 
 <div id="content">
 
-<h1>Module <code>lua_libp2p.crypto.ed25519</code></h1>
-<p>Ed25519 key and signature utilities.</p>
+<h1>Module <code>lua_libp2p.host.events</code></h1>
+<p>Host event bus internals.</p>
 <p>
 
 </p>
 
 
+<h2><a href="#Functions">Functions</a></h2>
+<table class="function_list">
+	<tr>
+	<td class="name" nowrap><a href="#Host:emit">Host:emit (event_name[, payload])</a></td>
+	<td class="summary">Emit a host event.</td>
+	</tr>
+	<tr>
+	<td class="name" nowrap><a href="#Host:next_event">Host:next_event (subscriber)</a></td>
+	<td class="summary">Pop next queued event from a subscription.</td>
+	</tr>
+	<tr>
+	<td class="name" nowrap><a href="#Host:off">Host:off (event_name, handler)</a></td>
+	<td class="summary">Remove a previously registered event handler.</td>
+	</tr>
+	<tr>
+	<td class="name" nowrap><a href="#Host:on">Host:on (event_name, handler)</a></td>
+	<td class="summary">Subscribe to host events.</td>
+	</tr>
+	<tr>
+	<td class="name" nowrap><a href="#Host:subscribe">Host:subscribe ([event_name_or_opts[, opts]])</a></td>
+	<td class="summary">Create an event queue subscription.</td>
+	</tr>
+	<tr>
+	<td class="name" nowrap><a href="#Host:unsubscribe">Host:unsubscribe (subscriber)</a></td>
+	<td class="summary">Remove a queue subscription.</td>
+	</tr>
+</table>
 
 <br/>
 <br/>
 
 
+    <h2 class="section-header "><a name="Functions"></a>Functions</h2>
+
+    <dl class="function">
+    <dt>
+    <a name = "Host:emit"></a>
+    <strong>Host:emit (event_name[, payload])</strong>
+    </dt>
+    <dd>
+    Emit a host event.
+
+
+    <h3>Parameters:</h3>
+    <ul>
+        <li><span class="parameter">event_name</span>
+            <span class="types"><a class="type" href="https://www.lua.org/manual/5.4/manual.html#6.4">string</a></span>
+         Event key.
+        </li>
+        <li><span class="parameter">payload</span>
+            <span class="types"><a class="type" href="https://www.lua.org/manual/5.4/manual.html#6.6">table</a></span>
+         Event payload table.
+         (<em>optional</em>)
+        </li>
+    </ul>
+
+    <h3>Returns:</h3>
+    <ol>
+        <li>
+           <span class="types"><span class="type">true</span> or <span class="type">nil</span></span>
+        ok</li>
+        <li>
+           <span class="types"><a class="type" href="https://www.lua.org/manual/5.4/manual.html#6.6">table</a></span>
+        err</li>
+    </ol>
+
+
+
+
+</dd>
+    <dt>
+    <a name = "Host:next_event"></a>
+    <strong>Host:next_event (subscriber)</strong>
+    </dt>
+    <dd>
+    Pop next queued event from a subscription.
+ Returns <code>nil</code> when queue is empty.
+
+
+    <h3>Parameters:</h3>
+    <ul>
+        <li><span class="parameter">subscriber</span>
+            <span class="types"><a class="type" href="https://www.lua.org/manual/5.4/manual.html#6.6">table</a></span>
+         Subscriber handle returned by <a href="../modules/lua_libp2p.host.events.html#Host:subscribe">subscribe</a>.
+        </li>
+    </ul>
+
+    <h3>Returns:</h3>
+    <ol>
+        <li>
+           <span class="types"><a class="type" href="https://www.lua.org/manual/5.4/manual.html#6.6">table</a> or <span class="type">nil</span></span>
+        event</li>
+        <li>
+           <span class="types"><a class="type" href="https://www.lua.org/manual/5.4/manual.html#6.6">table</a></span>
+        err</li>
+    </ol>
+
+
+
+
+</dd>
+    <dt>
+    <a name = "Host:off"></a>
+    <strong>Host:off (event_name, handler)</strong>
+    </dt>
+    <dd>
+    Remove a previously registered event handler.
+
+
+    <h3>Parameters:</h3>
+    <ul>
+        <li><span class="parameter">event_name</span>
+            <span class="types"><a class="type" href="https://www.lua.org/manual/5.4/manual.html#6.4">string</a></span>
+         Event key.
+        </li>
+        <li><span class="parameter">handler</span>
+            <span class="types"><span class="type">function</span></span>
+         Previously registered callback.
+        </li>
+    </ul>
+
+    <h3>Returns:</h3>
+    <ol>
+
+           <span class="types"><span class="type">boolean</span></span>
+        removed
+    </ol>
+
+
+
+
+</dd>
+    <dt>
+    <a name = "Host:on"></a>
+    <strong>Host:on (event_name, handler)</strong>
+    </dt>
+    <dd>
+    Subscribe to host events.
+
+
+    <h3>Parameters:</h3>
+    <ul>
+        <li><span class="parameter">event_name</span>
+            <span class="types"><a class="type" href="https://www.lua.org/manual/5.4/manual.html#6.4">string</a></span>
+         Event key to subscribe to.
+        </li>
+        <li><span class="parameter">handler</span>
+            <span class="types"><span class="type">function</span></span>
+         Callback <code>(payload, event)</code>.
+ Common events/payload keys:
+ - <code>connection_opened</code>: <code>{ peer_id, connection_id, direction, remote_addr, limited }</code>
+ - <code>connection_closed</code>: <code>{ peer_id, connection_id, cause }</code>
+ - <code>peer_identified</code>: <code>{ peer_id, protocols, observed_addr }</code>
+ - <code>stream:negotiated</code>: <code>{ peer_id, connection_id, protocol, limited }</code>
+ - <code>task:started|task:completed|task:failed|task:cancelled</code>: <code>{ task_id, name, service }</code>
+        </li>
+    </ul>
+
+    <h3>Returns:</h3>
+    <ol>
+        <li>
+           <span class="types"><span class="type">true</span> or <span class="type">nil</span></span>
+        ok</li>
+        <li>
+           <span class="types"><a class="type" href="https://www.lua.org/manual/5.4/manual.html#6.6">table</a></span>
+        err</li>
+    </ol>
+
+
+
+
+</dd>
+    <dt>
+    <a name = "Host:subscribe"></a>
+    <strong>Host:subscribe ([event_name_or_opts[, opts]])</strong>
+    </dt>
+    <dd>
+    Create an event queue subscription.
+ <code>event_name_or_opts</code> may be a string event name, or table <code>{ event_name|event, max_queue }</code>.
+ <code>opts.max_queue</code> (<code>number</code>) overrides per-subscriber queue bound.
+
+
+    <h3>Parameters:</h3>
+    <ul>
+        <li><span class="parameter">event_name_or_opts</span>
+         Event name or options table.
+         (<em>optional</em>)
+        </li>
+        <li><span class="parameter">opts</span>
+            <span class="types"><a class="type" href="https://www.lua.org/manual/5.4/manual.html#6.6">table</a></span>
+         Options when first arg is event name.
+         (<em>optional</em>)
+        </li>
+    </ul>
+
+    <h3>Returns:</h3>
+    <ol>
+        <li>
+           <span class="types"><a class="type" href="https://www.lua.org/manual/5.4/manual.html#6.6">table</a> or <span class="type">nil</span></span>
+        subscriber</li>
+        <li>
+           <span class="types"><a class="type" href="https://www.lua.org/manual/5.4/manual.html#6.6">table</a></span>
+        err</li>
+    </ol>
+
+
+
+
+</dd>
+    <dt>
+    <a name = "Host:unsubscribe"></a>
+    <strong>Host:unsubscribe (subscriber)</strong>
+    </dt>
+    <dd>
+    Remove a queue subscription.
+
+
+    <h3>Parameters:</h3>
+    <ul>
+        <li><span class="parameter">subscriber</span>
+         Subscriber table or numeric id.
+        </li>
+    </ul>
+
+    <h3>Returns:</h3>
+    <ol>
+
+           <span class="types"><span class="type">boolean</span></span>
+        removed
+    </ol>
+
+
+
+
+</dd>
+</dl>
 
 
 </div> <!-- id="content" -->

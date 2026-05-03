@@ -55,8 +55,11 @@
   <li><a href="../modules/lua_libp2p.dnsaddr.html">lua_libp2p.dnsaddr</a></li>
   <li><a href="../modules/lua_libp2p.error.html">lua_libp2p.error</a></li>
   <li><strong>lua_libp2p.host</strong></li>
-  <li><a href="../modules/lua_libp2p.host_runtime_luv.html">lua_libp2p.host_runtime_luv</a></li>
-  <li><a href="../modules/lua_libp2p.host_runtime_luv_native.html">lua_libp2p.host_runtime_luv_native</a></li>
+  <li><a href="../modules/lua_libp2p.host.connections.html">lua_libp2p.host.connections</a></li>
+  <li><a href="../modules/lua_libp2p.host.events.html">lua_libp2p.host.events</a></li>
+  <li><a href="../modules/lua_libp2p.host.runtime_luv.html">lua_libp2p.host.runtime_luv</a></li>
+  <li><a href="../modules/lua_libp2p.host.runtime_luv_native.html">lua_libp2p.host.runtime_luv_native</a></li>
+  <li><a href="../modules/lua_libp2p.host.tasks.html">lua_libp2p.host.tasks</a></li>
   <li><a href="../modules/lua_libp2p.kad_dht.html">lua_libp2p.kad_dht</a></li>
   <li><a href="../modules/lua_libp2p.kad_dht.protocol.html">lua_libp2p.kad_dht.protocol</a></li>
   <li><a href="../modules/lua_libp2p.kbucket.html">lua_libp2p.kbucket</a></li>
@@ -130,10 +133,6 @@
 	<td class="summary">Dial relay destination over explicit relay multiaddr.</td>
 	</tr>
 	<tr>
-	<td class="name" nowrap><a href="#Host:_find_connection">Host:_find_connection (peer_id, opts)</a></td>
-	<td class="summary">Locate existing connection for peer.</td>
-	</tr>
-	<tr>
 	<td class="name" nowrap><a href="#Host:_protocol_allowed_on_limited_connection">Host:_protocol_allowed_on_limited_connection (protocol_id, opts)</a></td>
 	<td class="summary">Check limited-connection policy for one protocol.</td>
 	</tr>
@@ -146,16 +145,8 @@
 	<td class="summary">Request identify exchange against target peer.</td>
 	</tr>
 	<tr>
-	<td class="name" nowrap><a href="#Host:_run_background_tasks">Host:_run_background_tasks (opts)</a></td>
-	<td class="summary">Run periodic host background tasks.</td>
-	</tr>
-	<tr>
 	<td class="name" nowrap><a href="#Host:dial">Host:dial (peer_or_addr[, opts])</a></td>
 	<td class="summary">Open (or reuse) a connection to a peer target.</td>
-	</tr>
-	<tr>
-	<td class="name" nowrap><a href="#Host:emit">Host:emit (event_name[, payload])</a></td>
-	<td class="summary">Emit a host event.</td>
 	</tr>
 	<tr>
 	<td class="name" nowrap><a href="#Host:handle">Host:handle (protocol_id, handler[, opts])</a></td>
@@ -166,48 +157,12 @@
 	<td class="summary">Open a negotiated protocol stream.</td>
 	</tr>
 	<tr>
-	<td class="name" nowrap><a href="#Host:next_event">Host:next_event (subscriber)</a></td>
-	<td class="summary">Pop next queued event from a subscription.</td>
-	</tr>
-	<tr>
-	<td class="name" nowrap><a href="#Host:off">Host:off (event_name, handler)</a></td>
-	<td class="summary">Remove a previously registered event handler.</td>
-	</tr>
-	<tr>
-	<td class="name" nowrap><a href="#Host:on">Host:on (event_name, handler)</a></td>
-	<td class="summary">Subscribe to host events.</td>
-	</tr>
-	<tr>
-	<td class="name" nowrap><a href="#Host:run_until_task">Host:run_until_task (task[, opts])</a></td>
-	<td class="summary">Run poll loop until task reaches terminal state.</td>
-	</tr>
-	<tr>
-	<td class="name" nowrap><a href="#Host:sleep">Host:sleep (seconds[, opts])</a></td>
-	<td class="summary">Cooperative sleep helper.</td>
-	</tr>
-	<tr>
-	<td class="name" nowrap><a href="#Host:spawn_task">Host:spawn_task (name, fn[, opts])</a></td>
-	<td class="summary">Spawn a cooperative scheduler task.</td>
-	</tr>
-	<tr>
 	<td class="name" nowrap><a href="#Host:start">Host:start ()</a></td>
 	<td class="summary">Start the host runtime.</td>
 	</tr>
 	<tr>
 	<td class="name" nowrap><a href="#Host:stop">Host:stop ()</a></td>
 	<td class="summary">Stop and close the host.</td>
-	</tr>
-	<tr>
-	<td class="name" nowrap><a href="#Host:subscribe">Host:subscribe ([event_name_or_opts[, opts]])</a></td>
-	<td class="summary">Create an event queue subscription.</td>
-	</tr>
-	<tr>
-	<td class="name" nowrap><a href="#Host:unsubscribe">Host:unsubscribe (subscriber)</a></td>
-	<td class="summary">Remove a queue subscription.</td>
-	</tr>
-	<tr>
-	<td class="name" nowrap><a href="#Host:wait_task">Host:wait_task (task[, opts])</a></td>
-	<td class="summary">Wait for a task to complete.</td>
 	</tr>
 	<tr>
 	<td class="name" nowrap><a href="#new">new ([config])</a></td>
@@ -269,34 +224,6 @@
 
         </li>
         <li><span class="parameter">destination_peer_id</span>
-
-
-
-        </li>
-        <li><span class="parameter">opts</span>
-
-
-
-        </li>
-    </ul>
-
-
-
-
-
-</dd>
-    <dt>
-    <a name = "Host:_find_connection"></a>
-    <strong>Host:_find_connection (peer_id, opts)</strong>
-    </dt>
-    <dd>
-    Locate existing connection for peer.
- <code>opts.allow_limited_connection=true</code> permits returning limited relay links.
-
-
-    <h3>Parameters:</h3>
-    <ul>
-        <li><span class="parameter">peer_id</span>
 
 
 
@@ -399,29 +326,6 @@
 
 </dd>
     <dt>
-    <a name = "Host:_run_background_tasks"></a>
-    <strong>Host:_run_background_tasks (opts)</strong>
-    </dt>
-    <dd>
-    Run periodic host background tasks.
- <code>opts.now</code> can override current epoch seconds for testability.
-
-
-    <h3>Parameters:</h3>
-    <ul>
-        <li><span class="parameter">opts</span>
-
-
-
-        </li>
-    </ul>
-
-
-
-
-
-</dd>
-    <dt>
     <a name = "Host:dial"></a>
     <strong>Host:dial (peer_or_addr[, opts])</strong>
     </dt>
@@ -454,41 +358,6 @@
         <li>
            <span class="types"><a class="type" href="https://www.lua.org/manual/5.4/manual.html#6.6">table</a></span>
         state</li>
-        <li>
-           <span class="types"><a class="type" href="https://www.lua.org/manual/5.4/manual.html#6.6">table</a></span>
-        err</li>
-    </ol>
-
-
-
-
-</dd>
-    <dt>
-    <a name = "Host:emit"></a>
-    <strong>Host:emit (event_name[, payload])</strong>
-    </dt>
-    <dd>
-    Emit a host event.
-
-
-    <h3>Parameters:</h3>
-    <ul>
-        <li><span class="parameter">event_name</span>
-            <span class="types"><a class="type" href="https://www.lua.org/manual/5.4/manual.html#6.4">string</a></span>
-         Event key.
-        </li>
-        <li><span class="parameter">payload</span>
-            <span class="types"><a class="type" href="https://www.lua.org/manual/5.4/manual.html#6.6">table</a></span>
-         Event payload table.
-         (<em>optional</em>)
-        </li>
-    </ul>
-
-    <h3>Returns:</h3>
-    <ol>
-        <li>
-           <span class="types"><span class="type">true</span> or <span class="type">nil</span></span>
-        ok</li>
         <li>
            <span class="types"><a class="type" href="https://www.lua.org/manual/5.4/manual.html#6.6">table</a></span>
         err</li>
@@ -586,223 +455,6 @@
 
 </dd>
     <dt>
-    <a name = "Host:next_event"></a>
-    <strong>Host:next_event (subscriber)</strong>
-    </dt>
-    <dd>
-    Pop next queued event from a subscription.
- Returns <code>nil</code> when queue is empty.
-
-
-    <h3>Parameters:</h3>
-    <ul>
-        <li><span class="parameter">subscriber</span>
-            <span class="types"><a class="type" href="https://www.lua.org/manual/5.4/manual.html#6.6">table</a></span>
-         Subscriber handle returned by <a href="../modules/lua_libp2p.host.html#Host:subscribe">subscribe</a>.
-        </li>
-    </ul>
-
-    <h3>Returns:</h3>
-    <ol>
-        <li>
-           <span class="types"><a class="type" href="https://www.lua.org/manual/5.4/manual.html#6.6">table</a> or <span class="type">nil</span></span>
-        event</li>
-        <li>
-           <span class="types"><a class="type" href="https://www.lua.org/manual/5.4/manual.html#6.6">table</a></span>
-        err</li>
-    </ol>
-
-
-
-
-</dd>
-    <dt>
-    <a name = "Host:off"></a>
-    <strong>Host:off (event_name, handler)</strong>
-    </dt>
-    <dd>
-    Remove a previously registered event handler.
-
-
-    <h3>Parameters:</h3>
-    <ul>
-        <li><span class="parameter">event_name</span>
-            <span class="types"><a class="type" href="https://www.lua.org/manual/5.4/manual.html#6.4">string</a></span>
-         Event key.
-        </li>
-        <li><span class="parameter">handler</span>
-            <span class="types"><span class="type">function</span></span>
-         Previously registered callback.
-        </li>
-    </ul>
-
-    <h3>Returns:</h3>
-    <ol>
-
-           <span class="types"><span class="type">boolean</span></span>
-        removed
-    </ol>
-
-
-
-
-</dd>
-    <dt>
-    <a name = "Host:on"></a>
-    <strong>Host:on (event_name, handler)</strong>
-    </dt>
-    <dd>
-    Subscribe to host events.
-
-
-    <h3>Parameters:</h3>
-    <ul>
-        <li><span class="parameter">event_name</span>
-            <span class="types"><a class="type" href="https://www.lua.org/manual/5.4/manual.html#6.4">string</a></span>
-         Event key to subscribe to.
-        </li>
-        <li><span class="parameter">handler</span>
-            <span class="types"><span class="type">function</span></span>
-         Callback <code>(payload, event)</code>.
- Common events/payload keys:
- - <code>connection_opened</code>: <code>{ peer_id, connection_id, direction, remote_addr, limited }</code>
- - <code>connection_closed</code>: <code>{ peer_id, connection_id, cause }</code>
- - <code>peer_identified</code>: <code>{ peer_id, protocols, observed_addr }</code>
- - <code>stream:negotiated</code>: <code>{ peer_id, connection_id, protocol, limited }</code>
- - <code>task:started|task:completed|task:failed|task:cancelled</code>: <code>{ task_id, name, service }</code>
-        </li>
-    </ul>
-
-    <h3>Returns:</h3>
-    <ol>
-        <li>
-           <span class="types"><span class="type">true</span> or <span class="type">nil</span></span>
-        ok</li>
-        <li>
-           <span class="types"><a class="type" href="https://www.lua.org/manual/5.4/manual.html#6.6">table</a></span>
-        err</li>
-    </ol>
-
-
-
-
-</dd>
-    <dt>
-    <a name = "Host:run_until_task"></a>
-    <strong>Host:run_until_task (task[, opts])</strong>
-    </dt>
-    <dd>
-    Run poll loop until task reaches terminal state.
- <code>opts.timeout</code> (<code>number</code>) sets wall-clock timeout seconds.
- <code>opts.poll_interval</code> (<code>number</code>, default <code>0.01</code>) controls poll cadence.
-
-
-    <h3>Parameters:</h3>
-    <ul>
-        <li><span class="parameter">task</span>
-            <span class="types"><a class="type" href="https://www.lua.org/manual/5.4/manual.html#6.6">table</a></span>
-
-
-
-        </li>
-        <li><span class="parameter">opts</span>
-            <span class="types"><a class="type" href="https://www.lua.org/manual/5.4/manual.html#6.6">table</a></span>
-
-
-
-         (<em>optional</em>)
-        </li>
-    </ul>
-
-    <h3>Returns:</h3>
-    <ol>
-
-        Task result values on completion.
-    </ol>
-
-
-
-
-</dd>
-    <dt>
-    <a name = "Host:sleep"></a>
-    <strong>Host:sleep (seconds[, opts])</strong>
-    </dt>
-    <dd>
-    Cooperative sleep helper.
- Uses task context sleep when <code>opts.ctx</code> is present; otherwise runs a helper task.
-
-
-    <h3>Parameters:</h3>
-    <ul>
-        <li><span class="parameter">seconds</span>
-            <span class="types"><span class="type">number</span></span>
-         Non-negative sleep duration.
-        </li>
-        <li><span class="parameter">opts</span>
-            <span class="types"><a class="type" href="https://www.lua.org/manual/5.4/manual.html#6.6">table</a></span>
-         Wait options.
- <code>opts</code> supports <code>ctx</code>, <code>timeout</code>, and <code>poll_interval</code>.
-         (<em>optional</em>)
-        </li>
-    </ul>
-
-    <h3>Returns:</h3>
-    <ol>
-        <li>
-           <span class="types"><span class="type">true</span> or <span class="type">nil</span></span>
-        ok</li>
-        <li>
-           <span class="types"><a class="type" href="https://www.lua.org/manual/5.4/manual.html#6.6">table</a></span>
-        err</li>
-    </ol>
-
-
-
-
-</dd>
-    <dt>
-    <a name = "Host:spawn_task"></a>
-    <strong>Host:spawn_task (name, fn[, opts])</strong>
-    </dt>
-    <dd>
-    Spawn a cooperative scheduler task.
- Task callback receives a context with <a href="../modules/lua_libp2p.host.html#Host:sleep">sleep</a>, <code>await_task</code>, and IO wait helpers.
-
-
-    <h3>Parameters:</h3>
-    <ul>
-        <li><span class="parameter">name</span>
-            <span class="types"><a class="type" href="https://www.lua.org/manual/5.4/manual.html#6.4">string</a></span>
-         Task name.
-        </li>
-        <li><span class="parameter">fn</span>
-            <span class="types"><span class="type">function</span></span>
-         Task callback <code>(ctx)</code>.
-        </li>
-        <li><span class="parameter">opts</span>
-            <span class="types"><a class="type" href="https://www.lua.org/manual/5.4/manual.html#6.6">table</a></span>
-         Task metadata.
- <code>opts</code> may include <code>service</code>, <code>peer_id</code>, and <code>metadata</code> values for diagnostics.
-         (<em>optional</em>)
-        </li>
-    </ul>
-
-    <h3>Returns:</h3>
-    <ol>
-        <li>
-           <span class="types"><a class="type" href="https://www.lua.org/manual/5.4/manual.html#6.6">table</a> or <span class="type">nil</span></span>
-        task</li>
-        <li>
-           <span class="types"><a class="type" href="https://www.lua.org/manual/5.4/manual.html#6.6">table</a></span>
-        err</li>
-    </ol>
-
-
-
-
-</dd>
-    <dt>
     <a name = "Host:start"></a>
     <strong>Host:start ()</strong>
     </dt>
@@ -843,102 +495,6 @@
         <li>
            <span class="types"><a class="type" href="https://www.lua.org/manual/5.4/manual.html#6.6">table</a></span>
         err</li>
-    </ol>
-
-
-
-
-</dd>
-    <dt>
-    <a name = "Host:subscribe"></a>
-    <strong>Host:subscribe ([event_name_or_opts[, opts]])</strong>
-    </dt>
-    <dd>
-    Create an event queue subscription.
- <code>event_name_or_opts</code> may be a string event name, or table <code>{ event_name|event, max_queue }</code>.
- <code>opts.max_queue</code> (<code>number</code>) overrides per-subscriber queue bound.
-
-
-    <h3>Parameters:</h3>
-    <ul>
-        <li><span class="parameter">event_name_or_opts</span>
-         Event name or options table.
-         (<em>optional</em>)
-        </li>
-        <li><span class="parameter">opts</span>
-            <span class="types"><a class="type" href="https://www.lua.org/manual/5.4/manual.html#6.6">table</a></span>
-         Options when first arg is event name.
-         (<em>optional</em>)
-        </li>
-    </ul>
-
-    <h3>Returns:</h3>
-    <ol>
-        <li>
-           <span class="types"><a class="type" href="https://www.lua.org/manual/5.4/manual.html#6.6">table</a> or <span class="type">nil</span></span>
-        subscriber</li>
-        <li>
-           <span class="types"><a class="type" href="https://www.lua.org/manual/5.4/manual.html#6.6">table</a></span>
-        err</li>
-    </ol>
-
-
-
-
-</dd>
-    <dt>
-    <a name = "Host:unsubscribe"></a>
-    <strong>Host:unsubscribe (subscriber)</strong>
-    </dt>
-    <dd>
-    Remove a queue subscription.
-
-
-    <h3>Parameters:</h3>
-    <ul>
-        <li><span class="parameter">subscriber</span>
-         Subscriber table or numeric id.
-        </li>
-    </ul>
-
-    <h3>Returns:</h3>
-    <ol>
-
-           <span class="types"><span class="type">boolean</span></span>
-        removed
-    </ol>
-
-
-
-
-</dd>
-    <dt>
-    <a name = "Host:wait_task"></a>
-    <strong>Host:wait_task (task[, opts])</strong>
-    </dt>
-    <dd>
-    Wait for a task to complete.
- Uses <code>ctx:await_task</code> when called from within another task.
-
-
-    <h3>Parameters:</h3>
-    <ul>
-        <li><span class="parameter">task</span>
-            <span class="types"><a class="type" href="https://www.lua.org/manual/5.4/manual.html#6.6">table</a></span>
-         Task returned by <a href="../modules/lua_libp2p.host.html#Host:spawn_task">spawn_task</a>.
-        </li>
-        <li><span class="parameter">opts</span>
-            <span class="types"><a class="type" href="https://www.lua.org/manual/5.4/manual.html#6.6">table</a></span>
-         Wait options.
- <code>opts</code> supports <code>ctx</code>, <code>timeout</code>, and <code>poll_interval</code>.
-         (<em>optional</em>)
-        </li>
-    </ul>
-
-    <h3>Returns:</h3>
-    <ol>
-
-        Task callback return values on success.
     </ol>
 
 
@@ -991,7 +547,7 @@
 </div> <!-- id="main" -->
 <div id="about">
 <i>generated by <a href="http://github.com/lunarmodules/LDoc">LDoc 1.5.0</a></i>
-<i style="float:right;">Last updated 2026-05-03 18:44:40 </i>
+<i style="float:right;">Last updated 2026-05-03 19:32:10 </i>
 </div> <!-- id="about" -->
 </div> <!-- id="container" -->
 </body>

@@ -59,7 +59,7 @@ This repo currently includes:
 - `lua_libp2p/peer_discovery_bootstrap`: bootstrap peer discovery source
 - `lua_libp2p/network`: connection/stream abstraction layer
 - `lua_libp2p/record`: signed envelopes and peer routing records
-- `lua_libp2p/host.lua`: host/node setup (`start`, `dial`, `new_stream`, `handle`, `close`)
+- `lua_libp2p/host/init.lua`: host/node setup (`start`, `dial`, `new_stream`, `handle`, `close`)
 - `lua_libp2p/peerstore`: peer metadata storage
 - `lua_libp2p/kbucket.lua`: Kademlia kbucket routing table module
 - `lua_libp2p/kad_dht`: Kademlia DHT module and wire helpers
