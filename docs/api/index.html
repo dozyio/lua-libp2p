@@ -1,0 +1,396 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN"
+   "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html>
+<meta http-equiv="Content-Type" content="text/html; charset=UTF-8"/>
+<head>
+    <title>lua-libp2p API Documentation</title>
+    <link rel="stylesheet" href="ldoc_fixed.css" type="text/css" />
+</head>
+<body>
+
+<div id="container">
+
+<div id="product">
+	<div id="product_logo"></div>
+	<div id="product_name"><big><b></b></big></div>
+	<div id="product_description"></div>
+</div> <!-- id="product" -->
+
+
+<div id="main">
+
+
+<!-- Menu -->
+
+<div id="navigation">
+<br/>
+<h1>lua-libp2p</h1>
+
+
+
+
+
+<h2>Modules</h2>
+<ul class="nowrap">
+  <li><a href="modules/lua_libp2p.address_manager.html">lua_libp2p.address_manager</a></li>
+  <li><a href="modules/lua_libp2p.autonat.client.html">lua_libp2p.autonat.client</a></li>
+  <li><a href="modules/lua_libp2p.autonat.html">lua_libp2p.autonat</a></li>
+  <li><a href="modules/lua_libp2p.bootstrap.html">lua_libp2p.bootstrap</a></li>
+  <li><a href="modules/lua_libp2p.connection_encrypter_noise.protocol.html">lua_libp2p.connection_encrypter_noise.protocol</a></li>
+  <li><a href="modules/lua_libp2p.connection_encrypter_plaintext.protocol.html">lua_libp2p.connection_encrypter_plaintext.protocol</a></li>
+  <li><a href="modules/lua_libp2p.connection_manager.html">lua_libp2p.connection_manager</a></li>
+  <li><a href="modules/lua_libp2p.crypto.ed25519.html">lua_libp2p.crypto.ed25519</a></li>
+  <li><a href="modules/lua_libp2p.crypto.html">lua_libp2p.crypto</a></li>
+  <li><a href="modules/lua_libp2p.crypto.key_pb.html">lua_libp2p.crypto.key_pb</a></li>
+  <li><a href="modules/lua_libp2p.crypto.keys.html">lua_libp2p.crypto.keys</a></li>
+  <li><a href="modules/lua_libp2p.discovery.html">lua_libp2p.discovery</a></li>
+  <li><a href="modules/lua_libp2p.dnsaddr.html">lua_libp2p.dnsaddr</a></li>
+  <li><a href="modules/lua_libp2p.error.html">lua_libp2p.error</a></li>
+  <li><a href="modules/lua_libp2p.host.html">lua_libp2p.host</a></li>
+  <li><a href="modules/lua_libp2p.host_runtime_luv.html">lua_libp2p.host_runtime_luv</a></li>
+  <li><a href="modules/lua_libp2p.host_runtime_luv_native.html">lua_libp2p.host_runtime_luv_native</a></li>
+  <li><a href="modules/lua_libp2p.host_runtime_poll.html">lua_libp2p.host_runtime_poll</a></li>
+  <li><a href="modules/lua_libp2p.html">lua_libp2p</a></li>
+  <li><a href="modules/lua_libp2p.kad_dht.html">lua_libp2p.kad_dht</a></li>
+  <li><a href="modules/lua_libp2p.kad_dht.protocol.html">lua_libp2p.kad_dht.protocol</a></li>
+  <li><a href="modules/lua_libp2p.kbucket.html">lua_libp2p.kbucket</a></li>
+  <li><a href="modules/lua_libp2p.log.html">lua_libp2p.log</a></li>
+  <li><a href="modules/lua_libp2p.multiaddr.html">lua_libp2p.multiaddr</a></li>
+  <li><a href="modules/lua_libp2p.multiformats.base32.html">lua_libp2p.multiformats.base32</a></li>
+  <li><a href="modules/lua_libp2p.multiformats.base58btc.html">lua_libp2p.multiformats.base58btc</a></li>
+  <li><a href="modules/lua_libp2p.multiformats.cid.html">lua_libp2p.multiformats.cid</a></li>
+  <li><a href="modules/lua_libp2p.multiformats.html">lua_libp2p.multiformats</a></li>
+  <li><a href="modules/lua_libp2p.multiformats.multihash.html">lua_libp2p.multiformats.multihash</a></li>
+  <li><a href="modules/lua_libp2p.multiformats.varint.html">lua_libp2p.multiformats.varint</a></li>
+  <li><a href="modules/lua_libp2p.multistream_select.protocol.html">lua_libp2p.multistream_select.protocol</a></li>
+  <li><a href="modules/lua_libp2p.muxer.html">lua_libp2p.muxer</a></li>
+  <li><a href="modules/lua_libp2p.muxer.yamux.html">lua_libp2p.muxer.yamux</a></li>
+  <li><a href="modules/lua_libp2p.nat_pmp.client.html">lua_libp2p.nat_pmp.client</a></li>
+  <li><a href="modules/lua_libp2p.nat_pmp.service.html">lua_libp2p.nat_pmp.service</a></li>
+  <li><a href="modules/lua_libp2p.network.connection.html">lua_libp2p.network.connection</a></li>
+  <li><a href="modules/lua_libp2p.network.html">lua_libp2p.network</a></li>
+  <li><a href="modules/lua_libp2p.network.upgrader.html">lua_libp2p.network.upgrader</a></li>
+  <li><a href="modules/lua_libp2p.operation.html">lua_libp2p.operation</a></li>
+  <li><a href="modules/lua_libp2p.pcp.client.html">lua_libp2p.pcp.client</a></li>
+  <li><a href="modules/lua_libp2p.pcp.service.html">lua_libp2p.pcp.service</a></li>
+  <li><a href="modules/lua_libp2p.peer_discovery_bootstrap.html">lua_libp2p.peer_discovery_bootstrap</a></li>
+  <li><a href="modules/lua_libp2p.peerid.html">lua_libp2p.peerid</a></li>
+  <li><a href="modules/lua_libp2p.peerstore.html">lua_libp2p.peerstore</a></li>
+  <li><a href="modules/lua_libp2p.protocol.autonat_v2.html">lua_libp2p.protocol.autonat_v2</a></li>
+  <li><a href="modules/lua_libp2p.protocol.dummy.html">lua_libp2p.protocol.dummy</a></li>
+  <li><a href="modules/lua_libp2p.protocol.html">lua_libp2p.protocol</a></li>
+  <li><a href="modules/lua_libp2p.protocol_dcutr.protocol.html">lua_libp2p.protocol_dcutr.protocol</a></li>
+  <li><a href="modules/lua_libp2p.protocol_dcutr.service.html">lua_libp2p.protocol_dcutr.service</a></li>
+  <li><a href="modules/lua_libp2p.protocol_identify.protocol.html">lua_libp2p.protocol_identify.protocol</a></li>
+  <li><a href="modules/lua_libp2p.protocol_identify.service.html">lua_libp2p.protocol_identify.service</a></li>
+  <li><a href="modules/lua_libp2p.protocol_perf.protocol.html">lua_libp2p.protocol_perf.protocol</a></li>
+  <li><a href="modules/lua_libp2p.protocol_perf.service.html">lua_libp2p.protocol_perf.service</a></li>
+  <li><a href="modules/lua_libp2p.protocol_ping.protocol.html">lua_libp2p.protocol_ping.protocol</a></li>
+  <li><a href="modules/lua_libp2p.protocol_ping.service.html">lua_libp2p.protocol_ping.service</a></li>
+  <li><a href="modules/lua_libp2p.record.html">lua_libp2p.record</a></li>
+  <li><a href="modules/lua_libp2p.record.peer_record.html">lua_libp2p.record.peer_record</a></li>
+  <li><a href="modules/lua_libp2p.record.signed_envelope.html">lua_libp2p.record.signed_envelope</a></li>
+  <li><a href="modules/lua_libp2p.transport_circuit_relay_v2.autorelay.html">lua_libp2p.transport_circuit_relay_v2.autorelay</a></li>
+  <li><a href="modules/lua_libp2p.transport_circuit_relay_v2.client.html">lua_libp2p.transport_circuit_relay_v2.client</a></li>
+  <li><a href="modules/lua_libp2p.transport_circuit_relay_v2.protocol.html">lua_libp2p.transport_circuit_relay_v2.protocol</a></li>
+  <li><a href="modules/lua_libp2p.transport_tcp.luv.html">lua_libp2p.transport_tcp.luv</a></li>
+  <li><a href="modules/lua_libp2p.transport_tcp.luv_native.html">lua_libp2p.transport_tcp.luv_native</a></li>
+  <li><a href="modules/lua_libp2p.transport_tcp.transport.html">lua_libp2p.transport_tcp.transport</a></li>
+  <li><a href="modules/lua_libp2p.upnp.igd.html">lua_libp2p.upnp.igd</a></li>
+  <li><a href="modules/lua_libp2p.upnp.html">lua_libp2p.upnp</a></li>
+  <li><a href="modules/lua_libp2p.upnp.nat.html">lua_libp2p.upnp.nat</a></li>
+  <li><a href="modules/lua_libp2p.upnp.ssdp.html">lua_libp2p.upnp.ssdp</a></li>
+</ul>
+
+</div>
+
+<div id="content">
+
+
+  <h2>Lua libp2p implementation</h2>
+
+<h2>Modules</h2>
+<table class="module_list">
+	<tr>
+		<td class="name"  nowrap><a href="modules/lua_libp2p.address_manager.html">lua_libp2p.address_manager</a></td>
+		<td class="summary">Address manager and advertisement policy.</td>
+	</tr>
+	<tr>
+		<td class="name"  nowrap><a href="modules/lua_libp2p.autonat.client.html">lua_libp2p.autonat.client</a></td>
+		<td class="summary">AutoNAT v2 client/service.</td>
+	</tr>
+	<tr>
+		<td class="name"  nowrap><a href="modules/lua_libp2p.autonat.html">lua_libp2p.autonat</a></td>
+		<td class="summary">AutoNAT module entrypoint.</td>
+	</tr>
+	<tr>
+		<td class="name"  nowrap><a href="modules/lua_libp2p.bootstrap.html">lua_libp2p.bootstrap</a></td>
+		<td class="summary">Bootstrap peer list constants.</td>
+	</tr>
+	<tr>
+		<td class="name"  nowrap><a href="modules/lua_libp2p.connection_encrypter_noise.protocol.html">lua_libp2p.connection_encrypter_noise.protocol</a></td>
+		<td class="summary">Noise transport handshake and secure channel.</td>
+	</tr>
+	<tr>
+		<td class="name"  nowrap><a href="modules/lua_libp2p.connection_encrypter_plaintext.protocol.html">lua_libp2p.connection_encrypter_plaintext.protocol</a></td>
+		<td class="summary">Plaintext transport handshake helpers.</td>
+	</tr>
+	<tr>
+		<td class="name"  nowrap><a href="modules/lua_libp2p.connection_manager.html">lua_libp2p.connection_manager</a></td>
+		<td class="summary">Connection manager with dial queue and reuse policy.</td>
+	</tr>
+	<tr>
+		<td class="name"  nowrap><a href="modules/lua_libp2p.crypto.ed25519.html">lua_libp2p.crypto.ed25519</a></td>
+		<td class="summary">Ed25519 key and signature utilities.</td>
+	</tr>
+	<tr>
+		<td class="name"  nowrap><a href="modules/lua_libp2p.crypto.html">lua_libp2p.crypto</a></td>
+		<td class="summary">Crypto module entrypoint.</td>
+	</tr>
+	<tr>
+		<td class="name"  nowrap><a href="modules/lua_libp2p.crypto.key_pb.html">lua_libp2p.crypto.key_pb</a></td>
+		<td class="summary">Libp2p key protobuf codec.</td>
+	</tr>
+	<tr>
+		<td class="name"  nowrap><a href="modules/lua_libp2p.crypto.keys.html">lua_libp2p.crypto.keys</a></td>
+		<td class="summary">Key loading and signing helpers.</td>
+	</tr>
+	<tr>
+		<td class="name"  nowrap><a href="modules/lua_libp2p.discovery.html">lua_libp2p.discovery</a></td>
+		<td class="summary">Discovery source aggregation.</td>
+	</tr>
+	<tr>
+		<td class="name"  nowrap><a href="modules/lua_libp2p.dnsaddr.html">lua_libp2p.dnsaddr</a></td>
+		<td class="summary">DNSADDR resolver utilities.</td>
+	</tr>
+	<tr>
+		<td class="name"  nowrap><a href="modules/lua_libp2p.error.html">lua_libp2p.error</a></td>
+		<td class="summary">Structured error helpers.</td>
+	</tr>
+	<tr>
+		<td class="name"  nowrap><a href="modules/lua_libp2p.host.html">lua_libp2p.host</a></td>
+		<td class="summary">Host construction and runtime orchestration.</td>
+	</tr>
+	<tr>
+		<td class="name"  nowrap><a href="modules/lua_libp2p.host_runtime_luv.html">lua_libp2p.host_runtime_luv</a></td>
+		<td class="summary">Host runtime adapter for luv loop management.</td>
+	</tr>
+	<tr>
+		<td class="name"  nowrap><a href="modules/lua_libp2p.host_runtime_luv_native.html">lua_libp2p.host_runtime_luv_native</a></td>
+		<td class="summary">Host helpers for native luv transport integration.</td>
+	</tr>
+	<tr>
+		<td class="name"  nowrap><a href="modules/lua_libp2p.host_runtime_poll.html">lua_libp2p.host_runtime_poll</a></td>
+		<td class="summary">Poll-based host runtime adapter.</td>
+	</tr>
+	<tr>
+		<td class="name"  nowrap><a href="modules/lua_libp2p.html">lua_libp2p</a></td>
+		<td class="summary">Top-level lua-libp2p module.</td>
+	</tr>
+	<tr>
+		<td class="name"  nowrap><a href="modules/lua_libp2p.kad_dht.html">lua_libp2p.kad_dht</a></td>
+		<td class="summary">Kademlia DHT service and client operations.</td>
+	</tr>
+	<tr>
+		<td class="name"  nowrap><a href="modules/lua_libp2p.kad_dht.protocol.html">lua_libp2p.kad_dht.protocol</a></td>
+		<td class="summary">KAD protobuf protocol framing and codec helpers.</td>
+	</tr>
+	<tr>
+		<td class="name"  nowrap><a href="modules/lua_libp2p.kbucket.html">lua_libp2p.kbucket</a></td>
+		<td class="summary">Kademlia k-bucket routing table primitives.</td>
+	</tr>
+	<tr>
+		<td class="name"  nowrap><a href="modules/lua_libp2p.log.html">lua_libp2p.log</a></td>
+		<td class="summary">Lightweight structured logging helpers.</td>
+	</tr>
+	<tr>
+		<td class="name"  nowrap><a href="modules/lua_libp2p.multiaddr.html">lua_libp2p.multiaddr</a></td>
+		<td class="summary">Multiaddr parsing, formatting, and helpers.</td>
+	</tr>
+	<tr>
+		<td class="name"  nowrap><a href="modules/lua_libp2p.multiformats.base32.html">lua_libp2p.multiformats.base32</a></td>
+		<td class="summary">Base32 codec.</td>
+	</tr>
+	<tr>
+		<td class="name"  nowrap><a href="modules/lua_libp2p.multiformats.base58btc.html">lua_libp2p.multiformats.base58btc</a></td>
+		<td class="summary">Base58btc codec.</td>
+	</tr>
+	<tr>
+		<td class="name"  nowrap><a href="modules/lua_libp2p.multiformats.cid.html">lua_libp2p.multiformats.cid</a></td>
+		<td class="summary">CIDv1 helpers.</td>
+	</tr>
+	<tr>
+		<td class="name"  nowrap><a href="modules/lua_libp2p.multiformats.html">lua_libp2p.multiformats</a></td>
+		<td class="summary">Multiformats entrypoint.</td>
+	</tr>
+	<tr>
+		<td class="name"  nowrap><a href="modules/lua_libp2p.multiformats.multihash.html">lua_libp2p.multiformats.multihash</a></td>
+		<td class="summary">Multihash encode/decode helpers.</td>
+	</tr>
+	<tr>
+		<td class="name"  nowrap><a href="modules/lua_libp2p.multiformats.varint.html">lua_libp2p.multiformats.varint</a></td>
+		<td class="summary">Unsigned varint encode/decode helpers.</td>
+	</tr>
+	<tr>
+		<td class="name"  nowrap><a href="modules/lua_libp2p.multistream_select.protocol.html">lua_libp2p.multistream_select.protocol</a></td>
+		<td class="summary">Multistream-select negotiation protocol.</td>
+	</tr>
+	<tr>
+		<td class="name"  nowrap><a href="modules/lua_libp2p.muxer.html">lua_libp2p.muxer</a></td>
+		<td class="summary">Stream muxer registry.</td>
+	</tr>
+	<tr>
+		<td class="name"  nowrap><a href="modules/lua_libp2p.muxer.yamux.html">lua_libp2p.muxer.yamux</a></td>
+		<td class="summary">Yamux stream multiplexer implementation.</td>
+	</tr>
+	<tr>
+		<td class="name"  nowrap><a href="modules/lua_libp2p.nat_pmp.client.html">lua_libp2p.nat_pmp.client</a></td>
+		<td class="summary">NAT-PMP client.</td>
+	</tr>
+	<tr>
+		<td class="name"  nowrap><a href="modules/lua_libp2p.nat_pmp.service.html">lua_libp2p.nat_pmp.service</a></td>
+		<td class="summary">NAT-PMP mapping service.</td>
+	</tr>
+	<tr>
+		<td class="name"  nowrap><a href="modules/lua_libp2p.network.connection.html">lua_libp2p.network.connection</a></td>
+		<td class="summary">Connection abstraction over secure muxed sessions.</td>
+	</tr>
+	<tr>
+		<td class="name"  nowrap><a href="modules/lua_libp2p.network.html">lua_libp2p.network</a></td>
+		<td class="summary">Network module entrypoint.</td>
+	</tr>
+	<tr>
+		<td class="name"  nowrap><a href="modules/lua_libp2p.network.upgrader.html">lua_libp2p.network.upgrader</a></td>
+		<td class="summary">Connection upgrader for security + multiplexing.</td>
+	</tr>
+	<tr>
+		<td class="name"  nowrap><a href="modules/lua_libp2p.operation.html">lua_libp2p.operation</a></td>
+		<td class="summary">Operation wrapper for sync/async result handling.</td>
+	</tr>
+	<tr>
+		<td class="name"  nowrap><a href="modules/lua_libp2p.pcp.client.html">lua_libp2p.pcp.client</a></td>
+		<td class="summary">PCP client.</td>
+	</tr>
+	<tr>
+		<td class="name"  nowrap><a href="modules/lua_libp2p.pcp.service.html">lua_libp2p.pcp.service</a></td>
+		<td class="summary">PCP mapping service.</td>
+	</tr>
+	<tr>
+		<td class="name"  nowrap><a href="modules/lua_libp2p.peer_discovery_bootstrap.html">lua_libp2p.peer_discovery_bootstrap</a></td>
+		<td class="summary">Bootstrap peer discovery source.</td>
+	</tr>
+	<tr>
+		<td class="name"  nowrap><a href="modules/lua_libp2p.peerid.html">lua_libp2p.peerid</a></td>
+		<td class="summary">Peer ID parsing and derivation helpers.</td>
+	</tr>
+	<tr>
+		<td class="name"  nowrap><a href="modules/lua_libp2p.peerstore.html">lua_libp2p.peerstore</a></td>
+		<td class="summary">In-memory peerstore.</td>
+	</tr>
+	<tr>
+		<td class="name"  nowrap><a href="modules/lua_libp2p.protocol.autonat_v2.html">lua_libp2p.protocol.autonat_v2</a></td>
+		<td class="summary">AutoNAT v2 wire protocol codec.</td>
+	</tr>
+	<tr>
+		<td class="name"  nowrap><a href="modules/lua_libp2p.protocol.dummy.html">lua_libp2p.protocol.dummy</a></td>
+		<td class="summary">Dummy protocol helpers for tests/examples.</td>
+	</tr>
+	<tr>
+		<td class="name"  nowrap><a href="modules/lua_libp2p.protocol.html">lua_libp2p.protocol</a></td>
+		<td class="summary">Protocol module entrypoint.</td>
+	</tr>
+	<tr>
+		<td class="name"  nowrap><a href="modules/lua_libp2p.protocol_dcutr.protocol.html">lua_libp2p.protocol_dcutr.protocol</a></td>
+		<td class="summary">DCUtR protocol framing and message codec.</td>
+	</tr>
+	<tr>
+		<td class="name"  nowrap><a href="modules/lua_libp2p.protocol_dcutr.service.html">lua_libp2p.protocol_dcutr.service</a></td>
+		<td class="summary">DCUtR hole-punching service.</td>
+	</tr>
+	<tr>
+		<td class="name"  nowrap><a href="modules/lua_libp2p.protocol_identify.protocol.html">lua_libp2p.protocol_identify.protocol</a></td>
+		<td class="summary">Identify protocol codec and helpers.</td>
+	</tr>
+	<tr>
+		<td class="name"  nowrap><a href="modules/lua_libp2p.protocol_identify.service.html">lua_libp2p.protocol_identify.service</a></td>
+		<td class="summary">Identify protocol service.</td>
+	</tr>
+	<tr>
+		<td class="name"  nowrap><a href="modules/lua_libp2p.protocol_perf.protocol.html">lua_libp2p.protocol_perf.protocol</a></td>
+		<td class="summary">Perf protocol helpers and measurement utilities.</td>
+	</tr>
+	<tr>
+		<td class="name"  nowrap><a href="modules/lua_libp2p.protocol_perf.service.html">lua_libp2p.protocol_perf.service</a></td>
+		<td class="summary">Perf protocol service.</td>
+	</tr>
+	<tr>
+		<td class="name"  nowrap><a href="modules/lua_libp2p.protocol_ping.protocol.html">lua_libp2p.protocol_ping.protocol</a></td>
+		<td class="summary">Ping protocol primitives.</td>
+	</tr>
+	<tr>
+		<td class="name"  nowrap><a href="modules/lua_libp2p.protocol_ping.service.html">lua_libp2p.protocol_ping.service</a></td>
+		<td class="summary">Ping protocol service.</td>
+	</tr>
+	<tr>
+		<td class="name"  nowrap><a href="modules/lua_libp2p.record.html">lua_libp2p.record</a></td>
+		<td class="summary">Record module entrypoint.</td>
+	</tr>
+	<tr>
+		<td class="name"  nowrap><a href="modules/lua_libp2p.record.peer_record.html">lua_libp2p.record.peer_record</a></td>
+		<td class="summary">Peer record codec and envelope helpers.</td>
+	</tr>
+	<tr>
+		<td class="name"  nowrap><a href="modules/lua_libp2p.record.signed_envelope.html">lua_libp2p.record.signed_envelope</a></td>
+		<td class="summary">Signed envelope primitives.</td>
+	</tr>
+	<tr>
+		<td class="name"  nowrap><a href="modules/lua_libp2p.transport_circuit_relay_v2.autorelay.html">lua_libp2p.transport_circuit_relay_v2.autorelay</a></td>
+		<td class="summary">AutoRelay service.</td>
+	</tr>
+	<tr>
+		<td class="name"  nowrap><a href="modules/lua_libp2p.transport_circuit_relay_v2.client.html">lua_libp2p.transport_circuit_relay_v2.client</a></td>
+		<td class="summary">Circuit Relay v2 client.</td>
+	</tr>
+	<tr>
+		<td class="name"  nowrap><a href="modules/lua_libp2p.transport_circuit_relay_v2.protocol.html">lua_libp2p.transport_circuit_relay_v2.protocol</a></td>
+		<td class="summary">Circuit Relay v2 protocol codec and helpers.</td>
+	</tr>
+	<tr>
+		<td class="name"  nowrap><a href="modules/lua_libp2p.transport_tcp.luv.html">lua_libp2p.transport_tcp.luv</a></td>
+		<td class="summary">Luv-backed TCP transport wrapper.</td>
+	</tr>
+	<tr>
+		<td class="name"  nowrap><a href="modules/lua_libp2p.transport_tcp.luv_native.html">lua_libp2p.transport_tcp.luv_native</a></td>
+		<td class="summary">Native luv TCP transport implementation.</td>
+	</tr>
+	<tr>
+		<td class="name"  nowrap><a href="modules/lua_libp2p.transport_tcp.transport.html">lua_libp2p.transport_tcp.transport</a></td>
+		<td class="summary">Poll-based TCP transport implementation.</td>
+	</tr>
+	<tr>
+		<td class="name"  nowrap><a href="modules/lua_libp2p.upnp.igd.html">lua_libp2p.upnp.igd</a></td>
+		<td class="summary">UPnP IGD SOAP client helpers.</td>
+	</tr>
+	<tr>
+		<td class="name"  nowrap><a href="modules/lua_libp2p.upnp.html">lua_libp2p.upnp</a></td>
+		<td class="summary">UPnP module entrypoint.</td>
+	</tr>
+	<tr>
+		<td class="name"  nowrap><a href="modules/lua_libp2p.upnp.nat.html">lua_libp2p.upnp.nat</a></td>
+		<td class="summary">UPnP NAT mapping service.</td>
+	</tr>
+	<tr>
+		<td class="name"  nowrap><a href="modules/lua_libp2p.upnp.ssdp.html">lua_libp2p.upnp.ssdp</a></td>
+		<td class="summary">SSDP discovery helpers.</td>
+	</tr>
+</table>
+
+</div> <!-- id="content" -->
+</div> <!-- id="main" -->
+<div id="about">
+<i>generated by <a href="http://github.com/lunarmodules/LDoc">LDoc 1.5.0</a></i>
+<i style="float:right;">Last updated 2026-05-03 13:00:52 </i>
+</div> <!-- id="about" -->
+</div> <!-- id="container" -->
+</body>
+</html>

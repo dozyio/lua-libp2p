@@ -1,3 +1,5 @@
+--- Operation wrapper for sync/async result handling.
+-- @module lua_libp2p.operation
 local error_mod = require("lua_libp2p.error")
 
 local Operation = {}
@@ -12,6 +14,13 @@ local function nils_then_error(count, err)
   return table.unpack(out, 1, math.max(count or 1, 1) + 1)
 end
 
+--- Create an operation wrapper around a task.
+-- `opts.result_count` controls how many nil slots are returned before an error.
+-- @tparam table host Host instance.
+-- @tparam table task Task handle.
+-- @tparam[opt] table opts
+-- @treturn table|nil operation
+-- @treturn[opt] table err
 function Operation.new(host, task, opts)
   if type(host) ~= "table" or type(task) ~= "table" then
     return nil, error_mod.new("input", "operation requires host and task")
@@ -43,6 +52,10 @@ function Operation:cancel()
   return self._host:cancel_task(self._task.id)
 end
 
+--- Wait for operation completion and return task results.
+-- `opts` supports `ctx`, `timeout`, and `poll_interval`.
+-- @tparam[opt] table opts
+-- @return Task result values, plus trailing error slot.
 function Operation:result(opts)
   local options = opts or {}
   local task = self._task
@@ -75,6 +88,8 @@ end
 
 local M = {}
 
+--- Module constructor alias for @{Operation.new}.
+-- `opts.result_count` behaves the same as @{Operation.new}.
 function M.new(host, task, opts)
   return Operation.new(host, task, opts)
 end

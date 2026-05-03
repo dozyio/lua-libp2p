@@ -1,3 +1,5 @@
+--- Circuit Relay v2 protocol codec and helpers.
+-- @module lua_libp2p.transport_circuit_relay_v2.protocol
 local error_mod = require("lua_libp2p.error")
 local multiaddr = require("lua_libp2p.multiaddr")
 local peerid = require("lua_libp2p.peerid")
@@ -571,6 +573,8 @@ function M.write_message(stream, message)
   return write_message(stream, message, HOP_FIELDS)
 end
 
+--- Read generic HOP message.
+-- `opts.max_message_size` (`number`, default `MAX_MESSAGE_SIZE`) bounds frame size.
 function M.read_message(stream, opts)
   return read_message(stream, opts, HOP_FIELDS)
 end
@@ -579,6 +583,8 @@ function M.write_hop_message(stream, message)
   return write_message(stream, message, HOP_FIELDS)
 end
 
+--- Read HOP message.
+-- `opts.max_message_size` (`number`, default `MAX_MESSAGE_SIZE`) bounds frame size.
 function M.read_hop_message(stream, opts)
   return read_message(stream, opts, HOP_FIELDS)
 end
@@ -587,10 +593,18 @@ function M.write_stop_message(stream, message)
   return write_message(stream, message, STOP_FIELDS)
 end
 
+--- Read STOP message.
+-- `opts.max_message_size` (`number`, default `MAX_MESSAGE_SIZE`) bounds frame size.
 function M.read_stop_message(stream, opts)
   return read_message(stream, opts, STOP_FIELDS)
 end
 
+--- Perform a relay RESERVE request/response exchange.
+-- `opts.max_message_size` (`number`, default `MAX_MESSAGE_SIZE`) bounds response size.
+-- @tparam table stream
+-- @tparam[opt] table opts
+-- @treturn table|nil reservation
+-- @treturn[opt] table err_or_response
 function M.reserve(stream, opts)
   local options = opts or {}
   local wrote, write_err = M.write_hop_message(stream, { type = M.HOP_TYPE.RESERVE })
@@ -613,6 +627,13 @@ function M.reserve(stream, opts)
   return response.reservation or {}, response
 end
 
+--- Perform a relay CONNECT request/response exchange.
+-- `opts.max_message_size` (`number`, default `MAX_MESSAGE_SIZE`) bounds response size.
+-- @tparam table stream
+-- @tparam string destination_peer_id
+-- @tparam[opt] table opts
+-- @treturn true|nil ok
+-- @treturn[opt] table err_or_response
 function M.connect(stream, destination_peer_id, opts)
   local options = opts or {}
   local wrote, write_err = M.write_hop_message(stream, {
@@ -638,6 +659,12 @@ function M.connect(stream, destination_peer_id, opts)
   return true, response
 end
 
+--- Accept and parse a STOP-side relay CONNECT request.
+-- `opts.max_message_size` (`number`, default `MAX_MESSAGE_SIZE`) bounds request size.
+-- @tparam table stream
+-- @tparam[opt] table opts
+-- @treturn table|nil info
+-- @treturn[opt] table err
 function M.accept_stop(stream, opts)
   local options = opts or {}
   local request, read_err = M.read_stop_message(stream, options)

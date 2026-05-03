@@ -1,3 +1,5 @@
+--- PCP client.
+-- @module lua_libp2p.pcp.client
 local socket = require("socket")
 
 local error_mod = require("lua_libp2p.error")
@@ -168,6 +170,9 @@ end
 local Client = {}
 Client.__index = Client
 
+--- Internal PCP request/response exchange.
+-- `opts.gateway`, `opts.port`, `opts.timeout`, `opts.retries`, and
+-- `opts.source_ip` override client defaults.
 function Client:_exchange(op, payload, lifetime, opts)
   local options = opts or {}
   local retries = self.retries or 6
@@ -264,6 +269,17 @@ function Client:_exchange(op, payload, lifetime, opts)
   return nil, error_mod.new("timeout", "pcp request timed out", { gateway = options.gateway or self.gateway, opcode = op })
 end
 
+--- Request PCP MAP mapping.
+-- `opts.gateway` overrides configured gateway.
+-- `opts.source_ip` pins local source address for UDP socket binding.
+-- @tparam string protocol `tcp|udp`.
+-- @tparam number internal_port
+-- @tparam[opt] number suggested_external_port
+-- @tparam[opt] number lifetime
+-- @tparam[opt] string suggested_external_ip
+-- @tparam[opt] table opts
+-- @treturn table|nil mapping
+-- @treturn[opt] table err
 function Client:map_port(protocol, internal_port, suggested_external_port, lifetime, suggested_external_ip, opts)
   local proto_num
   if protocol == "tcp" then
@@ -323,6 +339,8 @@ function Client:unmap_port(protocol, internal_port, suggested_external_port)
   return self:map_port(protocol, internal_port, suggested_external_port, 0)
 end
 
+--- Construct a PCP client instance.
+-- `opts` includes `gateway` (required), `port`, `timeout`, and `retries`.
 function M.new(opts)
   local options = opts or {}
   local gateway = options.gateway

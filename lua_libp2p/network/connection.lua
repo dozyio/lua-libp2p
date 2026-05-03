@@ -1,3 +1,5 @@
+--- Connection abstraction over secure muxed sessions.
+-- @module lua_libp2p.network.connection
 local error_mod = require("lua_libp2p.error")
 local mss = require("lua_libp2p.multistream_select.protocol")
 
@@ -6,6 +8,11 @@ local M = {}
 local Connection = {}
 Connection.__index = Connection
 
+--- Wrap raw connection into high-level connection.
+-- `opts.session` attaches muxer session.
+-- @tparam table raw_conn
+-- @tparam[opt] table opts
+-- @treturn table conn
 function Connection:new(raw_conn, opts)
   local options = opts or {}
   return setmetatable({
@@ -148,6 +155,11 @@ function Connection:close()
   return self._raw_conn:close()
 end
 
+--- Construct connection from raw transport handle.
+-- `opts.session` may attach a muxer session for multi-stream behavior.
+-- @tparam table raw_conn
+-- @tparam[opt] table opts
+-- @treturn table conn
 function M.from_raw(raw_conn, opts)
   return Connection:new(raw_conn, opts)
 end

@@ -1,3 +1,5 @@
+--- CIDv1 helpers.
+-- @module lua_libp2p.multiformats.cid
 local error_mod = require("lua_libp2p.error")
 local varint = require("lua_libp2p.multiformats.varint")
 local base32 = require("lua_libp2p.multiformats.base32")

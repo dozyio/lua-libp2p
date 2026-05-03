@@ -1,3 +1,5 @@
+--- Bootstrap peer list constants.
+-- @module lua_libp2p.bootstrap
 local multiaddr = require("lua_libp2p.multiaddr")
 
 local M = {}
@@ -19,6 +21,10 @@ local function copy_list(values)
   return out
 end
 
+--- Return default bootstrap list.
+-- `opts.dialable_only` (`boolean`) filters to TCP-dialable entries.
+-- @tparam[opt] table opts
+-- @treturn table addrs
 function M.default_bootstrappers(opts)
   local options = opts or {}
   local list = copy_list(M.DEFAULT_BOOTSTRAPPERS)

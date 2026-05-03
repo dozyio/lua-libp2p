@@ -1,3 +1,5 @@
+--- DNSADDR resolver utilities.
+-- @module lua_libp2p.dnsaddr
 local error_mod = require("lua_libp2p.error")
 local multiaddr = require("lua_libp2p.multiaddr")
 local socket = require("socket")
@@ -241,6 +243,13 @@ function M.extract_peer_id(addr)
   return peer_id_component(parsed)
 end
 
+--- Resolve dnsaddr multiaddrs recursively.
+-- `opts` requires `resolver(domain)` and supports `max_depth`.
+-- Resolver should return a list of TXT record strings.
+-- @tparam string addr Multiaddr.
+-- @tparam[opt] table opts
+-- @treturn table|nil addrs
+-- @treturn[opt] table err
 function M.resolve(addr, opts)
   local options = opts or {}
   if not M.is_dnsaddr(addr) then

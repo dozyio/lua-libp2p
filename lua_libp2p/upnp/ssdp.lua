@@ -1,3 +1,5 @@
+--- SSDP discovery helpers.
+-- @module lua_libp2p.upnp.ssdp
 local socket = require("socket")
 
 local error_mod = require("lua_libp2p.error")
@@ -19,6 +21,7 @@ local function trim(value)
   return (tostring(value or ""):gsub("^%s+", ""):gsub("%s+$", ""))
 end
 
+--- Parse a raw SSDP response datagram.
 function M.parse_response(data)
   if type(data) ~= "string" or data == "" then
     return nil, error_mod.new("decode", "empty SSDP response")
@@ -40,6 +43,9 @@ function M.parse_response(data)
   }
 end
 
+--- Build an SSDP M-SEARCH request.
+-- `opts.mx` (`number`, default `2`) controls responder delay budget.
+-- `opts.host` overrides default multicast host header.
 function M.build_search_request(st, opts)
   local options = opts or {}
   local mx = options.mx or 2
@@ -78,6 +84,12 @@ local function collect_responses(udp, timeout, out, seen, opts)
   end
 end
 
+--- Discover SSDP responders for target service types.
+-- `opts.timeout` (`number`, default `10`) receive timeout seconds.
+-- `opts.search_targets` overrides target ST list.
+-- `opts.interface` binds source interface/address.
+-- `opts.max_results` truncates collected responses.
+-- `opts.debug_raw=true` logs raw datagrams.
 function M.discover(opts)
   local options = opts or {}
   local timeout = options.timeout or 10

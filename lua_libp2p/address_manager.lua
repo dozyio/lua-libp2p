@@ -1,3 +1,5 @@
+--- Address manager and advertisement policy.
+-- @module lua_libp2p.address_manager
 local multiaddr = require("lua_libp2p.multiaddr")
 
 local M = {}
@@ -383,6 +385,11 @@ function AddressManager:get_advertise_addrs()
   return out
 end
 
+--- Construct an address manager.
+-- `opts` keys include `listen_addrs`, `announce_addrs`, `no_announce_addrs`,
+-- `observed_addrs`, `relay_addrs`, `public_mapping_addrs`, and `advertise_observed`.
+-- @tparam[opt] table opts
+-- @treturn table manager
 function M.new(opts)
   local options = opts or {}
   local manager = setmetatable({

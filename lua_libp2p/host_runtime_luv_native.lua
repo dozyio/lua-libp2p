@@ -1,3 +1,5 @@
+--- Host helpers for native luv transport integration.
+-- @module lua_libp2p.host_runtime_luv_native
 local error_mod = require("lua_libp2p.error")
 local log = require("lua_libp2p.log")
 local upgrader = require("lua_libp2p.network.upgrader")

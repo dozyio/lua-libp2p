@@ -1,3 +1,6 @@
+--- Luv-backed TCP transport wrapper.
+-- Uses native luv transport when available, otherwise proxy fallback.
+-- @module lua_libp2p.transport_tcp.luv
 local tcp = require("lua_libp2p.transport_tcp.transport")
 local error_mod = require("lua_libp2p.error")
 local tcp_luv_native = require("lua_libp2p.transport_tcp.luv_native")
@@ -154,6 +157,13 @@ wrap = function(inner)
   }, Wrapped)
 end
 
+--- Start a listener using luv-native or proxy backend.
+-- `opts.multiaddr` or `opts.host`/`opts.port` selects bind endpoint.
+-- `opts.accept_timeout` and `opts.io_timeout` tune socket timeouts.
+-- @param target Optional listen target (string or table).
+-- @tparam[opt] table opts
+-- @treturn table|nil listener
+-- @treturn[opt] table err
 function M.listen(target, opts)
   if ok_luv and M.USE_NATIVE then
     local listener, listen_err = tcp_luv_native.listen(target, opts)
@@ -170,6 +180,13 @@ function M.listen(target, opts)
   return wrap(inner)
 end
 
+--- Dial using luv-native or proxy backend.
+-- `opts.port` is used when `target` is host string.
+-- `opts.timeout`, `opts.io_timeout`, and `opts.ctx` control dial/IO timing.
+-- @param target Dial target (multiaddr, host string, or table).
+-- @tparam[opt] table opts
+-- @treturn table|nil conn
+-- @treturn[opt] table err
 function M.dial(target, opts)
   if ok_luv and M.USE_NATIVE then
     local conn, dial_err = tcp_luv_native.dial(target, opts)

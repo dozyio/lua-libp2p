@@ -1,3 +1,7 @@
+--- Host construction and runtime orchestration.
+-- Hosts manage listeners, connections, protocol handlers, services, and
+-- cooperative background tasks.
+-- @module lua_libp2p.host
 local address_manager = require("lua_libp2p.address_manager")
 local connection_manager = require("lua_libp2p.connection_manager")
 local keys = require("lua_libp2p.crypto.keys")
@@ -886,6 +890,13 @@ function Host:is_running()
   return self._running
 end
 
+--- Register a stream handler for a protocol ID.
+-- @tparam string protocol_id Protocol multistream ID.
+-- @tparam function handler Stream handler `(stream, ctx)`.
+-- @tparam[opt] table opts Handler options.
+-- `opts.run_on_limited_connection=true` allows this protocol on limited relay links.
+-- @treturn true|nil ok True on success, otherwise nil.
+-- @treturn[opt] table err Structured error on failure.
 function Host:handle(protocol_id, handler, opts)
   if type(protocol_id) ~= "string" or protocol_id == "" then
     return nil, error_mod.new("input", "protocol id must be non-empty")
@@ -909,6 +920,8 @@ function Host:_connection_is_limited(state)
   return type(state.relay) == "table" and state.relay.limit_kind == "limited"
 end
 
+--- Check limited-connection policy for one protocol.
+-- `opts.allow_limited_connection=true` overrides default restrictions.
 function Host:_protocol_allowed_on_limited_connection(protocol_id, opts)
   if type(protocol_id) ~= "string" or protocol_id == "" then
     return false
@@ -926,6 +939,8 @@ function Host:_protocol_allowed_on_limited_connection(protocol_id, opts)
   return false
 end
 
+--- Filter protocol list by limited-connection policy.
+-- `opts.allow_limited_connection=true` allows all protocols.
 function Host:_protocols_allowed_on_limited_connection(protocols, opts)
   for _, protocol_id in ipairs(normalize_protocol_list(protocols) or {}) do
     if not self:_protocol_allowed_on_limited_connection(protocol_id, opts) then
@@ -1158,6 +1173,9 @@ function Host:_handle_identify(stream, ctx)
   return true
 end
 
+--- Request identify exchange against target peer.
+-- `opts.timeout`, `opts.io_timeout`, `opts.ctx`, and
+-- `opts.allow_limited_connection` control stream dial/IO behavior.
 function Host:_request_identify(peer_id, opts)
   if type(peer_id) ~= "string" or peer_id == "" then
     return nil, error_mod.new("input", "identify request requires peer id")
@@ -1555,6 +1573,17 @@ function Host:_unregister_connection(index, entry, cause)
   return true
 end
 
+--- Subscribe to host events.
+-- @tparam string event_name Event key to subscribe to.
+-- @tparam function handler Callback `(payload, event)`.
+-- Common events/payload keys:
+-- - `connection_opened`: `{ peer_id, connection_id, direction, remote_addr, limited }`
+-- - `connection_closed`: `{ peer_id, connection_id, cause }`
+-- - `peer_identified`: `{ peer_id, protocols, observed_addr }`
+-- - `stream:negotiated`: `{ peer_id, connection_id, protocol, limited }`
+-- - `task:started|task:completed|task:failed|task:cancelled`: `{ task_id, name, service }`
+-- @treturn true|nil ok
+-- @treturn[opt] table err
 function Host:on(event_name, handler)
   if type(event_name) ~= "string" or event_name == "" then
     return nil, error_mod.new("input", "event name must be non-empty")
@@ -1572,6 +1601,11 @@ function Host:on(event_name, handler)
   return true
 end
 
+--- Emit a host event.
+-- @tparam string event_name Event key.
+-- @tparam[opt] table payload Event payload table.
+-- @treturn true|nil ok
+-- @treturn[opt] table err
 function Host:emit(event_name, payload)
   if type(event_name) ~= "string" or event_name == "" then
     return nil, error_mod.new("input", "event name must be non-empty")
@@ -1579,6 +1613,10 @@ function Host:emit(event_name, payload)
   return emit_event(self, event_name, payload)
 end
 
+--- Remove a previously registered event handler.
+-- @tparam string event_name Event key.
+-- @tparam function handler Previously registered callback.
+-- @treturn boolean removed
 function Host:off(event_name, handler)
   local handlers = self._event_handlers[event_name]
   if type(handlers) ~= "table" then
@@ -1593,6 +1631,14 @@ function Host:off(event_name, handler)
   return false
 end
 
+--- Spawn a cooperative scheduler task.
+-- Task callback receives a context with `sleep`, `await_task`, and IO wait helpers.
+-- @tparam string name Task name.
+-- @tparam function fn Task callback `(ctx)`.
+-- @tparam[opt] table opts Task metadata.
+-- `opts` may include `service`, `peer_id`, and `metadata` values for diagnostics.
+-- @treturn table|nil task
+-- @treturn[opt] table err
 function Host:spawn_task(name, fn, opts)
   if type(name) ~= "string" or name == "" then
     return nil, error_mod.new("input", "task name must be non-empty")
@@ -1752,6 +1798,12 @@ function Host:_enqueue_task(task)
   return true
 end
 
+--- Run poll loop until task reaches terminal state.
+-- `opts.timeout` (`number`) sets wall-clock timeout seconds.
+-- `opts.poll_interval` (`number`, default `0.01`) controls poll cadence.
+-- @tparam table task
+-- @tparam[opt] table opts
+-- @return Task result values on completion.
 function Host:run_until_task(task, opts)
   if type(task) ~= "table" then
     return nil, error_mod.new("input", "task table is required")
@@ -1789,6 +1841,12 @@ function Host:run_until_task(task, opts)
   return task.result
 end
 
+--- Wait for a task to complete.
+-- Uses `ctx:await_task` when called from within another task.
+-- @tparam table task Task returned by `spawn_task`.
+-- @tparam[opt] table opts Wait options.
+-- `opts` supports `ctx`, `timeout`, and `poll_interval`.
+-- @return Task callback return values on success.
 function Host:wait_task(task, opts)
   if type(task) ~= "table" then
     return nil, error_mod.new("input", "task table is required")
@@ -1800,6 +1858,13 @@ function Host:wait_task(task, opts)
   return self:run_until_task(task, options)
 end
 
+--- Cooperative sleep helper.
+-- Uses task context sleep when `opts.ctx` is present; otherwise runs a helper task.
+-- @tparam number seconds Non-negative sleep duration.
+-- @tparam[opt] table opts Wait options.
+-- `opts` supports `ctx`, `timeout`, and `poll_interval`.
+-- @treturn true|nil ok
+-- @treturn[opt] table err
 function Host:sleep(seconds, opts)
   if type(seconds) ~= "number" or seconds < 0 then
     return nil, error_mod.new("input", "sleep duration must be a non-negative number")
@@ -2073,6 +2138,8 @@ function Host:_wake_task_completion_waiters(child_task)
   return true
 end
 
+--- Run periodic host background tasks.
+-- `opts.now` can override current epoch seconds for testability.
 function Host:_run_background_tasks(opts)
   local options = opts or {}
   local budget = options.max_resumes or self._task_resume_budget or DEFAULT_TASK_RESUME_BUDGET
@@ -2219,6 +2286,13 @@ function Host:on_protocol(protocol_id, handler)
   return wrapped
 end
 
+--- Create an event queue subscription.
+-- `event_name_or_opts` may be a string event name, or table `{ event_name|event, max_queue }`.
+-- `opts.max_queue` (`number`) overrides per-subscriber queue bound.
+-- @param[opt] event_name_or_opts Event name or options table.
+-- @tparam[opt] table opts Options when first arg is event name.
+-- @treturn table|nil subscriber
+-- @treturn[opt] table err
 function Host:subscribe(event_name_or_opts, opts)
   local event_name = nil
   local options = opts or {}
@@ -2245,6 +2319,9 @@ function Host:subscribe(event_name_or_opts, opts)
   return sub
 end
 
+--- Remove a queue subscription.
+-- @param subscriber Subscriber table or numeric id.
+-- @treturn boolean removed
 function Host:unsubscribe(subscriber)
   local id = subscriber
   if type(subscriber) == "table" then
@@ -2260,6 +2337,11 @@ function Host:unsubscribe(subscriber)
   return true
 end
 
+--- Pop next queued event from a subscription.
+-- Returns `nil` when queue is empty.
+-- @tparam table subscriber Subscriber handle returned by @{subscribe}.
+-- @treturn table|nil event
+-- @treturn[opt] table err
 function Host:next_event(subscriber)
   if type(subscriber) ~= "table" or type(subscriber.id) ~= "number" then
     return nil, error_mod.new("input", "subscriber handle is required")
@@ -2296,6 +2378,8 @@ function Host:_set_runtime_error(runtime_name, err)
   end
 end
 
+--- Locate existing connection for peer.
+-- `opts.allow_limited_connection=true` permits returning limited relay links.
 function Host:_find_connection(peer_id, opts)
   if not peer_id then
     return nil
@@ -2323,6 +2407,9 @@ function Host:_find_connection_by_id(connection_id)
   return self._connections_by_id[connection_id]
 end
 
+--- Dial relay destination over explicit relay multiaddr.
+-- `opts.timeout`, `opts.io_timeout`, and `opts.ctx` control connect/IO timing.
+-- `opts.allow_limited_connection=true` allows limited relay state results.
 function Host:_dial_relay_raw(addr, destination_peer_id, opts)
   opts = opts or {}
   if not opts.ctx
@@ -2385,6 +2472,9 @@ function Host:_dial_relay_raw(addr, destination_peer_id, opts)
   }
 end
 
+--- Dial peer/address directly (non-relay-specialized path).
+-- `opts.timeout`, `opts.io_timeout`, and `opts.ctx` control dial behavior.
+-- `opts.require_unlimited_connection=true` rejects limited relay results.
 function Host:_dial_direct(peer_or_addr, opts)
   opts = opts or {}
   local resolved = resolve_target(peer_or_addr)
@@ -2489,6 +2579,16 @@ function Host:_dial_direct(peer_or_addr, opts)
   return nil, nil, last_err or error_mod.new("io", "all dial addresses failed")
 end
 
+--- Open (or reuse) a connection to a peer target.
+-- @tparam string|table peer_or_addr Peer id, multiaddr, or dial target table.
+-- @tparam[opt] table opts Dial options.
+-- Common options: `timeout`, `io_timeout`, `ctx`, `force`,
+-- `require_unlimited_connection`, `allow_limited_connection`,
+-- `bypass_connection_manager`.
+-- `opts.allow_limited_connection=true` permits returning limited relay links.
+-- @treturn table|nil conn
+-- @treturn[opt] table state
+-- @treturn[opt] table err
 function Host:dial(peer_or_addr, opts)
   local options = opts or {}
   if options.bypass_connection_manager or not self.connection_manager then
@@ -2497,6 +2597,16 @@ function Host:dial(peer_or_addr, opts)
   return self.connection_manager:open_connection(peer_or_addr, options)
 end
 
+--- Open a negotiated protocol stream.
+-- @tparam string|table peer_or_addr Peer id, multiaddr, or dial target table.
+-- @tparam table protocols Ordered multistream protocol IDs.
+-- @tparam[opt] table opts Stream and dial options.
+-- Common options: all `dial` options plus stream-level negotiation controls.
+-- `opts.protocol_hint`/`opts.allow_limited_connection` influence negotiation policy.
+-- @treturn table|nil stream
+-- @treturn[opt] string selected Selected protocol ID.
+-- @treturn[opt] table conn Underlying connection.
+-- @treturn[opt] table state_or_err Connection state or error.
 function Host:new_stream(peer_or_addr, protocols, opts)
   local stream_opts = {}
   for k, v in pairs(opts or {}) do
@@ -3015,6 +3125,10 @@ function Host:poll_once(timeout)
   return self:_poll_once_poll(timeout)
 end
 
+--- Start the host runtime.
+-- Binds listeners when needed and enters the runtime loop for blocking hosts.
+-- @treturn true|nil ok
+-- @treturn[opt] table err
 function Host:start()
   if #self._listeners == 0 then
     local ok, bind_err = bind_listeners(self)
@@ -3071,6 +3185,9 @@ function Host:start()
   return true
 end
 
+--- Stop and close the host.
+-- @treturn true|nil ok
+-- @treturn[opt] table err
 function Host:stop()
   self._running = false
   return self:close()
@@ -3128,6 +3245,18 @@ function Host:close()
   return true
 end
 
+--- Construct a new host instance.
+-- @tparam[opt] table config Host configuration.
+-- Common config keys: `identity`, `listen_addrs`, `services`, `peer_discovery`,
+-- `runtime`, `blocking`, `security_transports`, `muxers`, `transports`.
+-- Additional keys: `announce_addrs`, `no_announce_addrs`, `observed_addrs`,
+-- `relay_addrs`, `peerstore`, `address_manager`, `connect_timeout`, and runtime tuning.
+-- Scheduler/runtime tuning keys include: `event_queue_max`, `task_resume_budget`,
+-- `accept_timeout`, `max_iterations`, `poll_interval`, and `on_started`.
+-- Network behavior keys include: `dial_timeout`, `connect_timeout`, `connection_manager`,
+-- `autonat`, `kad_dht`, `autorelay`, `upnp_nat`, `pcp`, `nat_pmp`, and `dcutr`.
+-- @treturn table|nil host
+-- @treturn[opt] table err
 function M.new(config)
   return Host:new(config)
 end

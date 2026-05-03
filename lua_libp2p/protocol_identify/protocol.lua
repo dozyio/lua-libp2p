@@ -1,3 +1,5 @@
+--- Identify protocol codec and helpers.
+-- @module lua_libp2p.protocol_identify.protocol
 local error_mod = require("lua_libp2p.error")
 local multiaddr = require("lua_libp2p.multiaddr")
 local peer_record = require("lua_libp2p.record.peer_record")
@@ -375,6 +377,8 @@ function M.handle_push(conn, on_message)
   return msg
 end
 
+--- Verify and decode signed peer record from identify message.
+-- `opts.expected_peer_id` can enforce expected peer identity.
 function M.verify_signed_peer_record(message, opts)
   if type(message) ~= "table" then
     return nil, error_mod.new("input", "identify message must be a table")
@@ -385,6 +389,9 @@ function M.verify_signed_peer_record(message, opts)
   return peer_record.verify_signed_envelope(message.signedPeerRecord, opts)
 end
 
+--- Install identify-on-connection-open hook.
+-- `opts.run_on_connection_open=false` disables hook installation.
+-- `opts.timeout` and `opts.io_timeout` are forwarded to identify requests.
 function M.enable_run_on_connection_open(host, opts)
   local options = opts or {}
   if options.run_on_connection_open == false then

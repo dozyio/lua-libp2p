@@ -1,6 +1,7 @@
+--- Ping protocol primitives.
+-- @module lua_libp2p.protocol_ping.protocol
 local ok_socket, socket = pcall(require, "socket")
 local ok_sodium, sodium = pcall(require, "luasodium")
-
 local error_mod = require("lua_libp2p.error")
 
 local M = {}
@@ -43,6 +44,12 @@ function M.handle_once(conn)
   return true
 end
 
+--- Serve ping echo loop.
+-- `opts.max_messages` (`number`) stops after N messages; otherwise runs until closed.
+-- @tparam table conn
+-- @tparam[opt] table opts
+-- @treturn true|nil ok
+-- @treturn[opt] table err
 function M.handle(conn, opts)
   local options = opts or {}
   local max_messages = options.max_messages

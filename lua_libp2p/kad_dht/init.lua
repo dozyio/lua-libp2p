@@ -1,3 +1,5 @@
+--- Kademlia DHT service and client operations.
+-- @module lua_libp2p.kad_dht
 local error_mod = require("lua_libp2p.error")
 local bootstrap = require("lua_libp2p.bootstrap")
 local dnsaddr = require("lua_libp2p.dnsaddr")
@@ -27,6 +29,11 @@ M.DEFAULT_MAINTENANCE_MAX_CHECKS = 10
 M.DEFAULT_MAINTENANCE_WALK_EVERY = 4
 M.DEFAULT_MAX_FAILED_CHECKS_BEFORE_EVICT = 2
 
+--- Create default bootstrap peer discovery source.
+-- `opts.bootstrappers` (`table<string>`) overrides bootstrap list.
+-- `opts.dnsaddr_resolver` (`function`) resolves dnsaddr entries.
+-- `opts.dialable_only` (`boolean`) filters to dialable addresses.
+-- `opts.ignore_resolve_errors` (`boolean`) tolerates resolver failures.
 function M.default_peer_discovery(opts)
   local options = opts or {}
   local bootstrap_source, bootstrap_err = discovery_bootstrap.new({
@@ -43,6 +50,9 @@ function M.default_peer_discovery(opts)
   })
 end
 
+--- Resolve bootstrap addresses (including dnsaddr where configured).
+-- `opts.dnsaddr_resolver` (`function`) resolves dnsaddr entries.
+-- `opts.ignore_resolve_errors` (`boolean`) tolerates resolver failures.
 function M.resolve_bootstrap_addrs(addrs, opts)
   local options = opts or {}
   if type(addrs) ~= "table" then
@@ -78,6 +88,9 @@ end
 local DHT = {}
 DHT.__index = DHT
 
+--- Start KAD service hooks and optional maintenance.
+-- @treturn true|nil ok
+-- @treturn[opt] table err
 function DHT:start()
   if self._running then
     return true
@@ -149,6 +162,8 @@ function DHT:start()
   return true
 end
 
+--- Stop KAD service activity.
+-- @treturn true
 function DHT:stop()
   if self.host and type(self.host.off) == "function" then
     if self._host_on_protocols_updated then
@@ -167,6 +182,12 @@ function DHT:is_running()
   return self._running
 end
 
+--- Add a peer to the routing table.
+-- `opts` is forwarded to kbucket insertion policy.
+-- @tparam string peer_id
+-- @tparam[opt] table opts
+-- @treturn true|nil added
+-- @treturn[opt] table err
 function DHT:add_peer(peer_id, opts)
   local added, err = self.routing_table:try_add_peer(peer_id, opts)
   if added and type(peer_id) == "string" and peer_id ~= "" then
@@ -219,15 +240,25 @@ local function rpc_target_peer_id(peer_or_addr)
   return nil
 end
 
+--- Remove a peer from routing table and health tracking.
+-- @tparam string peer_id
+-- @treturn boolean removed
 function DHT:remove_peer(peer_id)
   self._peer_health[peer_id] = nil
   return self.routing_table:remove_peer(peer_id)
 end
 
+--- Lookup a peer in local routing table.
+-- @tparam string peer_id
+-- @treturn table|nil peer
 function DHT:find_peer(peer_id)
   return self.routing_table:find_peer(peer_id)
 end
 
+--- Find closest peers from local routing table.
+-- @tparam string key Target key or peer id bytes/text.
+-- @tparam[opt] number count Max peers.
+-- @treturn table peers
 function DHT:find_closest_peers(key, count)
   local want = count or self.k
   return self.routing_table:nearest_peers(key, want)
@@ -440,6 +471,8 @@ function DHT:_handle_rpc(stream)
   return true
 end
 
+--- Internal FIND_NODE RPC wrapper.
+-- `opts.timeout`, `opts.ctx`, `opts.stream_opts`, `opts.max_message_size`.
 function DHT:_find_node(peer_or_addr, target_key, opts)
   opts = opts or {}
   if not opts.ctx
@@ -558,6 +591,8 @@ function DHT:_decode_response_peers(response, purpose)
   return decode_list(response.closer_peers), decode_list(response.provider_peers)
 end
 
+--- Internal generic KAD RPC helper.
+-- `opts.timeout`, `opts.ctx`, `opts.stream_opts`, `opts.max_message_size`.
 function DHT:_rpc(peer_or_addr, request, expected_type, opts)
   opts = opts or {}
   if not opts.ctx
@@ -623,6 +658,9 @@ function DHT:_rpc(peer_or_addr, request, expected_type, opts)
   return response
 end
 
+--- Internal GET_VALUE RPC wrapper.
+-- `opts` uses same transport fields as @{_rpc}.
+-- `opts.timeout`, `opts.ctx`, `opts.stream_opts`, and `opts.max_message_size` are honored.
 function DHT:_get_value(peer_or_addr, key, opts)
   if type(key) ~= "string" or key == "" then
     return nil, error_mod.new("input", "GET_VALUE key must be non-empty bytes")
@@ -642,6 +680,9 @@ function DHT:_get_value(peer_or_addr, key, opts)
   }
 end
 
+--- Internal GET_PROVIDERS RPC wrapper.
+-- `opts` uses same transport fields as @{_rpc}.
+-- `opts.timeout`, `opts.ctx`, `opts.stream_opts`, and `opts.max_message_size` are honored.
 function DHT:_get_providers(peer_or_addr, key, opts)
   if type(key) ~= "string" or key == "" then
     return nil, error_mod.new("input", "GET_PROVIDERS key must be non-empty bytes")
@@ -715,6 +756,9 @@ function DHT:_strict_lookup_complete(target_hash, states, k)
   return true, "closest_queried"
 end
 
+--- Internal iterative lookup engine.
+-- `opts.alpha`, `opts.k`, `opts.disjoint_paths`, `opts.query_timeout_seconds`,
+-- `opts.max_query_rounds`, `opts.ctx`, and `opts.yield` tune execution.
 function DHT:_run_client_lookup(key, seed_peers, query_func, opts)
   local options = opts or {}
   local target_bytes, target_err = protocol.peer_bytes(key)
@@ -1041,6 +1085,8 @@ function DHT:_run_client_lookup(key, seed_peers, query_func, opts)
   return result
 end
 
+--- Internal iterative FIND_VALUE.
+-- `opts` forwarded to @{_run_client_lookup} and query functions.
 function DHT:_find_value(key, opts)
   local options = opts or {}
   local found
@@ -1073,6 +1119,8 @@ function DHT:_find_value(key, opts)
   return { record = nil, closer_peers = lookup.closest_peers, lookup = lookup, errors = lookup.errors }
 end
 
+--- Internal iterative GET_CLOSEST_PEERS.
+-- `opts` forwarded to @{_run_client_lookup} and query functions.
 function DHT:_get_closest_peers(key, opts)
   local options = opts or {}
   local lookup, lookup_err = self:_run_client_lookup(key, options.peers or seed_candidates_from_routing_table(self, key, self.k), function(peer, ctx)
@@ -1118,6 +1166,8 @@ function DHT:_get_closest_peers(key, opts)
   return out, lookup
 end
 
+--- Internal iterative FIND_PROVIDERS.
+-- `opts` forwarded to @{_run_client_lookup} and query functions.
 function DHT:_find_providers(key, opts)
   local options = opts or {}
   local providers = {}
@@ -1148,6 +1198,8 @@ function DHT:_find_providers(key, opts)
   return { providers = providers, provider_peers = providers, closer_peers = lookup.closest_peers, lookup = lookup, errors = lookup.errors }
 end
 
+--- Spawn a scheduler-backed query task wrapper.
+-- `opts.result_count` controls operation nil/error arity.
 function DHT:_spawn_query_task(task_name, fn, opts)
   if not (self.host and type(self.host.spawn_task) == "function") then
     return nil, error_mod.new("state", "kad_dht requires host task scheduler")
@@ -1161,6 +1213,13 @@ function DHT:_spawn_query_task(task_name, fn, opts)
   return operation.new(self.host, task, opts)
 end
 
+--- Find a peer by id via lookup.
+-- `opts` supports `timeout`, `ctx`, and `stream_opts`.
+-- @tparam string|table peer_or_addr Query target.
+-- @tparam string target_key Peer id to find.
+-- @tparam[opt] table opts
+-- @treturn table|nil op Operation.
+-- @treturn[opt] table err
 function DHT:find_node(peer_or_addr, target_key, opts)
   local options = opts or {}
   return self:_spawn_query_task("kad.find_node", function(ctx)
@@ -1173,6 +1232,10 @@ function DHT:find_node(peer_or_addr, target_key, opts)
   end)
 end
 
+--- Query a peer for value records.
+-- `opts` supports `timeout`, `ctx`, and `stream_opts`.
+-- @treturn table|nil op
+-- @treturn[opt] table err
 function DHT:get_value(peer_or_addr, key, opts)
   local options = opts or {}
   return self:_spawn_query_task("kad.get_value", function(ctx)
@@ -1185,6 +1248,10 @@ function DHT:get_value(peer_or_addr, key, opts)
   end)
 end
 
+--- Query a peer for provider records.
+-- `opts` supports `timeout`, `ctx`, and `stream_opts`.
+-- @treturn table|nil op
+-- @treturn[opt] table err
 function DHT:get_providers(peer_or_addr, key, opts)
   local options = opts or {}
   return self:_spawn_query_task("kad.get_providers", function(ctx)
@@ -1197,6 +1264,12 @@ function DHT:get_providers(peer_or_addr, key, opts)
   end)
 end
 
+--- Lookup value through iterative query.
+-- `opts` supports lookup controls like `alpha`, `k`, `disjoint_paths`,
+-- `seed_peers`, `find_node_opts`, `query_timeout_seconds`, `max_query_rounds`,
+-- and scheduler `ctx`/`yield`.
+-- @treturn table|nil op
+-- @treturn[opt] table err
 function DHT:find_value(key, opts)
   local options = opts or {}
   return self:_spawn_query_task("kad.find_value", function(ctx)
@@ -1213,6 +1286,11 @@ function DHT:find_value(key, opts)
   end)
 end
 
+--- Lookup closest peers through iterative query.
+-- Uses same options as @{find_value}.
+-- `opts.result_count` is fixed internally to include report and peers.
+-- @treturn table|nil op
+-- @treturn[opt] table err
 function DHT:get_closest_peers(key, opts)
   local options = opts or {}
   return self:_spawn_query_task("kad.get_closest_peers", function(ctx)
@@ -1229,6 +1307,11 @@ function DHT:get_closest_peers(key, opts)
   end, { result_count = 2 })
 end
 
+--- Lookup providers through iterative query.
+-- Uses same options as @{find_value}.
+-- `opts` may include `seed_peers`, `alpha`, `k`, `query_timeout_seconds`, and `ctx`.
+-- @treturn table|nil op
+-- @treturn[opt] table err
 function DHT:find_providers(key, opts)
   local options = opts or {}
   return self:_spawn_query_task("kad.find_providers", function(ctx)
@@ -1245,6 +1328,12 @@ function DHT:find_providers(key, opts)
   end)
 end
 
+--- Resolve bootstrap targets into dialable addresses.
+-- `opts` supports `peer_discovery`, `bootstrappers`, `dnsaddr_resolver`,
+-- and `ignore_resolve_errors`.
+-- @tparam[opt] table opts
+-- @treturn table|nil addrs
+-- @treturn[opt] table err
 function DHT:bootstrap_targets(opts)
   local options = opts or {}
   local discoverer = options.peer_discovery or self.peer_discovery
@@ -1279,6 +1368,11 @@ function DHT:bootstrap_targets(opts)
   return out
 end
 
+--- Discover peers from configured discovery source.
+-- `opts.ignore_source_errors` (`boolean`) suppresses source failures.
+-- @tparam[opt] table opts
+-- @treturn table|nil peers
+-- @treturn[opt] table err
 function DHT:discover_peers(opts)
   local options = opts or {}
   local discoverer = options.peer_discovery or self.peer_discovery
@@ -1327,6 +1421,8 @@ function DHT:_on_peer_protocols_updated(payload)
   return true
 end
 
+--- Internal peer protocol support probe.
+-- `opts.timeout`, `opts.ctx`, and `opts.stream_opts` tune identify query.
 function DHT:_supports_kad_protocol(peer_or_addr, opts)
   opts = opts or {}
   if not opts.ctx
@@ -1380,6 +1476,9 @@ function DHT:_supports_kad_protocol(peer_or_addr, opts)
   return true
 end
 
+--- Internal bootstrap dial workflow.
+-- `opts.bootstrap_target_count`, `opts.dial_timeout`, `opts.ignore_dial_errors`,
+-- `opts.ctx`, and `opts.yield` control sequencing.
 function DHT:_bootstrap(opts)
   local options = opts or {}
   local yield = type(options.yield) == "function" and options.yield or nil
@@ -1506,6 +1605,12 @@ function DHT:_bootstrap(opts)
   return result
 end
 
+--- Refresh peer liveness/protocol support and evict stale peers.
+-- `opts` supports `min_recheck_seconds`, `max_checks`,
+-- `max_failed_checks_before_evict`, and `protocol_check_opts`.
+-- @tparam[opt] table opts
+-- @treturn table|nil report
+-- @treturn[opt] table err
 function DHT:refresh_once(opts)
   local options = opts or {}
   local now = os.time()
@@ -1620,6 +1725,9 @@ function DHT:_distance_to_target(peer_id, target_hash)
   return xor_distance(target_hash, hashed)
 end
 
+--- Internal random-walk execution.
+-- `opts.count`, `opts.alpha`, `opts.disjoint_paths`, `opts.find_node_opts`,
+-- `opts.ctx`, and `opts.yield` tune walk behavior.
 function DHT:_random_walk(opts)
   local options = opts or {}
   local report = {
@@ -1904,6 +2012,12 @@ function DHT:_random_walk(opts)
   return report
 end
 
+--- Execute a scheduler-backed random walk query.
+-- `opts` supports walk/query controls like `count`, `alpha`, `disjoint_paths`,
+-- `find_node_opts`, and scheduler `ctx`/`yield`.
+-- @tparam[opt] table opts
+-- @treturn table|nil op
+-- @treturn[opt] table err
 function DHT:random_walk(opts)
   if not (self.host and type(self.host.spawn_task) == "function") then
     return nil, error_mod.new("state", "kad_dht random_walk requires host task scheduler")
@@ -1931,6 +2045,18 @@ function DHT:random_walk(opts)
   return operation.new(self.host, task)
 end
 
+--- Build a KAD service instance.
+-- Common `opts`: `mode`, `k`, `alpha`, `disjoint_paths`, `protocol_id`,
+-- `address_filter`, `peer_discovery`, `bootstrappers`, `routing_table`,
+-- and maintenance controls (`maintenance_enabled`, `maintenance_interval_seconds`, etc.).
+-- Additional options: `local_peer_id`, `dnsaddr_resolver`,
+-- `max_message_size`, and protocol-check tuning values.
+-- `opts.maintenance_enabled` defaults to `false`; interval/check knobs use
+-- `maintenance_*` names from module defaults.
+-- @tparam table host Host instance.
+-- @tparam[opt] table opts
+-- @treturn table|nil dht
+-- @treturn[opt] table err
 function M.new(host, opts)
   local options = opts or {}
 

@@ -1,3 +1,5 @@
+--- Base32 codec.
+-- @module lua_libp2p.multiformats.base32
 local error_mod = require("lua_libp2p.error")
 
 local M = {}

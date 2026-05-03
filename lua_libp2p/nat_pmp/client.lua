@@ -1,3 +1,5 @@
+--- NAT-PMP client.
+-- @module lua_libp2p.nat_pmp.client
 local socket = require("socket")
 
 local error_mod = require("lua_libp2p.error")
@@ -182,6 +184,8 @@ function Client:unmap_port(protocol, internal_port, external_port)
   return self:map_port(protocol, internal_port, external_port, 0)
 end
 
+--- Construct a NAT-PMP client instance.
+-- `opts` includes `gateway` (required), `port`, `timeout`, and `retries`.
 function M.new(opts)
   local options = opts or {}
   local gateway = options.gateway

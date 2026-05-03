@@ -1,3 +1,5 @@
+--- Multiaddr parsing, formatting, and helpers.
+-- @module lua_libp2p.multiaddr
 local error_mod = require("lua_libp2p.error")
 local peerid = require("lua_libp2p.peerid")
 local varint = require("lua_libp2p.multiformats.varint")
@@ -286,6 +288,10 @@ local function normalize_text(text)
   return normalized
 end
 
+--- Parse a multiaddr string into components.
+-- @tparam string text Multiaddr text.
+-- @treturn table|nil parsed
+-- @treturn[opt] table err
 function M.parse(text)
   if type(text) ~= "string" then
     return nil, error_mod.new("input", "multiaddr must be a string")
@@ -351,6 +357,10 @@ function M.parse(text)
   }
 end
 
+--- Format a parsed multiaddr back to text.
+-- @tparam table|string addr Parsed object or address string.
+-- @treturn string|nil text
+-- @treturn[opt] table err
 function M.format(addr)
   if type(addr) ~= "table" or type(addr.components) ~= "table" then
     return nil, error_mod.new("input", "multiaddr object must contain components")
@@ -388,6 +398,7 @@ function M.format(addr)
   return "/" .. table.concat(out, "/")
 end
 
+--- Encapsulate one multiaddr inside another.
 function M.encapsulate(base, extra)
   local left, left_err
   if type(base) == "string" then
@@ -419,6 +430,7 @@ function M.encapsulate(base, extra)
   return M.format({ components = components })
 end
 
+--- Remove a trailing suffix multiaddr.
 function M.decapsulate(base, suffix)
   local left, left_err = M.parse(base)
   if not left then
@@ -470,6 +482,7 @@ local function copy_components(components, first, last)
   return out
 end
 
+--- Extract relay components from a relay destination address.
 function M.relay_info(input)
   local addr, parse_err = parse_input(input)
   if not addr then
@@ -521,10 +534,12 @@ function M.relay_info(input)
   }
 end
 
+--- Check whether an address is a relay (`/p2p-circuit`) address.
 function M.is_relay_addr(input)
   return M.relay_info(input) ~= nil
 end
 
+--- Build a relay reservation address from a relay peer address.
 function M.relay_reservation_addr(relay_addr)
   local info = M.relay_info(relay_addr)
   if info then
@@ -533,6 +548,7 @@ function M.relay_reservation_addr(relay_addr)
   return M.encapsulate(relay_addr, "/p2p-circuit")
 end
 
+--- Build a relay destination address for a target peer.
 function M.relay_destination_addr(relay_addr, destination_peer_id)
   if type(destination_peer_id) ~= "string" or destination_peer_id == "" then
     return nil, error_mod.new("input", "destination peer id must be non-empty")
@@ -552,6 +568,7 @@ function M.relay_destination_addr(relay_addr, destination_peer_id)
   return M.encapsulate(reservation, "/p2p/" .. destination_peer_id)
 end
 
+--- Convert multiaddr into `{ host, port }` TCP endpoint.
 function M.to_tcp_endpoint(input)
   local addr = input
   if type(addr) == "string" then
@@ -626,6 +643,7 @@ local function first_host_component(input)
   return nil
 end
 
+--- Return true when address is private/loopback/link-local.
 function M.is_private_addr(input)
   local host = first_host_component(input)
   if not host then
@@ -662,6 +680,7 @@ function M.is_private_addr(input)
   return dns_name == "localhost" or dns_name:match("%.localhost$") ~= nil or dns_name:match("%.local$") ~= nil
 end
 
+--- Return true when address is considered public-routable.
 function M.is_public_addr(input)
   local host = first_host_component(input)
   if not host then
@@ -811,6 +830,7 @@ local function decode_value(protocol, bytes, offset)
   return raw, finish + 1
 end
 
+--- Encode multiaddr text to binary bytes.
 function M.to_bytes(input)
   local addr = input
   if type(addr) == "string" then
@@ -852,6 +872,7 @@ function M.to_bytes(input)
   return table.concat(parts)
 end
 
+--- Decode binary multiaddr bytes to text and components.
 function M.from_bytes(bytes)
   if type(bytes) ~= "string" or bytes == "" then
     return nil, error_mod.new("input", "multiaddr bytes must be non-empty")

@@ -1,3 +1,6 @@
+--- Circuit Relay v2 client.
+-- Creates relay reservations and tracks local reservation state.
+-- @module lua_libp2p.transport_circuit_relay_v2.client
 local error_mod = require("lua_libp2p.error")
 local multiaddr = require("lua_libp2p.multiaddr")
 local relay_proto = require("lua_libp2p.transport_circuit_relay_v2.protocol")
@@ -59,6 +62,13 @@ local function relay_dial_target(target)
   return target.peer_id
 end
 
+--- Create a relay reservation via HOP/RESERVE.
+-- `opts` supports `stream_opts`, `local_peer_id`, `allow_private_relay_addrs`,
+-- and `ignore_addr_errors`.
+-- @param target Relay peer id, relay multiaddr, or target table.
+-- @tparam[opt] table opts
+-- @treturn table|nil reservation
+-- @treturn[opt] table err
 function Client:reserve(target, opts)
   local options = opts or {}
   local relay_target, target_err = normalize_relay_target(target)
@@ -140,6 +150,11 @@ function Client:reserve(target, opts)
   return result
 end
 
+--- Reserve all configured relay targets.
+-- `opts.relays` overrides default relay list. `opts.fail_fast=true` aborts on first failure.
+-- @tparam[opt] table opts
+-- @treturn table|nil report
+-- @treturn[opt] table err
 function Client:reserve_all(opts)
   local options = opts or {}
   local report = {
@@ -166,6 +181,8 @@ function Client:reserve_all(opts)
   return report
 end
 
+--- Return active reservation list.
+-- @treturn table
 function Client:get_reservations()
   local out = {}
   for _, reservation in pairs(self._reservations) do
@@ -177,12 +194,22 @@ function Client:get_reservations()
   return out
 end
 
+--- Remove one reservation from local tracking.
+-- @tparam string peer_id Relay peer id.
+-- @treturn boolean removed
+-- @treturn[opt] table reservation
 function Client:remove_reservation(peer_id)
   local reservation = self._reservations[peer_id]
   self._reservations[peer_id] = nil
   return reservation ~= nil, reservation
 end
 
+--- Construct a relay client bound to a host.
+-- @tparam table host Host instance.
+-- @tparam[opt] table opts Client options.
+-- `opts.relays` provides default relay targets for @{reserve_all}.
+-- @treturn table|nil client
+-- @treturn[opt] table err
 function M.new(host, opts)
   if type(host) ~= "table" then
     return nil, error_mod.new("input", "relay client requires host")

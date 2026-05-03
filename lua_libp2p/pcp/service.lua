@@ -1,3 +1,5 @@
+--- PCP mapping service.
+-- @module lua_libp2p.pcp.service
 local error_mod = require("lua_libp2p.error")
 local log = require("lua_libp2p.log")
 local multiaddr = require("lua_libp2p.multiaddr")
@@ -126,6 +128,9 @@ function Service:_eligible_addrs()
   return out
 end
 
+--- Create/refresh PCP mappings for eligible listen addresses.
+-- @treturn table|nil mappings
+-- @treturn[opt] table err
 function Service:map_ip_addresses()
   local client, client_err = self:_client()
   if not client then
@@ -210,6 +215,9 @@ function Service:map_ip_addresses()
   return mapped
 end
 
+--- Start PCP service and optional self-update hook.
+-- @treturn true|nil ok
+-- @treturn[opt] table err
 function Service:start()
   if self.started then
     return true
@@ -252,6 +260,8 @@ function Service:start()
   return run_initial_map()
 end
 
+--- Stop PCP service and remove advertised mappings.
+-- @treturn true
 function Service:stop()
   self.started = false
   if self.host and self._event_handler and type(self.host.off) == "function" then
@@ -266,6 +276,16 @@ function Service:stop()
   return true
 end
 
+--- Build a PCP service instance.
+-- Common `opts`: `gateway` (required), `client`, `internal_client`,
+-- `external_port`, `timeout`, `retries`, `ttl`, `auto_confirm_address`,
+-- `fail_on_start_error`, `map_on_self_peer_update`, and `initial_map_delay_seconds`.
+-- `opts.gateway` must be a router IP string.
+-- `opts.timeout` defaults to `0.25`, `opts.retries` defaults to `6`, `opts.ttl` defaults to `7200`.
+-- @tparam table host Host instance.
+-- @tparam[opt] table opts
+-- @treturn table|nil service
+-- @treturn[opt] table err
 function M.new(host, opts)
   if type(host) ~= "table" then
     return nil, error_mod.new("input", "pcp service requires host")

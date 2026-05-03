@@ -1,3 +1,5 @@
+--- Network module entrypoint.
+-- @module lua_libp2p.network
 local M = {
   MESSAGE_SIZE_MAX = 4 * 1024 * 1024,
   connection = require("lua_libp2p.network.connection"),

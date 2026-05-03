@@ -1,3 +1,5 @@
+--- Poll-based host runtime adapter.
+-- @module lua_libp2p.host_runtime_poll
 local error_mod = require("lua_libp2p.error")
 
 local ok_socket, socket = pcall(require, "socket")

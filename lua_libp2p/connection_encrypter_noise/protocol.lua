@@ -1,3 +1,5 @@
+--- Noise transport handshake and secure channel.
+-- @module lua_libp2p.connection_encrypter_noise.protocol
 local error_mod = require("lua_libp2p.error")
 local keys = require("lua_libp2p.crypto.keys")
 local key_pb = require("lua_libp2p.crypto.key_pb")
@@ -444,6 +446,11 @@ end
 local HandshakeState = {}
 HandshakeState.__index = HandshakeState
 
+--- Create Noise XX handshake state.
+-- `opts.protocol_name` overrides handshake protocol label.
+-- `opts.prologue` (`string`) mixes application prologue bytes.
+-- `opts.initiator` (`boolean`) selects initiator/responder behavior.
+-- `opts.static_keypair` supplies static DH keypair.
 function HandshakeState:new(opts)
   local options = opts or {}
   local protocol_name = options.protocol_name or M.PROTOCOL_NAME
@@ -633,6 +640,11 @@ local function payload_for_side(identity_keypair, static_public, extensions)
   return M.encode_handshake_payload(payload)
 end
 
+--- Perform outbound Noise XX handshake.
+-- `opts.identity_keypair` (required) is used for identity payload signatures.
+-- `opts.static_keypair` overrides static Noise keypair.
+-- `opts.expected_remote_peer_id` verifies remote identity.
+-- `opts.extensions` includes optional handshake extensions.
 function M.handshake_xx_outbound(raw_conn, opts)
   local options = opts or {}
   local identity = options.identity_keypair
@@ -710,6 +722,8 @@ function M.handshake_xx_outbound(raw_conn, opts)
   }
 end
 
+--- Perform inbound Noise XX handshake.
+-- Uses same `opts.<field>` values as @{handshake_xx_outbound}.
 function M.handshake_xx_inbound(raw_conn, opts)
   local options = opts or {}
   local identity = options.identity_keypair

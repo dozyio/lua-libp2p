@@ -1,3 +1,5 @@
+--- DCUtR protocol framing and message codec.
+-- @module lua_libp2p.protocol_dcutr.protocol
 local error_mod = require("lua_libp2p.error")
 local multiaddr = require("lua_libp2p.multiaddr")
 local varint = require("lua_libp2p.multiformats.varint")
@@ -178,6 +180,8 @@ function M.decode_message(payload)
   return out
 end
 
+--- Read framed DCUtR message.
+-- `opts.max_message_size` (`number`, default `MAX_MESSAGE_SIZE`) bounds frame size.
 function M.read_message(conn, opts)
   local options = opts or {}
   local max_message_size = options.max_message_size or M.MAX_MESSAGE_SIZE
@@ -198,6 +202,8 @@ function M.read_message(conn, opts)
   return M.decode_message(payload)
 end
 
+--- Encode and write framed DCUtR message.
+-- `opts.max_message_size` (`number`, default `MAX_MESSAGE_SIZE`) bounds payload size.
 function M.write_message(conn, message, opts)
   local options = opts or {}
   local max_message_size = options.max_message_size or M.MAX_MESSAGE_SIZE

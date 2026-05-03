@@ -1,3 +1,5 @@
+--- In-memory peerstore.
+-- @module lua_libp2p.peerstore
 local error_mod = require("lua_libp2p.error")
 
 local M = {}
@@ -62,6 +64,8 @@ local function normalize_addr_ttl(self, opts)
   return ttl
 end
 
+--- Add peer addresses.
+-- `opts` supports `ttl` (seconds|false) and `certified` (boolean).
 function Store:add_addrs(peer_id, addrs, opts)
   if type(addrs) ~= "table" then
     return nil, error_mod.new("input", "addrs must be a list")
@@ -96,6 +100,7 @@ function Store:add_addrs(peer_id, addrs, opts)
   return added
 end
 
+--- Get non-expired addresses for a peer.
 function Store:get_addrs(peer_id)
   local peer = self._peers[peer_id]
   if not peer then
@@ -114,6 +119,7 @@ function Store:get_addrs(peer_id)
   return out
 end
 
+--- Add supported protocol IDs for a peer.
 function Store:add_protocols(peer_id, protocols)
   if type(protocols) ~= "table" then
     return nil, error_mod.new("input", "protocols must be a list")
@@ -133,6 +139,7 @@ function Store:add_protocols(peer_id, protocols)
   return added
 end
 
+--- Get sorted protocol IDs for a peer.
 function Store:get_protocols(peer_id)
   local peer = self._peers[peer_id]
   if not peer then
@@ -146,11 +153,14 @@ function Store:get_protocols(peer_id)
   return out
 end
 
+--- Check whether a peer supports a protocol.
 function Store:supports_protocol(peer_id, protocol)
   local peer = self._peers[peer_id]
   return peer ~= nil and peer.protocols[protocol] == true
 end
 
+--- Add or update a peer tag.
+-- `opts` supports `value` and `ttl`.
 function Store:tag(peer_id, name, opts)
   if type(name) ~= "string" or name == "" then
     return nil, error_mod.new("input", "tag name must be non-empty")
@@ -170,6 +180,7 @@ function Store:tag(peer_id, name, opts)
   return true
 end
 
+--- Get active peer tags.
 function Store:get_tags(peer_id)
   local peer = self._peers[peer_id]
   if not peer then
@@ -191,6 +202,7 @@ function Store:get_tags(peer_id)
   return out
 end
 
+--- Remove a peer tag.
 function Store:untag(peer_id, name)
   if type(name) ~= "string" or name == "" then
     return nil, error_mod.new("input", "tag name must be non-empty")
@@ -207,6 +219,8 @@ function Store:untag(peer_id, name)
   return existed
 end
 
+--- Merge fields into an existing peer record.
+-- `opts` is forwarded to address merge helpers.
 function Store:merge(peer_id, data, opts)
   local peer, peer_err = ensure_peer(self, peer_id)
   if not peer then
@@ -240,6 +254,8 @@ function Store:merge(peer_id, data, opts)
   return self:get(peer_id)
 end
 
+--- Replace selected peer fields.
+-- `opts` is forwarded to address patch helpers.
 function Store:patch(peer_id, data, opts)
   local peer, peer_err = ensure_peer(self, peer_id)
   if not peer then
@@ -276,6 +292,7 @@ function Store:patch(peer_id, data, opts)
   return self:get(peer_id)
 end
 
+--- Get full peer view.
 function Store:get(peer_id)
   local peer = self._peers[peer_id]
   if not peer then
@@ -293,16 +310,19 @@ function Store:get(peer_id)
   }
 end
 
+--- Check if a peer exists.
 function Store:has(peer_id)
   return self._peers[peer_id] ~= nil
 end
 
+--- Delete a peer.
 function Store:delete(peer_id)
   local existed = self._peers[peer_id] ~= nil
   self._peers[peer_id] = nil
   return existed
 end
 
+--- List all peers.
 function Store:all()
   local out = {}
   for peer_id in pairs(self._peers) do
@@ -314,6 +334,7 @@ function Store:all()
   return out
 end
 
+--- Remove expired addresses and tags across peers.
 function Store:clear_expired()
   local now = os.time()
   local removed = 0
@@ -334,6 +355,10 @@ function Store:clear_expired()
   return removed
 end
 
+--- Construct a peerstore instance.
+-- `opts.default_addr_ttl` controls default address TTL in seconds.
+-- @tparam[opt] table opts
+-- @treturn table store
 function M.new(opts)
   local options = opts or {}
   return setmetatable({

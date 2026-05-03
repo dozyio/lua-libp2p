@@ -1,3 +1,5 @@
+--- Yamux stream multiplexer implementation.
+-- @module lua_libp2p.muxer.yamux
 local error_mod = require("lua_libp2p.error")
 local log = require("lua_libp2p.log")
 
@@ -383,6 +385,11 @@ end
 local Session = {}
 Session.__index = Session
 
+--- Create yamux session.
+-- `opts.is_client` (`boolean`) picks odd/even stream id side.
+-- `opts.initial_stream_window` (`number`) overrides default window.
+-- `opts.max_ack_backlog` / `opts.max_accept_backlog` bound queues.
+-- `opts.scheduler_driven` (`boolean`) forces scheduler waiter mode.
 function Session:new(conn, opts)
   local options = opts or {}
   local is_client = not not options.is_client
@@ -692,6 +699,11 @@ function Session:close()
   return true
 end
 
+--- Construct yamux session wrapper.
+-- Forwards `opts.<field>` to @{Session:new}.
+-- @tparam table conn
+-- @tparam[opt] table opts
+-- @treturn table session
 function M.new_session(conn, opts)
   return Session:new(conn, opts)
 end

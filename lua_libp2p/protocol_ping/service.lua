@@ -1,9 +1,12 @@
+--- Ping protocol service.
+-- @module lua_libp2p.protocol_ping.service
 local ping = require("lua_libp2p.protocol_ping.protocol")
 
 local M = {}
 M.provides = { "ping" }
 M.requires = {}
 
+--- Construct ping service instance.
 function M.new(host)
   local svc = {}
 

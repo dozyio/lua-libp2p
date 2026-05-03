@@ -1,3 +1,5 @@
+--- AutoNAT v2 wire protocol codec.
+-- @module lua_libp2p.protocol.autonat_v2
 local error_mod = require("lua_libp2p.error")
 local varint = require("lua_libp2p.multiformats.varint")
 
@@ -458,6 +460,8 @@ function M.write_message(stream, message)
   return stream:write(len .. payload)
 end
 
+--- Read and decode AutoNAT message.
+-- `opts.max_message_size` (`number`, default `MAX_MESSAGE_SIZE`) bounds frame size.
 function M.read_message(stream, opts)
   local options = opts or {}
   local max = options.max_message_size or M.MAX_MESSAGE_SIZE
@@ -479,6 +483,8 @@ function M.write_dial_back(stream, message)
   return stream:write(len .. payload)
 end
 
+--- Read and decode AutoNAT dial-back message.
+-- `opts.max_message_size` (`number`, default `MAX_MESSAGE_SIZE`) bounds frame size.
 function M.read_dial_back(stream, opts)
   local options = opts or {}
   local length, len_err = read_varint(stream)
@@ -499,6 +505,8 @@ function M.write_dial_back_response(stream, message)
   return stream:write(len .. payload)
 end
 
+--- Read and decode AutoNAT dial-back response.
+-- `opts.max_message_size` (`number`, default `MAX_MESSAGE_SIZE`) bounds frame size.
 function M.read_dial_back_response(stream, opts)
   local options = opts or {}
   local length, len_err = read_varint(stream)

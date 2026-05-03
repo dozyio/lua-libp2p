@@ -1,3 +1,5 @@
+--- KAD protobuf protocol framing and codec helpers.
+-- @module lua_libp2p.kad_dht.protocol
 local error_mod = require("lua_libp2p.error")
 local network = require("lua_libp2p.network")
 local peerid = require("lua_libp2p.peerid")
@@ -496,6 +498,12 @@ local function max_message_size(opts)
   return max
 end
 
+--- Read and decode one KAD message.
+-- `opts.max_message_size` (`number`, default `MAX_MESSAGE_SIZE`) bounds frame size.
+-- @tparam table conn
+-- @tparam[opt] table opts
+-- @treturn table|nil message
+-- @treturn[opt] table err
 function M.read(conn, opts)
   local max, max_err = max_message_size(opts)
   if not max then
@@ -521,6 +529,13 @@ function M.read(conn, opts)
   return M.decode_message(payload)
 end
 
+--- Encode and write one KAD message.
+-- `opts.max_message_size` (`number`, default `MAX_MESSAGE_SIZE`) bounds encoded payload size.
+-- @tparam table conn
+-- @tparam table message
+-- @tparam[opt] table opts
+-- @treturn true|nil ok
+-- @treturn[opt] table err
 function M.write(conn, message, opts)
   local max, max_err = max_message_size(opts)
   if not max then

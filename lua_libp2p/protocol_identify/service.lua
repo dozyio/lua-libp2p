@@ -1,9 +1,18 @@
+--- Identify protocol service.
+-- Registers `/ipfs/id/*` handlers and provides request helpers.
+-- @module lua_libp2p.protocol_identify.service
 local identify = require("lua_libp2p.protocol_identify.protocol")
 
 local M = {}
 M.provides = { "identify" }
 M.requires = {}
 
+--- Construct identify service instance.
+-- `opts.include_push` (`boolean`, default `true`) registers `/ipfs/id/push/1.0.0`.
+-- Additional options are forwarded to `identify.enable_run_on_connection_open`.
+-- @tparam table host Host instance.
+-- @tparam[opt] table opts
+-- @treturn table service
 function M.new(host, opts)
   local options = opts or {}
   local svc = {}

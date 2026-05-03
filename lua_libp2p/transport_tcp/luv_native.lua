@@ -1,3 +1,5 @@
+--- Native luv TCP transport implementation.
+-- @module lua_libp2p.transport_tcp.luv_native
 local error_mod = require("lua_libp2p.error")
 local multiaddr = require("lua_libp2p.multiaddr")
 
@@ -171,6 +173,9 @@ end
 local NativeConnection = {}
 NativeConnection.__index = NativeConnection
 
+--- Wrap raw luv tcp socket as native connection.
+-- `opts.local_host`, `opts.local_port`, `opts.peer_host`, `opts.peer_port` set address metadata.
+-- `opts.io_timeout` sets per-read/write timeout.
 function NativeConnection:new(raw, opts)
   local options = opts or {}
   local conn = setmetatable({
@@ -565,6 +570,9 @@ end
 local NativeListener = {}
 NativeListener.__index = NativeListener
 
+--- Wrap raw luv server as native listener.
+-- `opts.listen_host`, `opts.listen_port` set listener multiaddr metadata.
+-- `opts.io_timeout` and `opts.accept_timeout` set default timeouts.
 function NativeListener:new(server, opts)
   local options = opts or {}
   return setmetatable({
@@ -661,6 +669,13 @@ function NativeListener:close()
   return true
 end
 
+--- Start a native luv TCP listener.
+-- `target` may be multiaddr string or table `{ host, port, multiaddr }`.
+-- `opts` overrides target table and supports `accept_timeout` and `io_timeout`.
+-- @param[opt] target
+-- @tparam[opt] table opts
+-- @treturn table|nil listener
+-- @treturn[opt] table err
 function M.listen(target, opts)
   if not ok_luv then
     return nil, error_mod.new("unsupported", "luv is unavailable")
@@ -739,6 +754,13 @@ function M.listen(target, opts)
   return listener
 end
 
+--- Dial a native luv TCP connection.
+-- `opts.port` is used when target is a host string.
+-- `opts.timeout`, `opts.io_timeout`, and `opts.ctx` control timing and cancellation.
+-- @param target Dial target.
+-- @tparam[opt] table opts
+-- @treturn table|nil conn
+-- @treturn[opt] table err
 function M.dial(target, opts)
   if not ok_luv then
     return nil, error_mod.new("unsupported", "luv is unavailable")

@@ -1,3 +1,6 @@
+--- AutoRelay service.
+-- Maintains relay reservations and candidate discovery.
+-- @module lua_libp2p.transport_circuit_relay_v2.autorelay
 local error_mod = require("lua_libp2p.error")
 local log = require("lua_libp2p.log")
 local multiaddr = require("lua_libp2p.multiaddr")
@@ -170,6 +173,8 @@ function AutoRelay:_set_need_more_relays(need_more, reason)
   return true
 end
 
+--- Queue relay target candidate.
+-- `opts.type` annotates source; `opts.force=true` bypasses capacity gating.
 function AutoRelay:_enqueue_target(target, opts)
   local options = opts or {}
   local key = target_peer_id(target)
@@ -196,6 +201,9 @@ function AutoRelay:_enqueue_target(target, opts)
   return true
 end
 
+--- Execute one reservation attempt.
+-- `opts.force_refresh=true` refreshes active reservation; `opts.stream_opts`
+-- forwards dialing/runtime options to relay client.
 function AutoRelay:_reserve_target(target, opts)
   local key = target_peer_id(target)
   if self._reserved[key] and not (opts and opts.force_refresh) then
@@ -297,6 +305,8 @@ local function task_is_active(task)
     and task.status ~= "cancelled"
 end
 
+--- Schedule reservation task for target.
+-- `opts` forwarded to @{_reserve_target}; task receives scheduler ctx.
 function AutoRelay:_schedule_reserve_target(target, opts)
   local key = target_peer_id(target)
   if self._reserved[key] and not (opts and opts.force_refresh) then
@@ -345,6 +355,8 @@ function AutoRelay:_collect_reserve_tasks()
   end
 end
 
+--- Remove active reservation and cleanup derived state.
+-- `opts.reason` tags emitted removal event.
 function AutoRelay:_remove_reservation(key, opts)
   local reservation = self._reserved[key]
   if not reservation then
@@ -512,6 +524,9 @@ function AutoRelay:_process_queue(now, limit)
   return processed
 end
 
+--- Start AutoRelay event hooks and initial reservation work.
+-- @treturn table|true|nil report_or_ok Startup report table, or true if already started.
+-- @treturn[opt] table err
 function AutoRelay:start()
   if self.started then
     return true
@@ -595,6 +610,8 @@ function AutoRelay:start()
   return report
 end
 
+--- Stop AutoRelay subscriptions.
+-- @treturn true
 function AutoRelay:stop()
   if self._protocol_subscription and self.host and type(self.host.off) == "function" then
     self.host:off("peer_protocols_updated", self._protocol_subscription)
@@ -608,10 +625,14 @@ function AutoRelay:stop()
   return true
 end
 
+--- Get currently tracked active reservations.
+-- @treturn table reservations
 function AutoRelay:get_reservations()
   return self.client:get_reservations()
 end
 
+--- Get current service status counters.
+-- @treturn table
 function AutoRelay:status()
   local failed = 0
   local failure_summary = {}
@@ -644,6 +665,9 @@ function AutoRelay:status()
   }
 end
 
+--- Run one maintenance tick.
+-- @tparam[opt] number now Epoch seconds override.
+-- @treturn true
 function AutoRelay:tick(now)
   if not self.started then
     return true
@@ -692,6 +716,17 @@ function AutoRelay:tick(now)
   return true
 end
 
+--- Build an AutoRelay service instance.
+-- @tparam table host Host instance.
+-- @tparam[opt] table opts AutoRelay options.
+-- Common options: `relays`, `max_reservations`, `reservation_concurrency`,
+-- `max_queue_length`, `backoff_seconds`, `keepalive_interval`, `keepalive_timeout`,
+-- `discover`, `reserve_opts`, `refresh_margin`, `refresh_timeout`,
+-- `refresh_timeout_min`, `min_reservation_ttl`, and `fail_fast`.
+-- `opts.keepalive_interval` defaults to `DEFAULT_KEEPALIVE_INTERVAL` when nil.
+-- `opts.relays` is the static bootstrap relay target list.
+-- @treturn table|nil service
+-- @treturn[opt] table err
 function M.new(host, opts)
   if type(host) ~= "table" then
     return nil, error_mod.new("input", "autorelay requires host")

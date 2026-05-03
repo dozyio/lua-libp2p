@@ -1,3 +1,6 @@
+--- Top-level lua-libp2p module.
+-- Exposes primary entrypoints for hosts, discovery, and routing utilities.
+-- @module lua_libp2p
 local M = {
   _VERSION = "0.0.0",
   discovery = require("lua_libp2p.discovery"),

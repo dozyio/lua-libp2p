@@ -1,3 +1,5 @@
+--- UPnP NAT mapping service.
+-- @module lua_libp2p.upnp.nat
 local error_mod = require("lua_libp2p.error")
 local igd = require("lua_libp2p.upnp.igd")
 local log = require("lua_libp2p.log")
@@ -127,6 +129,9 @@ function Service:_eligible_addrs()
   return addrs
 end
 
+--- Create/refresh UPnP mappings for eligible listen addresses.
+-- @treturn table|nil mappings
+-- @treturn[opt] table err
 function Service:map_ip_addresses()
   local client, client_err = self:_client()
   if not client then
@@ -237,6 +242,9 @@ function Service:map_ip_addresses()
   return mapped
 end
 
+--- Start UPnP NAT service and optional self-update hook.
+-- @treturn true|nil ok
+-- @treturn[opt] table err
 function Service:start()
   if self.started then
     return true
@@ -255,6 +263,8 @@ function Service:start()
   return true
 end
 
+--- Stop UPnP NAT service and remove advertised mappings.
+-- @treturn true
 function Service:stop()
   self.started = false
   if self.host and self._event_handler and type(self.host.off) == "function" then
@@ -269,6 +279,8 @@ function Service:stop()
   return true
 end
 
+--- Return service status snapshot.
+-- @treturn table
 function Service:status()
   return {
     started = self.started,
@@ -277,6 +289,11 @@ function Service:status()
   }
 end
 
+--- List mappings from the underlying IGD, when supported.
+-- @tparam[opt] table opts Enumeration options for IGD client.
+-- `opts.max` (`number`) limits returned entry count.
+-- @treturn table|nil mappings
+-- @treturn[opt] table err
 function Service:list_port_mappings(opts)
   local client, err = self:_client()
   if not client then
@@ -288,6 +305,16 @@ function Service:list_port_mappings(opts)
   return client:list_port_mappings(opts)
 end
 
+--- Build a UPnP NAT service instance.
+-- Common `opts`: `client`, `discover_client`, `internal_client`,
+-- `external_port`, `ttl`, `description`, `auto_confirm_address`,
+-- `fail_on_start_error`, `debug_soap`, and `debug_raw`.
+-- Additional option: `replace_existing` to remove stale mappings before add.
+-- `opts.wanppp_only` prefers WANPPP service; `opts.debug_raw`/`opts.debug_soap` enable diagnostics.
+-- @tparam table host Host instance.
+-- @tparam[opt] table opts
+-- @treturn table|nil service
+-- @treturn[opt] table err
 function M.new(host, opts)
   if type(host) ~= "table" then
     return nil, error_mod.new("input", "upnp nat service requires host")

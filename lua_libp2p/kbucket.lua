@@ -1,3 +1,5 @@
+--- Kademlia k-bucket routing table primitives.
+-- @module lua_libp2p.kbucket
 local error_mod = require("lua_libp2p.error")
 local peerid = require("lua_libp2p.peerid")
 
@@ -182,6 +184,12 @@ function RoutingTable:_bucket_for_hash(hash)
   return cpl + 1
 end
 
+--- Attempt to add peer to routing table.
+-- `opts.allow_replace=true` permits evicting the oldest bucket entry.
+-- @param peer Peer id or peer descriptor.
+-- @tparam[opt] table opts
+-- @treturn true|false|nil added_or_refreshed
+-- @treturn[opt] string|table evicted_or_err
 function RoutingTable:try_add_peer(peer, opts)
   local options = opts or {}
   local peer_id, key_bytes, peer_err = normalize_peer_id(peer)
@@ -328,6 +336,12 @@ function RoutingTable:nearest_peers(target_key, count)
   return out
 end
 
+--- Construct a routing table.
+-- `opts.local_peer_id` is required.
+-- Optional: `opts.bucket_size` and `opts.hash_function(value)->32-byte digest`.
+-- @tparam table opts
+-- @treturn table|nil table
+-- @treturn[opt] table err
 function M.new(opts)
   local options = opts or {}
 

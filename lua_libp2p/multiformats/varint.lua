@@ -1,3 +1,5 @@
+--- Unsigned varint encode/decode helpers.
+-- @module lua_libp2p.multiformats.varint
 local error_mod = require("lua_libp2p.error")
 
 local M = {}

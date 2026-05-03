@@ -1,3 +1,5 @@
+--- Plaintext transport handshake helpers.
+-- @module lua_libp2p.connection_encrypter_plaintext.protocol
 local error_mod = require("lua_libp2p.error")
 local varint = require("lua_libp2p.multiformats.varint")
 local keys = require("lua_libp2p.crypto.keys")

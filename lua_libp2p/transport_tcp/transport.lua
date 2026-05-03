@@ -1,3 +1,5 @@
+--- Poll-based TCP transport implementation.
+-- @module lua_libp2p.transport_tcp.transport
 local socket = require("socket")
 local error_mod = require("lua_libp2p.error")
 local multiaddr = require("lua_libp2p.multiaddr")
@@ -39,6 +41,7 @@ local function parse_ipv6(host)
   return host
 end
 
+--- Parse `/ip*/.../tcp/...` multiaddr into endpoint table.
 function M.parse_multiaddr(addr_text)
   local parsed, parse_err = multiaddr.parse(addr_text)
   if not parsed then
@@ -50,6 +53,7 @@ function M.parse_multiaddr(addr_text)
   return multiaddr.to_tcp_endpoint(parsed)
 end
 
+--- Format host+port into TCP multiaddr.
 function M.format_multiaddr(host, port)
   local normalized_port = tonumber(port)
   if not normalized_port or normalized_port < 0 or normalized_port > 65535 then
@@ -178,6 +182,9 @@ end
 local Listener = {}
 Listener.__index = Listener
 
+--- Construct listener wrapper.
+-- `opts.io_timeout` applies to accepted sockets.
+-- `opts.accept_timeout` is default timeout for `accept()`.
 function Listener:new(server, opts)
   return setmetatable({
     _server = server,
@@ -241,6 +248,12 @@ function Listener:close()
   return true
 end
 
+--- Start a TCP listener.
+-- `opts` accepts either `multiaddr` or (`host`,`port`), plus
+-- `accept_timeout` and `io_timeout`.
+-- @tparam[opt] table opts
+-- @treturn table|nil listener
+-- @treturn[opt] table err
 function M.listen(opts)
   local options = opts or {}
 
@@ -281,6 +294,12 @@ function M.listen(opts)
   })
 end
 
+--- Dial a TCP endpoint.
+-- `opts` accepts `timeout`, `io_timeout`, and `ctx`.
+-- @param address Host string, multiaddr string, or `{ host, port }`.
+-- @tparam[opt] table opts
+-- @treturn table|nil conn
+-- @treturn[opt] table err
 function M.dial(address, opts)
   local options = opts or {}
   local host

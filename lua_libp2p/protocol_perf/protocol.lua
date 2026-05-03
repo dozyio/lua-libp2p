@@ -1,5 +1,6 @@
+--- Perf protocol helpers and measurement utilities.
+-- @module lua_libp2p.protocol_perf.protocol
 local ok_socket, socket = pcall(require, "socket")
-
 local error_mod = require("lua_libp2p.error")
 
 local M = {}
@@ -178,6 +179,13 @@ local function read_upload_until_eof(conn, opts)
   end
 end
 
+--- Handle one perf protocol session.
+-- `opts.write_block_size` (`number`, default `DEFAULT_WRITE_BLOCK_SIZE`) controls send chunks.
+-- `opts.yield_every_bytes` (`number`) sets periodic cooperative yield cadence.
+-- @tparam table conn
+-- @tparam[opt] table opts
+-- @treturn table|nil stats
+-- @treturn[opt] table err
 function M.handle(conn, opts)
   local options = opts or {}
   local write_block_size = options.write_block_size or M.DEFAULT_WRITE_BLOCK_SIZE
@@ -229,6 +237,14 @@ function M.handle(conn, opts)
   }
 end
 
+--- Run one perf upload/download measurement exchange.
+-- `opts.write_block_size` (`number`, default `DEFAULT_WRITE_BLOCK_SIZE`) controls send chunks.
+-- @tparam table conn
+-- @tparam number send_bytes
+-- @tparam number recv_bytes
+-- @tparam[opt] table opts
+-- @treturn table|nil report
+-- @treturn[opt] table err
 function M.measure_once(conn, send_bytes, recv_bytes, opts)
   local options = opts or {}
   local write_block_size = options.write_block_size or M.DEFAULT_WRITE_BLOCK_SIZE

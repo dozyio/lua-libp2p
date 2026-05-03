@@ -1,3 +1,5 @@
+--- AutoNAT v2 client/service.
+-- @module lua_libp2p.autonat.client
 local error_mod = require("lua_libp2p.error")
 local log = require("lua_libp2p.log")
 local multiaddr = require("lua_libp2p.multiaddr")
@@ -175,6 +177,13 @@ function Client:_handle_dial_data_request(stream, request)
   return true
 end
 
+--- Run a synchronous AutoNAT check against one server.
+-- `opts` may include `stream_opts`, `timeout`, `poll_interval`, `nonce`,
+-- `addrs`, `allow_private_addrs`, and `allow_relay_addrs`.
+-- @tparam string|table server Server peer target.
+-- @tparam[opt] table opts Check options.
+-- @treturn table|nil result
+-- @treturn[opt] table err
 function Client:check(server, opts)
   local options = opts or {}
   if (not options.stream_opts or options.stream_opts.ctx == nil)
@@ -306,6 +315,12 @@ function Client:check(server, opts)
   return result
 end
 
+--- Spawn an asynchronous AutoNAT check task.
+-- @tparam string|table server Server peer target.
+-- @tparam[opt] table opts Same options as @{check}.
+-- `opts.stream_opts.ctx` is injected automatically when omitted.
+-- @treturn table|nil task
+-- @treturn[opt] table err
 function Client:start_check(server, opts)
   if not (self.host and type(self.host.spawn_task) == "function") then
     return nil, error_mod.new("state", "autonat start_check requires host task scheduler")
@@ -324,6 +339,10 @@ function Client:start_check(server, opts)
   })
 end
 
+--- Select candidate AutoNAT servers from peerstore/discovery.
+-- `opts.checked_peers` tracks cooldown state by peer id.
+-- `opts.checked_peer_cooldown_seconds` suppresses recently checked peers.
+-- `opts.required_addr_proto` filters by `ip4`/`ip6` preference.
 function Client:_discover_servers(limit, opts)
   local options = opts or {}
   local host = self.host
@@ -413,6 +432,11 @@ function Client:_discover_servers(limit, opts)
   return out
 end
 
+--- Internal AutoNAT discovery/check execution.
+-- `opts.max_autonat_servers`, `opts.target_autonat_responses`, and
+-- `opts.stop_on_first_reachable` shape check strategy.
+-- `opts.discovery_timeout_seconds`, `opts.check_timeout`, `opts.drain_seconds`
+-- control timing.
 function Client:_discover(opts)
   local options = opts or {}
   local host = self.host
@@ -527,6 +551,13 @@ function Client:_discover(opts)
   return stats
 end
 
+--- Run AutoNAT server discovery and checks.
+-- `opts` may include discovery limits/timeouts and check strategy knobs
+-- such as `max_autonat_servers`, `target_autonat_responses`,
+-- `check_timeout`, `stop_on_first_reachable`, and `drain_seconds`.
+-- @tparam[opt] table opts Discovery options.
+-- @treturn table|nil task
+-- @treturn[opt] table err
 function Client:start_discovery(opts)
   if not (self.host and type(self.host.spawn_task) == "function") then
     return nil, error_mod.new("state", "autonat start_discovery requires host task scheduler")
@@ -544,6 +575,13 @@ function Client:start_discovery(opts)
   })
 end
 
+--- Start ongoing AutoNAT monitoring.
+-- `opts` may include monitor cadence: `retry_interval_seconds`,
+-- `healthy_interval_seconds`, `min_success_rounds`, and per-round
+-- discovery/check options used by @{start_discovery}.
+-- @tparam[opt] table opts Monitor options.
+-- @treturn table|nil task
+-- @treturn[opt] table err
 function Client:start_monitor(opts)
   if not (self.host and type(self.host.spawn_task) == "function") then
     return nil, error_mod.new("state", "autonat start_monitor requires host task scheduler")
@@ -652,6 +690,9 @@ function Client:_handle_dial_back(stream)
   return true
 end
 
+--- Start AutoNAT service handlers.
+-- @treturn true|nil ok
+-- @treturn[opt] table err
 function Client:start()
   if self.started then
     return true
@@ -676,6 +717,8 @@ function Client:start()
   return true
 end
 
+--- Stop AutoNAT service activity.
+-- @treturn true
 function Client:stop()
   if self._monitor_task and self.host and type(self.host.cancel_task) == "function" then
     self.host:cancel_task(self._monitor_task.id)
@@ -697,6 +740,15 @@ function Client:status()
   }
 end
 
+--- Construct a new AutoNAT client/service instance.
+-- `opts` may include protocol limits and behavior flags such as
+-- `max_message_size`, `allow_dial_data`, `max_dial_data_bytes`,
+-- `dial_data_chunk_size`, and `monitor_on_start`.
+-- Additional monitor options: `monitor_start_opts` / `monitor_opts`.
+-- @tparam table host Host instance.
+-- @tparam[opt] table opts
+-- @treturn table|nil client
+-- @treturn[opt] table err
 function M.new(host, opts)
   if type(host) ~= "table" then
     return nil, error_mod.new("input", "autonat client requires host")

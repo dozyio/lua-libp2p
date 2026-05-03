@@ -1,3 +1,5 @@
+--- Connection manager with dial queue and reuse policy.
+-- @module lua_libp2p.connection_manager
 local error_mod = require("lua_libp2p.error")
 local multiaddr = require("lua_libp2p.multiaddr")
 
@@ -46,6 +48,15 @@ local function is_dialable_tcp_addr(addr)
   return true
 end
 
+--- Construct a connection manager.
+-- `opts` supports queue/dial limits and connection watermarks:
+-- `max_parallel_dials`, `max_dial_queue_length`, `max_peer_addrs_to_dial`,
+-- `address_dial_timeout`, `dial_timeout`, `max_connections`,
+-- `max_inbound_connections`, `max_outbound_connections`,
+-- `max_connections_per_peer`, `low_water`, and `high_water`.
+-- @tparam table host Host instance.
+-- @tparam[opt] table opts
+-- @treturn table manager
 function M.new(host, opts)
   local options = opts or {}
   return setmetatable({
@@ -151,6 +162,11 @@ function ConnectionManager:_remove_token(token)
   return false
 end
 
+--- Rank and filter candidate addresses for dialing.
+-- `opts.max_peer_addrs_to_dial` / `opts.max_dial_addrs` limits returned count.
+-- @tparam table addrs
+-- @tparam[opt] table opts
+-- @treturn table ranked
 function ConnectionManager:rank_addrs(addrs, opts)
   local options = opts or {}
   local seen = {}
@@ -187,6 +203,11 @@ function ConnectionManager:rank_addrs(addrs, opts)
   return out
 end
 
+--- Normalize dial options with manager defaults.
+-- `opts` may include `address_dial_timeout`, `dial_timeout`, `timeout`, `ctx`,
+-- `require_unlimited_connection`, and `allow_limited_connection`.
+-- @tparam[opt] table opts
+-- @treturn table options
 function ConnectionManager:prepare_dial_options(opts)
   local out = {}
   for k, v in pairs(opts or {}) do
@@ -204,6 +225,10 @@ function ConnectionManager:prepare_dial_options(opts)
   return out
 end
 
+--- Internal queued dial execution.
+-- `opts` is normalized via @{prepare_dial_options}; `ctx` provides cancellation
+-- and cooperative wait primitives.
+-- `opts.timeout` / `opts.address_dial_timeout` / `opts.dial_timeout` affect dial timing.
 function ConnectionManager:_run_dial(target, opts, key, ctx)
   local token = {}
   self.queue[#self.queue + 1] = token
@@ -236,6 +261,14 @@ function ConnectionManager:_run_dial(target, opts, key, ctx)
   return { conn = conn, state = state }
 end
 
+--- Open or join a connection dial task for a target.
+-- `opts` supports `ctx`, `force`, `timeout`, `address_dial_timeout`,
+-- `dial_timeout`, `require_unlimited_connection`, and `allow_limited_connection`.
+-- @param target Dial target.
+-- @tparam[opt] table opts
+-- @treturn table|nil conn
+-- @treturn[opt] table state
+-- @treturn[opt] table err
 function ConnectionManager:open_connection(target, opts)
   local options = opts or {}
   local ctx = options.ctx
@@ -408,6 +441,12 @@ function ConnectionManager:on_connection_closed(entry)
   return true
 end
 
+--- Prune low-value connections to satisfy limits.
+-- `opts` supports `direction`, `high`, and `low` watermarks.
+-- @tparam boolean force
+-- @tparam[opt] table opts
+-- @treturn true|nil ok
+-- @treturn[opt] table err
 function ConnectionManager:prune_if_needed(force, opts)
   local options = opts or {}
   local direction = options.direction
