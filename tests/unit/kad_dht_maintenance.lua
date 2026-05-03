@@ -68,6 +68,7 @@ local function run()
   local dht, dht_err = kad_dht.new(host, {
     local_peer_id = "local",
     hash_function = fake_hash,
+    maintenance_enabled = true,
     maintenance_interval_seconds = 0,
     maintenance_walk_every = 1,
   })

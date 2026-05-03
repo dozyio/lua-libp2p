@@ -666,6 +666,13 @@ function Client:start()
     return nil, err
   end
   self.started = true
+  if self._monitor_on_start then
+    local monitor_task, monitor_err = self:start_monitor(self._monitor_start_opts)
+    if not monitor_task then
+      self.started = false
+      return nil, monitor_err
+    end
+  end
   return true
 end
 
@@ -704,6 +711,8 @@ function M.new(host, opts)
     _pending = {},
     _verified = {},
     _monitor_task = nil,
+    _monitor_on_start = options.monitor_on_start == true,
+    _monitor_start_opts = options.monitor_start_opts or options.monitor_opts,
     results = {},
     started = false,
   }, Client)

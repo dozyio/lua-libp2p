@@ -20,7 +20,7 @@ M.DEFAULT_K = 20
 M.DEFAULT_ALPHA = 10
 M.DEFAULT_DISJOINT_PATHS = 10
 M.DEFAULT_ADDRESS_FILTER = "public"
-M.DEFAULT_MAINTENANCE_ENABLED = true
+M.DEFAULT_MAINTENANCE_ENABLED = false
 M.DEFAULT_MAINTENANCE_INTERVAL_SECONDS = 30
 M.DEFAULT_MAINTENANCE_MIN_RECHECK_SECONDS = 60
 M.DEFAULT_MAINTENANCE_MAX_CHECKS = 10
@@ -1977,7 +1977,7 @@ function M.new(host, opts)
     _peer_health = {},
     _dnsaddr_resolver = options.dnsaddr_resolver,
     _host_on_protocols_updated = nil,
-    _maintenance_enabled = options.maintenance_enabled ~= false and M.DEFAULT_MAINTENANCE_ENABLED,
+    _maintenance_enabled = options.maintenance_enabled == true or M.DEFAULT_MAINTENANCE_ENABLED,
     _maintenance_interval_seconds = options.maintenance_interval_seconds or M.DEFAULT_MAINTENANCE_INTERVAL_SECONDS,
     _maintenance_min_recheck_seconds = options.maintenance_min_recheck_seconds or M.DEFAULT_MAINTENANCE_MIN_RECHECK_SECONDS,
     _maintenance_max_checks = options.maintenance_max_checks or M.DEFAULT_MAINTENANCE_MAX_CHECKS,

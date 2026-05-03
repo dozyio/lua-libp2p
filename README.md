@@ -33,6 +33,7 @@ This repo currently includes:
 - connection upgrader pipeline (security + muxer negotiation) for plaintext+yamux and noise+yamux
 - host/node API with lifecycle (`start`/`stop`) and stream operations (`dial`, `new_stream`, `handle`)
 - Host behavior is configured at `new(...)`; `start()` takes no options
+- `host:dial(target, { force = true })` opens a fresh connection attempt instead of reusing or coalescing an existing connection; use `require_unlimited_connection = true` when a relayed limited connection must not be reused.
 - Lightweight integration test harness
 
 ## Project layout

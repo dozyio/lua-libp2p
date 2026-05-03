@@ -1021,6 +1021,15 @@ function Host:_spawn_stream_negotiation_task(stream, conn, entry)
       end
       return true
     end
+    emit_event(self, "stream:negotiated", {
+      peer_id = entry.state and entry.state.remote_peer_id or nil,
+      connection_id = entry.id,
+      protocol = protocol_id,
+      limited = self:_connection_is_limited(entry.state),
+      relay_limit_kind = entry.state and entry.state.relay and entry.state.relay.limit_kind or nil,
+      direction = entry.state and entry.state.direction or nil,
+      remote_addr = entry.state and entry.state.remote_addr or nil,
+    })
     if handler then
       self:_spawn_handler_task(handler, {
         stream = stream,
@@ -1123,6 +1132,9 @@ function Host:_handle_identify(stream, ctx)
     and ctx.connection:raw().remote_multiaddr
   then
     observed = ctx.connection:raw():remote_multiaddr()
+    if type(observed) ~= "string" or observed == "" or observed:sub(1, 1) ~= "/" or not multiaddr.parse(observed) then
+      observed = nil
+    end
   end
 
   local msg = {
@@ -1136,6 +1148,15 @@ function Host:_handle_identify(stream, ctx)
     observedAddr = observed,
     protocols = list_protocol_handlers(self._handlers),
   }
+
+  emit_event(self, "identify:response:send", {
+    peer_id = ctx and ctx.state and ctx.state.remote_peer_id or nil,
+    connection_id = ctx and ctx.state and ctx.state.connection_id or nil,
+    limited = ctx and ctx.state and self:_connection_is_limited(ctx.state) or false,
+    relay_limit_kind = ctx and ctx.state and ctx.state.relay and ctx.state.relay.limit_kind or nil,
+    observed_addr = observed,
+    listen_addr_count = #msg.listenAddrs,
+  })
 
   local wrote, write_err = identify.write(stream, msg)
   if not wrote then
@@ -2387,9 +2408,11 @@ function Host:_dial_direct(peer_or_addr, opts)
     resolved.peer_id = extract_peer_id_from_multiaddr(resolved.addr)
   end
 
-  local existing = self:_find_connection(resolved.peer_id, opts)
-  if existing then
-    return existing.conn, existing.state
+  if opts.force ~= true then
+    local existing = self:_find_connection(resolved.peer_id, opts)
+    if existing then
+      return existing.conn, existing.state
+    end
   end
 
   local candidate_addrs

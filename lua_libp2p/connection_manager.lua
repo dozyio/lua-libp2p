@@ -239,6 +239,9 @@ end
 function ConnectionManager:open_connection(target, opts)
   local options = opts or {}
   local ctx = options.ctx
+  if options.force == true then
+    return self.host:_dial_direct(target, self:prepare_dial_options(options))
+  end
   if not ctx or type(ctx.await_task) ~= "function" then
     return self.host:_dial_direct(target, self:prepare_dial_options(options))
   end

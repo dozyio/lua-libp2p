@@ -85,6 +85,9 @@ local function normalize_multiaddr_bytes(value)
   if type(value) ~= "string" then
     return nil, error_mod.new("input", "identify multiaddr field must be bytes/string")
   end
+  if value == "" then
+    return nil, error_mod.new("input", "identify multiaddr field must not be empty")
+  end
   if value:sub(1, 1) == "/" then
     return multiaddr.to_bytes(value)
   end
@@ -168,6 +171,9 @@ function M.encode(message)
   end
 
   local observed_addr = message.observedAddr
+  if observed_addr == "" then
+    observed_addr = nil
+  end
   if observed_addr ~= nil then
     observed_addr, err = normalize_multiaddr_bytes(observed_addr)
     if not observed_addr then

@@ -6,6 +6,11 @@ package.path = table.concat({
 
 local tests = {
   (require("tests.integration.dummy_loopback")),
+  (require("tests.integration.dcutr_auto_policy")),
+  (require("tests.integration.dcutr_handshake_e2e")),
+  (require("tests.integration.dcutr_unilateral_fallback")),
+  (require("tests.integration.dcutr_relay_grace_close")),
+  (require("tests.integration.dcutr_retry_events")),
   (require("tests.integration.identify_tcp")),
   (require("tests.integration.host_luv_runtime_identify_event")),
   (require("tests.integration.host_luv_native_coroutine_resume")),
@@ -44,6 +49,7 @@ local tests = {
   (require("tests.unit.host_runtime_luv")),
   (require("tests.unit.autonat_v2")),
   (require("tests.unit.autonat_client")),
+  (require("tests.unit.dcutr")),
   (require("tests.unit.upnp")),
   (require("tests.unit.identify")),
   (require("tests.unit.circuit_relay_v2")),
