@@ -91,6 +91,15 @@ local function build_timeout_timer(seconds, on_timeout)
   return timer
 end
 
+local function close_timer(timer)
+  if timer then
+    pcall(function()
+      timer:stop()
+      timer:close()
+    end)
+  end
+end
+
 local function classify_uv_error(err, io_message)
   if type(err) == "table" and err.kind then
     return err
@@ -175,6 +184,7 @@ function NativeConnection:new(raw, opts)
     _tx_consumed = "",
     _watch_callbacks = {},
     _write_watch_callbacks = {},
+    _active_timers = {},
     _next_watch_id = 1,
     _peer_host = options.peer_host,
     _peer_port = options.peer_port,
@@ -256,6 +266,27 @@ end
 function NativeConnection:set_context(ctx)
   self._ctx = ctx
   return true
+end
+
+function NativeConnection:_track_timer(timer)
+  if timer then
+    self._active_timers[timer] = true
+  end
+  return timer
+end
+
+function NativeConnection:_untrack_timer(timer)
+  if timer then
+    self._active_timers[timer] = nil
+  end
+  return timer
+end
+
+function NativeConnection:_close_active_timers()
+  for timer in pairs(self._active_timers) do
+    close_timer(timer)
+    self._active_timers[timer] = nil
+  end
 end
 
 function NativeConnection:begin_read_tx()
@@ -353,14 +384,14 @@ function NativeConnection:write(payload)
 
   local done = false
   local write_err = nil
-  local timer = build_timeout_timer(self._io_timeout, function()
+  local timer = self:_track_timer(build_timeout_timer(self._io_timeout, function()
     if done then
       return
     end
     done = true
     write_err = error_mod.new("timeout", "write timed out")
     self:_notify_write_watchers()
-  end)
+  end))
 
   self._raw:write(payload, function(err)
     if done then
@@ -381,20 +412,16 @@ function NativeConnection:write(payload)
         goto continue_write_wait
       end
       -- Non-yieldable callers preserve the historical queued-write behavior.
-      if timer then
-        timer:stop()
-        timer:close()
-      end
+      close_timer(timer)
+      self:_untrack_timer(timer)
       return true
     end
 
     ::continue_write_wait::
   end
 
-  if timer then
-    timer:stop()
-    timer:close()
-  end
+  close_timer(timer)
+  self:_untrack_timer(timer)
 
   if write_err then
     if type(write_err) == "table" and write_err.kind then
@@ -444,7 +471,7 @@ function NativeConnection:read(length)
 
   local done = false
   local read_err = nil
-  local timer = build_timeout_timer(self._io_timeout, function()
+  local timer = self:_track_timer(build_timeout_timer(self._io_timeout, function()
     if done then
       return
     end
@@ -453,7 +480,7 @@ function NativeConnection:read(length)
     for _, cb in pairs(self._watch_callbacks) do
       cb()
     end
-  end)
+  end))
 
   while not done do
     if #self._pending >= length then
@@ -483,10 +510,8 @@ function NativeConnection:read(length)
     ::continue_read_wait::
   end
 
-  if timer then
-    timer:stop()
-    timer:close()
-  end
+  close_timer(timer)
+  self:_untrack_timer(timer)
 
   if read_err then
     if type(read_err) == "table" and read_err.kind then
@@ -524,6 +549,7 @@ function NativeConnection:close()
     return true
   end
   self._closed = true
+  self:_close_active_timers()
   pcall(function()
     self._raw:read_stop()
   end)
