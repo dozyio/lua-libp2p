@@ -40,6 +40,18 @@ local function emit_task_event(host, name, payload)
   return true
 end
 
+local function is_nonfatal_stream_error(err)
+  if not (err and error_mod.is_error(err)) then
+    return false
+  end
+  return err.kind == "timeout"
+    or err.kind == "busy"
+    or err.kind == "closed"
+    or err.kind == "decode"
+    or err.kind == "protocol"
+    or err.kind == "unsupported"
+end
+
 local function make_task_context(task)
   local ctx = {}
   function ctx:id()
@@ -213,6 +225,35 @@ function M.install(Host)
       stats.by_service[service] = (stats.by_service[service] or 0) + 1
     end
     return stats
+  end
+
+  function Host:_spawn_handler_task(handler, ctx)
+    return self:spawn_task("handler." .. tostring(ctx.protocol or "unknown"), function(task_ctx)
+      local handler_ctx = {}
+      for k, v in pairs(ctx or {}) do
+        handler_ctx[k] = v
+      end
+      for k, v in pairs(task_ctx) do
+        if handler_ctx[k] == nil then
+          handler_ctx[k] = v
+        end
+      end
+      local result, err = handler(ctx.stream, handler_ctx)
+      if result == nil and err then
+        if is_nonfatal_stream_error(err) then
+          if ctx.connection and type(ctx.connection.close) == "function" then
+            ctx.connection:close()
+          end
+          return true
+        end
+        return nil, err
+      end
+      return result
+    end, {
+      service = "handler",
+      protocol = ctx.protocol,
+      peer_id = ctx.peer_id,
+    })
   end
 
   function Host:_cleanup_task_waiters(task)

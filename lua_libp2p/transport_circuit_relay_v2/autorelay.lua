@@ -616,15 +616,58 @@ end
 --- Stop AutoRelay subscriptions.
 -- @treturn true
 function AutoRelay:stop()
+  if self._tick_task and self.host and type(self.host.cancel_task) == "function" then
+    self.host:cancel_task(self._tick_task.id)
+  end
   if self._protocol_subscription and self.host and type(self.host.off) == "function" then
     self.host:off("peer_protocols_updated", self._protocol_subscription)
   end
   if self._connection_closed_subscription and self.host and type(self.host.off) == "function" then
     self.host:off("connection_closed", self._connection_closed_subscription)
   end
+  self._tick_task = nil
   self._protocol_subscription = nil
   self._connection_closed_subscription = nil
   self.started = false
+  return true
+end
+
+function AutoRelay:on_host_started()
+  if not (self.host and type(self.host.spawn_task) == "function") then
+    return true
+  end
+  local existing = self._tick_task
+  if existing and existing.status ~= "completed" and existing.status ~= "failed" and existing.status ~= "cancelled" then
+    return true
+  end
+  local interval = tonumber(self.tick_interval) or 1
+  if interval < 0 then
+    interval = 1
+  end
+  local task, task_err = self.host:spawn_task("autorelay.tick", function(ctx)
+    while self.host._running and self.started do
+      local ok, tick_err = self:tick()
+      if not ok then
+        return nil, tick_err
+      end
+      if interval > 0 then
+        local slept, sleep_err = ctx:sleep(interval)
+        if slept == nil and sleep_err then
+          return nil, sleep_err
+        end
+      else
+        local checkpoint_ok, checkpoint_err = ctx:checkpoint()
+        if checkpoint_ok == nil and checkpoint_err then
+          return nil, checkpoint_err
+        end
+      end
+    end
+    return true
+  end, { service = "autorelay" })
+  if not task then
+    return nil, task_err
+  end
+  self._tick_task = task
   return true
 end
 
@@ -769,6 +812,7 @@ function M.new(host, opts)
     _queued = {},
     _targets = {},
     _reserve_tasks = {},
+    _tick_task = nil,
     started = false,
   }, AutoRelay)
 end

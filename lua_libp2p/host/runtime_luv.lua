@@ -220,19 +220,6 @@ function M.tick(host)
     return nil, err
   end
 
-  if #host._handler_tasks > 0 then
-    local task_ok, task_err = host:_run_handler_tasks()
-    if not task_ok then
-      host:_set_runtime_error("luv", task_err)
-      return nil, task_err
-    end
-    ok, err = pump_waiting_connections(host)
-    if not ok then
-      host:_set_runtime_error("luv", err)
-      return nil, err
-    end
-  end
-
   if type(host._run_background_tasks) == "function" then
     ok, err = host:_run_background_tasks()
     if not ok then

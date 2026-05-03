@@ -79,10 +79,6 @@ local function run()
 
   local ev, ev_err
   for _ = 1, 8 do
-    local ran, run_err = host:_run_handler_tasks()
-    if not ran then
-      return nil, run_err
-    end
     local bg_ok, bg_err = host:_run_background_tasks()
     if not bg_ok then
       return nil, bg_err

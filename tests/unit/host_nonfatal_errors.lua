@@ -16,7 +16,6 @@ local function new_host()
     error(err)
   end
   h._tcp_transport = { BACKEND = "test" }
-  h._scheduler_connection_pump = false
   return h
 end
 
@@ -103,15 +102,16 @@ local function run_inner()
       state = {},
     })
 
-    local ok, err = h:_run_handler_tasks()
+    local ok, err = h:_run_background_tasks()
     if not ok then
       return nil, string.format("expected nonfatal handler error '%s' to continue: %s", kind, tostring(err))
     end
     if not closed then
       return nil, string.format("nonfatal handler error '%s' should close connection", kind)
     end
-    if #h._handler_tasks ~= 0 then
-      return nil, "handler task should be removed after completion"
+    local task = h:list_tasks()[1]
+    if not task or task.status ~= "completed" then
+      return nil, "handler task should complete after nonfatal error"
     end
   end
 
@@ -126,9 +126,13 @@ local function run_inner()
       state = {},
     })
 
-    local ok, err = h:_run_handler_tasks()
-    if ok or not err then
-      return nil, "expected fatal handler task error to fail host"
+    local ok, err = h:_run_background_tasks()
+    if not ok then
+      return nil, err
+    end
+    local task = h:list_tasks()[1]
+    if not task or task.status ~= "failed" then
+      return nil, "expected fatal handler task error to fail task"
     end
   end
 
