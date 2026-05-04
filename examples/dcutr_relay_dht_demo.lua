@@ -355,7 +355,7 @@ host:on("dcutr:attempt:skipped", function(payload)
 	return true
 end)
 
-host:on("autonat:address:checked", function(payload)
+host:on("autonat:reachability:checked", function(payload)
 	io.stdout:write(
 		"autonat checked: addr="
 			.. tostring(payload and payload.addr)

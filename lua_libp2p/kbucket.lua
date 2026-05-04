@@ -270,6 +270,26 @@ function RoutingTable:find_peer(peer)
   return copy_entry(entry)
 end
 
+function RoutingTable:bucket_for_peer(peer)
+  local peer_id, _, peer_err = normalize_peer_id(peer)
+  if not peer_id then
+    return nil, peer_err
+  end
+  local entry = self._entries[peer_id]
+  if entry then
+    return entry.bucket
+  end
+  local _, key_bytes, key_err = normalize_peer_id(peer)
+  if not key_bytes then
+    return nil, key_err
+  end
+  local hashed, hash_err = self:_hash(key_bytes)
+  if not hashed then
+    return nil, hash_err
+  end
+  return self:_bucket_for_hash(hashed)
+end
+
 function RoutingTable:size()
   local total = 0
   for _ in pairs(self._entries) do

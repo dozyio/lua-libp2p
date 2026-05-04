@@ -48,6 +48,7 @@ function M.resume_inbound_upgrade(host, pending_entry, is_nonfatal_stream_error)
           return nil, up_err
         end
         state.direction = state.direction or "inbound"
+        state.resource_scope = pending_entry.resource_scope
         local entry, register_err = host:_register_connection(conn, state)
         if not entry then
           conn:close()
@@ -97,6 +98,7 @@ function M.resume_inbound_upgrade(host, pending_entry, is_nonfatal_stream_error)
   end
   if conn then
     state.direction = state.direction or "inbound"
+    state.resource_scope = pending_entry.resource_scope
     local entry, register_err = host:_register_connection(conn, state)
     if not entry then
       conn:close()
@@ -196,6 +198,16 @@ function M.process_connection(host, entry, router, is_nonfatal_stream_error)
     return nil, stream_err
   end
   if stream and handler then
+    local stream_scope, resource_err = host:_open_stream_resource(entry, "inbound", protocol_id)
+    if resource_err then
+      if type(stream.reset_now) == "function" then
+        pcall(function() stream:reset_now() end)
+      elseif type(stream.close) == "function" then
+        pcall(function() stream:close() end)
+      end
+      return nil, resource_err
+    end
+    stream = host:_wrap_stream_resource(stream, stream_scope)
     if host:_connection_is_limited(entry.state)
       and not host:_protocol_allowed_on_limited_connection(protocol_id, handler_options)
     then

@@ -277,10 +277,28 @@ function M.install(Host)
       end
     end
 
+    local stream_scope, resource_err = self:_open_stream_resource({ state = state }, "outbound")
+    if resource_err then
+      return nil, nil, nil, resource_err
+    end
+
     local stream, selected, stream_err = conn:new_stream(protocols)
     if not stream then
+      self:_close_stream_resource(stream_scope)
       return nil, nil, nil, stream_err
     end
+
+    local set_ok, set_err = self:_set_stream_resource_protocol(stream_scope, selected)
+    if not set_ok then
+      if type(stream.reset_now) == "function" then
+        pcall(function() stream:reset_now() end)
+      elseif type(stream.close) == "function" then
+        pcall(function() stream:close() end)
+      end
+      self:_close_stream_resource(stream_scope)
+      return nil, nil, nil, set_err
+    end
+    stream = self:_wrap_stream_resource(stream, stream_scope)
 
     return stream, selected, conn, state
   end

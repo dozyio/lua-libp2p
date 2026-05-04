@@ -66,6 +66,47 @@ local function run()
     return nil, "expected only announce addr after relay removal"
   end
 
+  local mapped = "/ip4/203.0.113.9/tcp/4001"
+  local added = am:add_public_address_mapping({
+    external_addr = mapped,
+    internal_addr = "/ip4/192.168.1.2/tcp/4001",
+    verified = false,
+    status = "unknown",
+    source = "upnp_nat",
+  })
+  if not added then
+    return nil, "expected unverified public mapping add"
+  end
+  if #am:get_advertise_addrs() ~= 1 then
+    return nil, "unverified public mapping should not be advertised"
+  end
+  local verified = am:verify_public_address_mapping(mapped, {
+    source = "autonat_v2",
+    server_peer_id = "peer-a",
+  })
+  if not verified then
+    return nil, "expected public mapping verification"
+  end
+  local mapped_meta = am:get_reachability(mapped)
+  if not mapped_meta or mapped_meta.verified ~= true or mapped_meta.status ~= "public" or mapped_meta.source ~= "autonat_v2" then
+    return nil, "verified public mapping should store AutoNAT metadata"
+  end
+  advertised = am:get_advertise_addrs()
+  if advertised[#advertised] ~= mapped then
+    return nil, "verified public mapping should be advertised"
+  end
+  am:add_public_address_mapping({
+    external_addr = mapped,
+    internal_addr = "/ip4/192.168.1.2/tcp/4001",
+    verified = false,
+    status = "unknown",
+    source = "upnp_nat",
+  })
+  mapped_meta = am:get_reachability(mapped)
+  if not mapped_meta or mapped_meta.verified ~= true or mapped_meta.status ~= "public" or mapped_meta.source ~= "autonat_v2" then
+    return nil, "unverified UPnP refresh should not downgrade verified mapping"
+  end
+
   return true
 end
 

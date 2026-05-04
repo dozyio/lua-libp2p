@@ -40,6 +40,13 @@ local function protocol_delta(before, after)
   return added
 end
 
+local function join_list(values)
+  if type(values) ~= "table" or #values == 0 then
+    return ""
+  end
+  return table.concat(values, ",")
+end
+
 local function identify_listen_addrs(message)
   local out = {}
   for _, addr in ipairs(message.listenAddrs or {}) do
@@ -125,12 +132,16 @@ function M.install(Host)
       return nil, error_mod.new("input", "identify request requires peer id")
     end
 
-    local stream, selected, conn, state_or_err = self:new_stream(peer_id, { identify.ID }, opts)
+    local attempted_protocols = { identify.ID }
+    local known_protocols = self.peerstore and self.peerstore:get_protocols(peer_id) or {}
+    local stream, selected, conn, state_or_err = self:new_stream(peer_id, attempted_protocols, opts)
     if not stream then
       log.debug("identify request stream open failed", {
         subsystem = "identify",
         peer_id = peer_id,
         cause = tostring(state_or_err),
+        attempted_protocols = join_list(attempted_protocols),
+        known_protocols = join_list(known_protocols),
       })
       return nil, state_or_err
     end
@@ -238,15 +249,20 @@ function M.install(Host)
       self._identify_inflight[pid] = nil
 
       if not result then
+        local known_protocols = self.peerstore and self.peerstore:get_protocols(pid) or {}
         log.warn("identify on connect failed", {
           subsystem = "identify",
           peer_id = pid,
           cause = tostring(identify_err),
+          attempted_protocols = identify.ID,
+          known_protocols = join_list(known_protocols),
           inflight = map_count(self._identify_inflight),
         })
         local ok, emit_err = self:emit("peer_identify_failed", {
           peer_id = pid,
           cause = identify_err,
+          attempted_protocols = { identify.ID },
+          known_protocols = known_protocols,
         })
         if not ok then
           return nil, emit_err

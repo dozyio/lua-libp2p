@@ -1,6 +1,7 @@
 --- KAD protobuf protocol framing and codec helpers.
 -- @module lua_libp2p.kad_dht.protocol
 local error_mod = require("lua_libp2p.error")
+local multiaddr = require("lua_libp2p.multiaddr")
 local network = require("lua_libp2p.network")
 local peerid = require("lua_libp2p.peerid")
 local varint = require("lua_libp2p.multiformats.varint")
@@ -184,7 +185,15 @@ local function normalize_peer(peer)
       if type(addr) ~= "string" then
         return nil, error_mod.new("input", "peer addr must be bytes/string")
       end
-      addrs[#addrs + 1] = addr
+      if addr:sub(1, 1) == "/" then
+        local addr_bytes, addr_err = multiaddr.to_bytes(addr)
+        if not addr_bytes then
+          return nil, addr_err
+        end
+        addrs[#addrs + 1] = addr_bytes
+      else
+        addrs[#addrs + 1] = addr
+      end
     end
   end
 

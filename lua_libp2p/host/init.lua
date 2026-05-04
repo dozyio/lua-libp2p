@@ -20,6 +20,7 @@ local host_tasks = require("lua_libp2p.host.tasks")
 local host_runtime_luv = require("lua_libp2p.host.runtime_luv")
 local host_runtime_luv_native = require("lua_libp2p.host.runtime_luv_native")
 local peerstore = require("lua_libp2p.peerstore")
+local resource_manager = require("lua_libp2p.resource_manager")
 local relay_proto = require("lua_libp2p.transport_circuit_relay_v2.protocol")
 local upgrader = require("lua_libp2p.network.upgrader")
 local tcp_luv = require("lua_libp2p.transport_tcp.luv")
@@ -64,6 +65,7 @@ local function is_nonfatal_stream_error(err)
     or err.kind == "closed"
     or err.kind == "decode"
     or err.kind == "protocol"
+    or err.kind == "resource"
     or err.kind == "unsupported"
 end
 
@@ -151,6 +153,20 @@ local function tcp_options_from_config(cfg)
   }
 end
 
+local function resource_manager_from_config(cfg)
+  if cfg.resource_manager == false then
+    return nil
+  end
+  if type(cfg.resource_manager) == "table" and type(cfg.resource_manager.open_connection) == "function" then
+    return cfg.resource_manager
+  end
+  local options = cfg.resource_manager_options
+  if options == nil and type(cfg.resource_manager) == "table" then
+    options = cfg.resource_manager
+  end
+  return resource_manager.new(options or {})
+end
+
 function Host:new(config)
   local cfg = config or {}
   local runtime_name = cfg.runtime or "auto"
@@ -231,6 +247,7 @@ function Host:new(config)
     _io_timeout = cfg.io_timeout or 10,
     _accept_timeout = cfg.accept_timeout or 0,
     _tcp_options = tcp_options_from_config(cfg),
+    resource_manager = resource_manager_from_config(cfg),
     _service_options = {
       identify = cfg.identify or {},
       autonat = cfg.autonat or {},
@@ -298,10 +315,31 @@ function Host:_spawn_stream_negotiation_task(stream, conn, entry)
     if not router then
       return nil, router_err
     end
+    local stream_scope, resource_err = self:_open_stream_resource(entry, "inbound")
+    if resource_err then
+      if type(stream.reset_now) == "function" then
+        pcall(function() stream:reset_now() end)
+      elseif type(stream.close) == "function" then
+        pcall(function() stream:close() end)
+      end
+      return nil, resource_err
+    end
     local protocol_id, handler, handler_options, neg_err = router:negotiate(stream)
     if not protocol_id then
+      self:_close_stream_resource(stream_scope)
       return nil, neg_err
     end
+    local set_ok, set_err = self:_set_stream_resource_protocol(stream_scope, protocol_id)
+    if not set_ok then
+      if type(stream.reset_now) == "function" then
+        pcall(function() stream:reset_now() end)
+      elseif type(stream.close) == "function" then
+        pcall(function() stream:close() end)
+      end
+      self:_close_stream_resource(stream_scope)
+      return nil, set_err
+    end
+    stream = self:_wrap_stream_resource(stream, stream_scope)
     if self:_connection_is_limited(entry.state)
       and not self:_protocol_allowed_on_limited_connection(protocol_id, handler_options)
     then
@@ -310,6 +348,7 @@ function Host:_spawn_stream_negotiation_task(stream, conn, entry)
       elseif type(stream.close) == "function" then
         pcall(function() stream:close() end)
       end
+      self:_release_stream_resource(stream)
       return true
     end
     if self._debug_connection_events then
@@ -378,12 +417,124 @@ function Host:peer_id()
   return self._peer_id
 end
 
+function Host:_open_connection_resource(direction, peer_id, opts)
+  if not self.resource_manager or type(self.resource_manager.open_connection) ~= "function" then
+    return nil
+  end
+  return self.resource_manager:open_connection(direction, peer_id, opts)
+end
+
+function Host:_close_connection_resource(scope)
+  if scope and self.resource_manager and type(self.resource_manager.close_connection) == "function" then
+    return self.resource_manager:close_connection(scope)
+  end
+  return true
+end
+
+function Host:_set_connection_resource_peer(scope, peer_id)
+  if scope and peer_id and self.resource_manager and type(self.resource_manager.set_connection_peer) == "function" then
+    return self.resource_manager:set_connection_peer(scope, peer_id)
+  end
+  return true
+end
+
+function Host:_open_stream_resource(entry, direction, protocol_id)
+  if not self.resource_manager or type(self.resource_manager.open_stream) ~= "function" then
+    return nil
+  end
+  local peer_id = entry and entry.state and entry.state.remote_peer_id or nil
+  return self.resource_manager:open_stream(peer_id, direction, protocol_id)
+end
+
+function Host:_set_stream_resource_protocol(scope, protocol_id)
+  if scope and self.resource_manager and type(self.resource_manager.set_stream_protocol) == "function" then
+    return self.resource_manager:set_stream_protocol(scope, protocol_id)
+  end
+  return true
+end
+
+function Host:_close_stream_resource(scope)
+  if scope and self.resource_manager and type(self.resource_manager.close_stream) == "function" then
+    return self.resource_manager:close_stream(scope)
+  end
+  return true
+end
+
+function Host:_wrap_stream_resource(stream, scope)
+  if not scope or type(stream) ~= "table" or stream._resource_managed_stream then
+    return stream
+  end
+  local wrapper = {
+    _inner = stream,
+    _resource_scope = scope,
+    _resource_host = self,
+    _resource_managed_stream = true,
+  }
+  function wrapper:close(...)
+    local inner = self._inner
+    local result, err = true, nil
+    if inner and type(inner.close) == "function" then
+      result, err = inner:close(...)
+    end
+    self._resource_host:_release_stream_resource(self)
+    return result, err
+  end
+  function wrapper:reset_now(...)
+    local inner = self._inner
+    local result, err = true, nil
+    if inner and type(inner.reset_now) == "function" then
+      result, err = inner:reset_now(...)
+    elseif inner and type(inner.close) == "function" then
+      result, err = inner:close(...)
+    end
+    self._resource_host:_release_stream_resource(self)
+    return result, err
+  end
+  return setmetatable(wrapper, {
+    __index = function(t, key)
+      local inner = rawget(t, "_inner")
+      local value = inner and inner[key]
+      if type(value) == "function" then
+        return function(_, ...)
+          return value(inner, ...)
+        end
+      end
+      return value
+    end,
+  })
+end
+
+function Host:_release_stream_resource(stream)
+  if type(stream) == "table" and stream._resource_managed_stream and stream._resource_scope then
+    local scope = stream._resource_scope
+    stream._resource_scope = nil
+    return self:_close_stream_resource(scope)
+  end
+  return true
+end
+
 function Host:_register_connection(conn, state)
   state = state or {}
   state.direction = state.direction or "unknown"
+  local resource_scope = state.resource_scope
+  if not resource_scope then
+    local opened_scope, resource_err = self:_open_connection_resource(state.direction, state.remote_peer_id)
+    if resource_err then
+      return nil, resource_err
+    end
+    resource_scope = opened_scope
+    state.resource_scope = resource_scope
+  else
+    local set_ok, set_err = self:_set_connection_resource_peer(resource_scope, state.remote_peer_id)
+    if not set_ok then
+      self:_close_connection_resource(resource_scope)
+      return nil, set_err
+    end
+  end
   if self.connection_manager and type(self.connection_manager.can_open_connection) == "function" then
     local can_open, limit_err = self.connection_manager:can_open_connection(state)
     if not can_open then
+      self:_close_connection_resource(resource_scope)
       return nil, limit_err
     end
   end
@@ -393,6 +544,7 @@ function Host:_register_connection(conn, state)
 
   local function rollback_registration()
     host_connections.remove(self, entry)
+    self:_close_connection_resource(entry.state and entry.state.resource_scope)
     if entry._connection_manager_tracked
       and self.connection_manager
       and type(self.connection_manager.on_connection_closed) == "function"
@@ -474,6 +626,7 @@ function Host:_unregister_connection(index, entry, cause)
   if self.connection_manager and type(self.connection_manager.on_connection_closed) == "function" then
     self.connection_manager:on_connection_closed(entry)
   end
+  self:_close_connection_resource(entry.state and entry.state.resource_scope)
   local peer_ok, peer_err = emit_event(self, "peer_disconnected", {
     connection = entry.conn,
     connection_id = entry.id,
@@ -502,12 +655,17 @@ function Host:stats()
   if self.connection_manager and type(self.connection_manager.stats) == "function" then
     connection_stats = self.connection_manager:stats()
   end
+  local resource_stats = nil
+  if self.resource_manager and type(self.resource_manager.stats) == "function" then
+    resource_stats = self.resource_manager:stats()
+  end
   return {
     runtime = self._runtime,
     running = self._running == true,
     peer_id = self:peer_id().id,
     tasks = self:task_stats(),
     connections = connection_stats,
+    resources = resource_stats,
   }
 end
 
@@ -581,6 +739,7 @@ function Host:_process_runtime_events(timeout, ready_map)
       remove_pending_relay_inbound(i, pending)
       state.direction = state.direction or "inbound"
       state.relay = pending.relay
+      state.resource_scope = pending.resource_scope
       local entry, register_err = self:_register_connection(conn, state)
       if not entry then
         conn:close()
@@ -588,6 +747,7 @@ function Host:_process_runtime_events(timeout, ready_map)
       end
     elseif not (up_err and error_mod.is_error(up_err) and up_err.kind == "timeout") then
       remove_pending_relay_inbound(i, pending)
+      self:_close_connection_resource(pending.resource_scope)
       if raw_conn and type(raw_conn.close) == "function" then
         raw_conn:close()
       end
@@ -632,6 +792,9 @@ function Host:_process_runtime_events(timeout, ready_map)
         raw_conn:commit_read_tx()
       end
       state.direction = state.direction or "inbound"
+      if type(pending_entry) == "table" then
+        state.resource_scope = pending_entry.resource_scope
+      end
       table.remove(self._pending_inbound, i)
       local entry, register_err = self:_register_connection(conn, state)
       if not entry then
@@ -648,12 +811,18 @@ function Host:_process_runtime_events(timeout, ready_map)
         raw_conn:rollback_read_tx()
       end
       table.remove(self._pending_inbound, i)
+      if type(pending_entry) == "table" then
+        self:_close_connection_resource(pending_entry.resource_scope)
+      end
       raw_conn:close()
     else
       if raw_conn and type(raw_conn.rollback_read_tx) == "function" then
         raw_conn:rollback_read_tx()
       end
       table.remove(self._pending_inbound, i)
+      if type(pending_entry) == "table" then
+        self:_close_connection_resource(pending_entry.resource_scope)
+      end
       raw_conn:close()
       return nil, up_err
     end
@@ -680,8 +849,13 @@ function Host:_process_runtime_events(timeout, ready_map)
     end
 
     if raw_conn then
+      local resource_scope, resource_err = self:_open_connection_resource("inbound", nil, { transient = true })
+      if resource_err then
+        raw_conn:close()
+        return nil, resource_err
+      end
       if host_runtime_luv_native.is_native_host(self) then
-        self._pending_inbound[#self._pending_inbound + 1] = { raw_conn = raw_conn }
+        self._pending_inbound[#self._pending_inbound + 1] = { raw_conn = raw_conn, resource_scope = resource_scope }
         goto continue_listeners
       end
 
@@ -703,13 +877,14 @@ function Host:_process_runtime_events(timeout, ready_map)
           if raw_conn and type(raw_conn.rollback_read_tx) == "function" then
             raw_conn:rollback_read_tx()
           end
-          self._pending_inbound[#self._pending_inbound + 1] = raw_conn
+          self._pending_inbound[#self._pending_inbound + 1] = { raw_conn = raw_conn, resource_scope = resource_scope }
           goto continue_listeners
         end
 
         if raw_conn and type(raw_conn.rollback_read_tx) == "function" then
           raw_conn:rollback_read_tx()
         end
+        self:_close_connection_resource(resource_scope)
         raw_conn:close()
         if is_nonfatal_stream_error(up_err) then
           goto continue_listeners
@@ -720,6 +895,7 @@ function Host:_process_runtime_events(timeout, ready_map)
         raw_conn:commit_read_tx()
       end
       state.direction = state.direction or "inbound"
+      state.resource_scope = resource_scope
       local entry, register_err = self:_register_connection(conn, state)
       if not entry then
         conn:close()
@@ -816,6 +992,16 @@ function Host:_process_runtime_events(timeout, ready_map)
         return nil, stream_err
       end
       if stream and handler then
+        local stream_scope, resource_err = self:_open_stream_resource(entry, "inbound", protocol_id)
+        if resource_err then
+          if type(stream.reset_now) == "function" then
+            pcall(function() stream:reset_now() end)
+          elseif type(stream.close) == "function" then
+            pcall(function() stream:close() end)
+          end
+          return nil, resource_err
+        end
+        stream = self:_wrap_stream_resource(stream, stream_scope)
         if self:_connection_is_limited(entry.state)
           and not self:_protocol_allowed_on_limited_connection(protocol_id, handler_options)
         then
@@ -965,11 +1151,22 @@ function Host:close()
 
   for _, pending_entry in ipairs(self._pending_inbound) do
     local raw_conn = host_runtime_luv_native.pending_raw(pending_entry)
+    if type(pending_entry) == "table" then
+      self:_close_connection_resource(pending_entry.resource_scope)
+    end
     if raw_conn and type(raw_conn.close) == "function" then
       raw_conn:close()
     end
   end
   self._pending_inbound = {}
+
+  for _, pending in ipairs(self._pending_relay_inbound) do
+    self:_close_connection_resource(pending.resource_scope)
+    if pending.raw_conn and type(pending.raw_conn.close) == "function" then
+      pending.raw_conn:close()
+    end
+  end
+  self._pending_relay_inbound = {}
 
   self:_close_listeners()
 

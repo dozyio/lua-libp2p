@@ -138,6 +138,34 @@ function M.to_cid(peer_id_bytes)
   return cid.encode_v1(LIBP2P_KEY_CODEC, peer_id_bytes, "base32")
 end
 
+--- Parse raw peer id multihash bytes.
+function M.from_bytes(peer_id_bytes)
+  if type(peer_id_bytes) ~= "string" or peer_id_bytes == "" then
+    return nil, error_mod.new("input", "peer id bytes must be non-empty")
+  end
+  local mh, mh_err = multihash.decode(peer_id_bytes)
+  if not mh then
+    return nil, mh_err
+  end
+
+  local key_type
+  local public_key
+  local public_key_proto
+  if mh.code == multihash.IDENTITY then
+    public_key_proto = mh.digest
+    local decoded_key = key_pb.decode_public_key(public_key_proto)
+    if decoded_key then
+      key_type = decoded_key.type_name
+      if decoded_key.type == key_pb.KEY_TYPE.Ed25519 and #decoded_key.data == 32 then
+        key_type = "ed25519"
+        public_key = decoded_key.data
+      end
+    end
+  end
+
+  return build_peer_id_record(peer_id_bytes, key_type, public_key, public_key_proto)
+end
+
 --- Parse a peer id string (base58 or CIDv1).
 function M.parse(text)
   if type(text) ~= "string" or text == "" then

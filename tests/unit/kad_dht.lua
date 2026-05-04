@@ -1,12 +1,18 @@
 local kad_dht = require("lua_libp2p.kad_dht")
 local kad_protocol = require("lua_libp2p.kad_dht.protocol")
+local multihash = require("lua_libp2p.multiformats.multihash")
+
+local CONTENT_KEY = assert(multihash.sha2_256("cid-key"))
 
 local function fake_hash(value)
   local map = {
     ["local"] = string.char(0) .. string.rep("\0", 31),
     ["peer-a"] = string.char(128) .. string.rep("\0", 31),
     ["peer-b"] = string.char(129) .. string.rep("\0", 31),
+    ["closest-a"] = string.char(128) .. string.rep("\0", 31),
+    ["closest-b"] = string.char(200) .. string.rep("\0", 31),
     ["target"] = string.char(128) .. string.rep("\0", 31),
+    [CONTENT_KEY] = string.char(128) .. string.rep("\0", 31),
   }
   return map[value] or (string.char(255) .. string.rep("\0", 31))
 end
@@ -17,10 +23,27 @@ local function run()
   local registered_handler = nil
   local host = {
     _peer = { id = "local" },
+    peerstore = {
+      addrs = {
+        ["peer-a"] = { "/ip4/8.8.8.8/tcp/4001" },
+        ["peer-b"] = { "/ip4/8.8.4.4/tcp/4001" },
+      },
+    },
   }
 
   function host:peer_id()
     return self._peer
+  end
+
+  function host.peerstore:get_addrs(peer_id)
+    return self.addrs[peer_id] or {}
+  end
+
+  function host.peerstore:merge(peer_id, info)
+    if info and type(info.addrs) == "table" then
+      self.addrs[peer_id] = info.addrs
+    end
+    return true
   end
 
   function host:handle(protocol_id, handler)
@@ -146,8 +169,92 @@ local function run()
   if client_dht.mode ~= "client" then
     return nil, "dht should default to client mode"
   end
+  if client_dht:get_mode() ~= "client" then
+    return nil, "get_mode should return current client mode"
+  end
   if client_handled_protocol ~= nil then
     return nil, "client-mode dht should not register protocol handler"
+  end
+
+  local auto_handled_protocol = nil
+  local auto_unhandled_protocol = nil
+  local auto_self_callback = nil
+  local auto_mode_events = {}
+  local auto_host = { _peer = { id = "local" } }
+  function auto_host:peer_id()
+    return self._peer
+  end
+  function auto_host:handle(protocol_id)
+    auto_handled_protocol = protocol_id
+    return true
+  end
+  function auto_host:unhandle(protocol_id)
+    auto_unhandled_protocol = protocol_id
+    return true
+  end
+  function auto_host:on(event, cb)
+    if event == "self_peer_update" then
+      auto_self_callback = cb
+    end
+    return true
+  end
+  function auto_host:emit(event, payload)
+    if event == "kad_dht:mode_changed" then
+      auto_mode_events[#auto_mode_events + 1] = payload
+    end
+    return true
+  end
+  function auto_host:off(event, cb)
+    if event == "self_peer_update" and auto_self_callback == cb then
+      auto_self_callback = nil
+    end
+    return true
+  end
+  local auto_dht = assert(kad_dht.new(auto_host, {
+    mode = "auto",
+    hash_function = fake_hash,
+  }))
+  if auto_dht.mode ~= "client" then
+    return nil, "auto-mode dht should start in client mode"
+  end
+  if auto_dht:get_mode() ~= "client" then
+    return nil, "get_mode should return current auto client mode"
+  end
+  assert(auto_dht:start())
+  if auto_handled_protocol ~= nil then
+    return nil, "auto-mode dht should not serve before public self address"
+  end
+  local auto_ok, auto_err = auto_self_callback({ addrs = { "/ip4/203.0.113.10/tcp/4001" } })
+  if not auto_ok then
+    return nil, auto_err
+  end
+  if auto_dht.mode ~= "server" or auto_handled_protocol ~= kad_dht.PROTOCOL_ID then
+    return nil, "auto-mode dht should switch to server for public direct address"
+  end
+  if auto_dht:get_mode() ~= "server" then
+    return nil, "get_mode should return current auto server mode"
+  end
+  if #auto_mode_events ~= 1
+    or auto_mode_events[1].old_mode ~= "client"
+    or auto_mode_events[1].mode ~= "server"
+    or auto_mode_events[1].reason ~= "public_self_address"
+    or auto_mode_events[1].auto ~= true
+  then
+    return nil, "auto-mode dht should emit server mode change event"
+  end
+  auto_ok, auto_err = auto_self_callback({ addrs = { "/ip4/192.168.1.5/tcp/4001" } })
+  if not auto_ok then
+    return nil, auto_err
+  end
+  if auto_dht.mode ~= "client" or auto_unhandled_protocol ~= kad_dht.PROTOCOL_ID then
+    return nil, "auto-mode dht should switch back to client without public direct address"
+  end
+  if #auto_mode_events ~= 2
+    or auto_mode_events[2].old_mode ~= "server"
+    or auto_mode_events[2].mode ~= "client"
+    or auto_mode_events[2].reason ~= "no_public_self_address"
+  then
+    return nil, "auto-mode dht should emit client mode change event"
   end
 
   local protocol_callback = nil
@@ -191,7 +298,7 @@ local function run()
   if not event_ok then
     return nil, event_err
   end
-  if not event_dht:find_peer("peer-a") then
+  if not event_dht:get_local_peer("peer-a") then
     return nil, "dht should add KAD-capable peers from protocol update events"
   end
   event_dht:stop()
@@ -230,7 +337,7 @@ local function run()
     return nil, add_b_err
   end
 
-  local found, found_err = dht:find_peer("peer-a")
+  local found, found_err = dht:get_local_peer("peer-a")
   if not found then
     return nil, found_err or "expected to find peer-a"
   end
@@ -276,6 +383,7 @@ local function run()
         type = expected_type,
         key = request.key,
         closer_peers = {
+          { id = "closest-b", addrs = { "/ip4/8.8.4.5/tcp/4001" } },
           { id = "closest-a", addrs = { "/ip4/8.8.4.4/tcp/4001" } },
         },
       }
@@ -291,7 +399,7 @@ local function run()
     return nil, "get_value should return record value"
   end
 
-  local providers_result, providers_err = dht:_get_providers("peer-a", "cid-key")
+  local providers_result, providers_err = dht:_get_providers("peer-a", CONTENT_KEY)
   if not providers_result then
     return nil, providers_err
   end
@@ -307,7 +415,7 @@ local function run()
     return nil, "find_value should return first found record"
   end
 
-  local found_providers, find_providers_err = dht:_find_providers("cid-key", { peers = { { peer_id = "peer-a", addr = "peer-a" } } })
+  local found_providers, find_providers_err = dht:_find_providers(CONTENT_KEY, { peers = { { peer_id = "peer-a", addr = "peer-a" } } })
   if not found_providers then
     return nil, find_providers_err
   end
@@ -315,12 +423,12 @@ local function run()
     return nil, "find_providers should return discovered providers"
   end
 
-  local closest_peers, closest_lookup = dht:_get_closest_peers("target", { peers = { { peer_id = "peer-a", addr = "peer-a" } }, count = 1 })
+  local closest_peers, closest_lookup = dht:_get_closest_peers("target", { peers = { { peer_id = "peer-a", addr = "peer-a" } }, count = 2 })
   if not closest_peers then
     return nil, closest_lookup
   end
-  if #closest_peers ~= 1 or closest_peers[1].peer_id ~= "closest-a" then
-    return nil, "get_closest_peers should return closest discovered peers"
+  if #closest_peers ~= 2 or closest_peers[1].peer_id ~= "closest-a" or closest_peers[2].peer_id ~= "closest-b" then
+    return nil, "get_closest_peers should sort discovered peers by KAD distance"
   end
   if closest_lookup.termination ~= "starvation" and closest_lookup.termination ~= "closest_queried" then
     return nil, "get_closest_peers should include lookup termination"
@@ -379,6 +487,44 @@ local function run()
   end
   if not op_report or #op_peers ~= 1 or op_peers[1].peer_id ~= "closest-a" then
     return nil, "public DHT operation should return result values and a separate error slot"
+  end
+
+  local cached_peer_report = assert(dht:_find_peer_network("peer-a"))
+  if not cached_peer_report.peer or cached_peer_report.peer.peer_id ~= "peer-a" or cached_peer_report.lookup.termination ~= "local_peer" then
+    return nil, "find_peer_network should use local routing cache by default"
+  end
+  local network_peer_called = false
+  op_dht._get_closest_peers = function(_, key, opts)
+    network_peer_called = true
+    if key ~= "peer-a" or opts.use_cache ~= false then
+      return nil, "expected peer network lookup options"
+    end
+    return {
+      { peer_id = "peer-a", addrs = { "/ip4/8.8.8.8/tcp/4001" } },
+    }, { termination = "network_peer" }
+  end
+  local cached_peer_op = assert(op_dht:find_peer("peer-a"))
+  local cached_peer_op_report = assert(cached_peer_op:result({ timeout = 1 }))
+  if not cached_peer_op_report.peer or cached_peer_op_report.lookup.termination ~= "local_peer" then
+    return nil, "public find_peer should use local cache by default"
+  end
+  local network_peer_op = assert(op_dht:find_peer("peer-a", { use_cache = false }))
+  local network_peer_report = assert(network_peer_op:result({ timeout = 1 }))
+  if not network_peer_called
+    or not network_peer_report.peer
+    or network_peer_report.peer.peer_id ~= "peer-a"
+    or network_peer_report.lookup.termination ~= "network_peer"
+  then
+    return nil, "find_peer_network use_cache=false should bypass local peer cache"
+  end
+  network_peer_called = false
+  local no_network_op = assert(op_dht:find_peer("missing-peer", { use_network = false }))
+  local no_network_report = assert(no_network_op:result({ timeout = 1 }))
+  if network_peer_called
+    or no_network_report.peer ~= nil
+    or no_network_report.lookup.termination ~= "network_disabled"
+  then
+    return nil, "find_peer use_network=false should not query network after cache miss"
   end
 
   local spawned = 0
@@ -445,6 +591,317 @@ local function run()
   end
   if checkpointed ~= 0 then
     return nil, "scheduler lookup should not checkpoint-spin after strict completion"
+  end
+
+  spawned = 0
+  local capped_dht = assert(kad_dht.new(scheduler_host, {
+    hash_function = fake_hash,
+    k = 20,
+    alpha = 10,
+    disjoint_paths = 10,
+    max_concurrent_queries = 3,
+    address_filter = "all",
+  }))
+  local seed_peers = {}
+  for i = 1, 10 do
+    seed_peers[#seed_peers + 1] = { peer_id = "peer-cap-" .. i, addrs = { "/ip4/127.0.0.1/tcp/" .. (1000 + i) } }
+  end
+  local capped_lookup = capped_dht:_run_client_lookup("target", seed_peers, function()
+    return { closer_peers = {} }
+  end, {})
+  if not capped_lookup then
+    return nil, "capped scheduler lookup should complete"
+  end
+  if capped_lookup.active_peak > 3 then
+    return nil, "max_concurrent_queries should cap active lookup tasks"
+  end
+  if capped_lookup.requested_concurrency ~= 100 or capped_lookup.effective_concurrency ~= 3 or capped_lookup.max_concurrent_queries ~= 3 then
+    return nil, "lookup report should include requested and effective concurrency"
+  end
+
+  local filtered_seen = {}
+  local filter_dht = assert(kad_dht.new(scheduler_host, {
+    hash_function = fake_hash,
+    k = 1,
+    alpha = 1,
+    address_filter = "all",
+    query_filter = function(peer, ctx)
+      filtered_seen[#filtered_seen + 1] = { peer = peer.peer_id, target = ctx.target }
+      return peer.peer_id ~= "peer-a"
+    end,
+  }))
+  local filter_lookup = filter_dht:_run_client_lookup("target", {
+    { peer_id = "peer-a", addrs = { "/ip4/127.0.0.1/tcp/1" } },
+    { peer_id = "peer-b", addrs = { "/ip4/127.0.0.1/tcp/2" } },
+  }, function(_peer)
+    return { closer_peers = { { peer_id = "peer-a", addrs = { "/ip4/127.0.0.1/tcp/1" } } } }
+  end, {
+    scheduler_task = true,
+  })
+  if not filter_lookup then
+    return nil, "query filter lookup should complete"
+  end
+  if filter_lookup.queried ~= 1 or not filter_lookup.queried_peers[1] or filter_lookup.queried_peers[1].peer_id ~= "peer-b" then
+    return nil, "query_filter should exclude filtered seed peers"
+  end
+  if #filter_lookup.closest_peers ~= 1 or filter_lookup.closest_peers[1].peer_id ~= "peer-a" then
+    return nil, "query_filter should still report discovered peers before enqueue filtering"
+  end
+  if #filtered_seen < 3 or filtered_seen[1].target ~= "target" then
+    return nil, "query_filter should receive peer and target context"
+  end
+  local option_filter_lookup = filter_dht:_run_client_lookup("target", {
+    { peer_id = "peer-b", addrs = { "/ip4/127.0.0.1/tcp/2" } },
+  }, function()
+    return { closer_peers = {} }
+  end, {
+    scheduler_task = true,
+    query_filter = function()
+      return false
+    end,
+  })
+  if not option_filter_lookup or option_filter_lookup.queried ~= 0 or option_filter_lookup.termination ~= "starvation" then
+    return nil, "per-query query_filter should override configured filter"
+  end
+
+  local routing_filter_seen = {}
+  local routing_filter_dht = assert(kad_dht.new(scheduler_host, {
+    hash_function = fake_hash,
+    address_filter = "all",
+    routing_table_filter = function(peer, ctx)
+      routing_filter_seen[#routing_filter_seen + 1] = { peer = peer.peer_id, allow_replace = ctx.opts.allow_replace }
+      return peer.peer_id ~= "peer-a"
+    end,
+  }))
+  local rejected_peer, rejected_peer_err = routing_filter_dht:add_peer("peer-a")
+  if rejected_peer ~= nil or not rejected_peer_err or rejected_peer_err.kind ~= "filtered" then
+    return nil, "routing_table_filter should reject filtered peers"
+  end
+  if routing_filter_dht:get_local_peer("peer-a") ~= nil then
+    return nil, "routing_table_filter should prevent routing table insertion"
+  end
+  local accepted_peer, accepted_peer_err = routing_filter_dht:add_peer("peer-b", { allow_replace = true })
+  if not accepted_peer then
+    return nil, accepted_peer_err
+  end
+  if not routing_filter_dht:get_local_peer("peer-b") then
+    return nil, "routing_table_filter should allow accepted peers"
+  end
+  if #routing_filter_seen ~= 2 or routing_filter_seen[2].allow_replace ~= true then
+    return nil, "routing_table_filter should receive peer and insertion options"
+  end
+  local override_peer, override_peer_err = routing_filter_dht:add_peer("peer-a", {
+    routing_table_filter = function()
+      return true
+    end,
+  })
+  if not override_peer then
+    return nil, override_peer_err
+  end
+
+  local kad_filter_host = {
+    _peer = { id = "local" },
+    peerstore = {
+      protocols = {
+        ["peer-a"] = { "/ipfs/ping/1.0.0" },
+        ["peer-b"] = { kad_dht.PROTOCOL_ID },
+        ["peer-c"] = {},
+      },
+    },
+  }
+  function kad_filter_host:peer_id()
+    return self._peer
+  end
+  function kad_filter_host.peerstore:get_protocols(peer_id)
+    return self.protocols[peer_id] or {}
+  end
+  function kad_filter_host.peerstore:supports_protocol(peer_id, protocol)
+    for _, known in ipairs(self:get_protocols(peer_id)) do
+      if known == protocol then
+        return true
+      end
+    end
+    return false
+  end
+  local kad_filter_dht = assert(kad_dht.new(kad_filter_host, {
+    hash_function = fake_hash,
+    address_filter = "all",
+  }))
+  local non_kad_added, non_kad_err = kad_filter_dht:add_peer("peer-a")
+  if non_kad_added ~= nil or not non_kad_err or non_kad_err.kind ~= "filtered" then
+    return nil, "add_peer should reject peers known not to support kad-dht"
+  end
+  local kad_added, kad_add_err = kad_filter_dht:add_peer("peer-b")
+  if not kad_added then
+    return nil, kad_add_err
+  end
+  local unknown_added, unknown_add_err = kad_filter_dht:add_peer("peer-c")
+  if not unknown_added then
+    return nil, unknown_add_err
+  end
+  local bypass_added, bypass_add_err = kad_filter_dht:add_peer("peer-a", { skip_kad_protocol_filter = true })
+  if not bypass_added then
+    return nil, bypass_add_err
+  end
+
+  local diversity_seen = {}
+  local diversity_dht = assert(kad_dht.new(host, {
+    hash_function = fake_hash,
+    address_filter = "all",
+    peer_diversity_filter = function(peer, ctx)
+      diversity_seen[#diversity_seen + 1] = {
+        peer = peer.peer_id,
+        existing = #ctx.peers,
+        k = ctx.k,
+        allow_replace = ctx.opts.allow_replace,
+      }
+      return peer.peer_id ~= "peer-b"
+    end,
+  }))
+  local diversity_a, diversity_a_err = diversity_dht:add_peer("peer-a", { allow_replace = true })
+  if not diversity_a then
+    return nil, diversity_a_err
+  end
+  local diversity_b, diversity_b_err = diversity_dht:add_peer("peer-b")
+  if diversity_b ~= nil or not diversity_b_err or diversity_b_err.kind ~= "filtered" then
+    return nil, "peer_diversity_filter should reject filtered peers"
+  end
+  if diversity_dht:get_local_peer("peer-b") ~= nil then
+    return nil, "peer_diversity_filter should prevent routing table insertion"
+  end
+  if #diversity_seen ~= 2 or diversity_seen[1].existing ~= 0 or diversity_seen[2].existing ~= 1 or diversity_seen[1].allow_replace ~= true then
+    return nil, "peer_diversity_filter should receive routing table snapshot and insertion options"
+  end
+  local diversity_override, diversity_override_err = diversity_dht:add_peer("peer-b", {
+    peer_diversity_filter = function()
+      return true
+    end,
+  })
+  if not diversity_override then
+    return nil, diversity_override_err
+  end
+
+  local ip_group_host = {
+    _peer = { id = "local" },
+    peerstore = {
+      addrs = {
+        ["peer-a"] = { "/ip4/203.0.113.1/tcp/4001" },
+        ["peer-b"] = { "/ip4/203.0.42.2/tcp/4001" },
+        ["peer-c"] = { "/ip4/198.51.100.3/tcp/4001" },
+        ["peer-d"] = { "/ip6/2001:db8::1/tcp/4001" },
+        ["peer-e"] = { "/ip6/2001:db8:1::1/tcp/4001" },
+        ["peer-f"] = { "/ip4/12.1.1.1/tcp/4001" },
+        ["peer-g"] = { "/ip4/12.2.1.1/tcp/4001" },
+      },
+    },
+  }
+  function ip_group_host:peer_id()
+    return self._peer
+  end
+  function ip_group_host.peerstore:get_addrs(peer_id)
+    return self.addrs[peer_id] or {}
+  end
+  local ip_group_dht = assert(kad_dht.new(ip_group_host, {
+    hash_function = fake_hash,
+    address_filter = "all",
+    peer_diversity_max_peers_per_ip_group = 1,
+  }))
+  local ip_group_a, ip_group_a_err = ip_group_dht:add_peer("peer-a")
+  if not ip_group_a then
+    return nil, ip_group_a_err
+  end
+  local ip_group_b, ip_group_b_err = ip_group_dht:add_peer("peer-b")
+  if ip_group_b ~= nil or not ip_group_b_err or ip_group_b_err.kind ~= "filtered" then
+    return nil, "built-in ip group diversity should reject overrepresented ipv4 /16 peers"
+  end
+  if ip_group_dht:get_local_peer("peer-b") ~= nil then
+    return nil, "built-in ip group diversity should prevent routing table insertion"
+  end
+  local ip_group_c, ip_group_c_err = ip_group_dht:add_peer("peer-c")
+  if not ip_group_c then
+    return nil, ip_group_c_err
+  end
+  local ip_group_d, ip_group_d_err = ip_group_dht:add_peer("peer-d")
+  if not ip_group_d then
+    return nil, ip_group_d_err
+  end
+  local ip_group_e, ip_group_e_err = ip_group_dht:add_peer("peer-e")
+  if ip_group_e ~= nil or not ip_group_e_err or ip_group_e_err.kind ~= "filtered" then
+    return nil, "built-in ip group diversity should reject overrepresented ipv6 /32 peers"
+  end
+  local legacy_dht = assert(kad_dht.new(ip_group_host, {
+    hash_function = fake_hash,
+    address_filter = "all",
+    peer_diversity_max_peers_per_ip_group = 1,
+  }))
+  assert(legacy_dht:add_peer("peer-f"))
+  local legacy_added, legacy_err = legacy_dht:add_peer("peer-g")
+  if legacy_added ~= nil or not legacy_err or legacy_err.kind ~= "filtered" then
+    return nil, "built-in ip group diversity should group legacy class A ipv4 blocks by /8"
+  end
+  local per_bucket_dht = assert(kad_dht.new(ip_group_host, {
+    hash_function = fake_hash,
+    address_filter = "all",
+    peer_diversity_max_peers_per_ip_group = 3,
+    peer_diversity_max_peers_per_ip_group_per_bucket = 1,
+  }))
+  assert(per_bucket_dht:add_peer("peer-a"))
+  local per_bucket_added, per_bucket_err = per_bucket_dht:add_peer("peer-b")
+  if per_bucket_added ~= nil or not per_bucket_err or per_bucket_err.kind ~= "filtered" then
+    return nil, "built-in ip group diversity should enforce per-bucket limits"
+  end
+
+  local find_node_target_peer = wire_peer_id
+  local find_node_target_bytes = assert(kad_protocol.peer_bytes(find_node_target_peer))
+  local find_node_host = {
+    _peer = { id = "local" },
+    peerstore = {
+      addrs = {
+        [find_node_target_peer] = { "/ip4/10.0.0.1/tcp/4001" },
+        ["peer-a"] = { "/ip4/8.8.8.8/tcp/4001", "/ip4/127.0.0.1/tcp/4001" },
+        ["peer-b"] = { "/ip4/8.8.4.4/tcp/4001" },
+        ["local"] = { "/ip4/8.8.4.5/tcp/4001" },
+      },
+    },
+  }
+  function find_node_host:peer_id()
+    return self._peer
+  end
+  function find_node_host.peerstore:get_addrs(peer_id)
+    return self.addrs[peer_id] or {}
+  end
+  local find_node_dht = assert(kad_dht.new(find_node_host, {
+    hash_function = fake_hash,
+  }))
+  assert(find_node_dht:add_peer("peer-a", { skip_kad_protocol_filter = true }))
+  assert(find_node_dht:add_peer("peer-b", { skip_kad_protocol_filter = true }))
+  local find_node_response = assert(find_node_dht:_handle_find_node({
+    type = kad_protocol.MESSAGE_TYPE.FIND_NODE,
+    key = find_node_target_bytes,
+  }, { peer_id = "peer-a" }))
+  local response_ids = {}
+  local target_record
+  for _, peer in ipairs(find_node_response.closer_peers or {}) do
+    local id = peer.id == find_node_target_bytes and find_node_target_peer or peer.id
+    response_ids[id] = peer
+    if peer.id == find_node_target_bytes then
+      target_record = peer
+    end
+  end
+  if not target_record then
+    return nil, "FIND_NODE should include target peer from peerstore even when it is not a DHT server"
+  end
+  if response_ids["peer-a"] or response_ids["local"] then
+    return nil, "FIND_NODE should exclude requester and self from closer peers"
+  end
+  if not response_ids["peer-b"] then
+    return nil, "FIND_NODE should keep returning other closest peers after exclusions"
+  end
+  if target_record.addrs[1] ~= nil then
+    return nil, "public FIND_NODE responses should filter private target addresses by default"
+  end
+  if #response_ids["peer-b"].addrs ~= 1 or response_ids["peer-b"].addrs[1] ~= "/ip4/8.8.4.4/tcp/4001" then
+    return nil, "public FIND_NODE responses should include only public addresses"
   end
 
   dht._rpc = nil

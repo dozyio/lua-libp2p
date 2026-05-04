@@ -64,8 +64,9 @@ local function run()
 
   local fake_client = {
     mappings = {},
-    get_external_ip = function()
-      return "198.51.100.20"
+    external_ip = "198.51.100.20",
+    get_external_ip = function(self)
+      return self.external_ip
     end,
     add_port_mapping = function(self, protocol, internal_port, external_port, internal_client, ttl)
       self.mappings[#self.mappings + 1] = {
@@ -168,6 +169,35 @@ local function run()
   local listed = assert(svc:list_port_mappings({ max = 8 }))
   if #listed ~= 1 or listed[1].internal_client ~= "192.168.1.44" then
     return nil, "upnp nat should enumerate router port mappings"
+  end
+  host.address_manager:verify_public_address_mapping(ext, {
+    source = "autonat_v2",
+  })
+  fake_client.external_ip = "198.51.100.21"
+  local remapped, remap_err = svc:map_ip_addresses()
+  if not remapped then
+    return nil, remap_err
+  end
+  if host.address_manager:get_reachability(ext) ~= nil then
+    return nil, "changed UPnP external address should remove old mapping metadata"
+  end
+  local replacement = "/ip4/198.51.100.21/tcp/4001"
+  local replacement_meta = host.address_manager:get_reachability(replacement)
+  if not replacement_meta or replacement_meta.verified ~= true or replacement_meta.status ~= "public" then
+    return nil, "auto-confirmed replacement mapping should be recorded"
+  end
+  local removed_event = nil
+  for _, event in ipairs(host.events) do
+    if event.name == "upnp_nat:mapping:removed" then
+      removed_event = event.payload
+    end
+  end
+  if not removed_event
+    or removed_event.external_addr ~= ext
+    or removed_event.replacement_addr ~= replacement
+    or removed_event.reason ~= "external_address_changed"
+  then
+    return nil, "changed UPnP external address should emit removal event"
   end
 
   return true

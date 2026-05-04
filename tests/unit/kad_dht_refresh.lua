@@ -76,7 +76,7 @@ local function run()
     return nil, "expected stale unsupported peer to be evicted during refresh"
   end
 
-  local peer_b = dht:find_peer("peer-b")
+  local peer_b = dht:get_local_peer("peer-b")
   if peer_b ~= nil then
     return nil, "peer-b should be removed from routing table"
   end

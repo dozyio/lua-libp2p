@@ -239,6 +239,7 @@ function M.install(Host)
         end
       end
       local result, err = handler(ctx.stream, handler_ctx)
+      self:_release_stream_resource(ctx.stream)
       if result == nil and err then
         if is_nonfatal_stream_error(err) then
           if ctx.connection and type(ctx.connection.close) == "function" then
