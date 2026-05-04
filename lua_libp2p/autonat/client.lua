@@ -135,17 +135,28 @@ end
 
 function Client:_record_result(result)
   local addr = result.addr
-  if addr and self.host and self.host.address_manager and type(self.host.address_manager.set_reachability) == "function" then
-    self.host.address_manager:set_reachability(addr, {
+  if addr and self.host and self.host.address_manager then
+    local metadata = {
       status = result.reachable and "public" or "private",
       source = "autonat_v2",
       type = result.type or "observed",
-      verified = result.reachable == true,
+      verified = result.reachable == true and result.dial_back_verified == true,
       checked_at = result.checked_at,
       server_peer_id = result.server_peer_id,
       response_status = result.response_status,
       dial_status = result.dial_status,
-    })
+    }
+    if result.type == "ip-mapping"
+      and metadata.verified
+      and type(self.host.address_manager.verify_public_address_mapping) == "function"
+    then
+      self.host.address_manager:verify_public_address_mapping(addr, metadata)
+    elseif type(self.host.address_manager.set_reachability) == "function" then
+      self.host.address_manager:set_reachability(addr, metadata)
+    end
+    if type(self.host._emit_self_peer_update_if_changed) == "function" then
+      self.host:_emit_self_peer_update_if_changed()
+    end
   end
   self.results[addr or tostring(result.nonce)] = result
 end
@@ -305,7 +316,7 @@ function Client:check(server, opts)
     type = options.type or "observed",
   }
   self:_record_result(result)
-  emit_event(self.host, "autonat:address:checked", result)
+  emit_event(self.host, "autonat:reachability:checked", result)
   if result.reachable then
     emit_event(self.host, "autonat:address:reachable", result)
   else

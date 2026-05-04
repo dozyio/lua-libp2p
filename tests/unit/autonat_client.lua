@@ -153,6 +153,9 @@ local function run()
   if not reachability or reachability.status ~= "public" or reachability.type ~= "observed" then
     return nil, "autonat client should store address reachability"
   end
+  if host.events[#host.events - 1].name ~= "autonat:reachability:checked" then
+    return nil, "autonat client should emit reachability check event"
+  end
   if host.events[#host.events].name ~= "autonat:address:reachable" then
     return nil, "autonat client should emit reachable event"
   end

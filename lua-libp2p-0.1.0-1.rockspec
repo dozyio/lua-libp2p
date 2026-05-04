@@ -39,6 +39,7 @@ build = {
     ["lua_libp2p.kbucket"] = "lua_libp2p/kbucket.lua",
     ["lua_libp2p.kad_dht"] = "lua_libp2p/kad_dht/init.lua",
     ["lua_libp2p.kad_dht.protocol"] = "lua_libp2p/kad_dht/protocol.lua",
+    ["lua_libp2p.kad_dht.providers"] = "lua_libp2p/kad_dht/providers.lua",
     ["lua_libp2p.host"] = "lua_libp2p/host/init.lua",
     ["lua_libp2p.host.advertise"] = "lua_libp2p/host/advertise.lua",
     ["lua_libp2p.host.bootstrap"] = "lua_libp2p/host/bootstrap.lua",

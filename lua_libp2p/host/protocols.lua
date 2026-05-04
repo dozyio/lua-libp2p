@@ -50,6 +50,28 @@ function M.install(Host)
     return true
   end
 
+  --- Remove a previously registered stream handler.
+  -- @tparam string protocol_id Protocol multistream ID.
+  -- @treturn boolean removed
+  -- @treturn[opt] table err
+  function Host:unhandle(protocol_id)
+    if type(protocol_id) ~= "string" or protocol_id == "" then
+      return nil, error_mod.new("input", "protocol id must be non-empty")
+    end
+    if self._handlers[protocol_id] == nil then
+      return false
+    end
+    self._handlers[protocol_id] = nil
+    self._handler_options[protocol_id] = nil
+    if self._running then
+      local ok, err = self:_emit_self_peer_update_if_changed()
+      if not ok then
+        return nil, err
+      end
+    end
+    return true
+  end
+
   function Host:_connection_is_limited(state)
     if type(state) ~= "table" then
       return false

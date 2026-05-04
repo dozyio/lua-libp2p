@@ -150,6 +150,81 @@ local function run()
     return nil, "client-mode dht should not register protocol handler"
   end
 
+  local auto_handled_protocol = nil
+  local auto_unhandled_protocol = nil
+  local auto_self_callback = nil
+  local auto_mode_events = {}
+  local auto_host = { _peer = { id = "local" } }
+  function auto_host:peer_id()
+    return self._peer
+  end
+  function auto_host:handle(protocol_id)
+    auto_handled_protocol = protocol_id
+    return true
+  end
+  function auto_host:unhandle(protocol_id)
+    auto_unhandled_protocol = protocol_id
+    return true
+  end
+  function auto_host:on(event, cb)
+    if event == "self_peer_update" then
+      auto_self_callback = cb
+    end
+    return true
+  end
+  function auto_host:emit(event, payload)
+    if event == "kad_dht:mode_changed" then
+      auto_mode_events[#auto_mode_events + 1] = payload
+    end
+    return true
+  end
+  function auto_host:off(event, cb)
+    if event == "self_peer_update" and auto_self_callback == cb then
+      auto_self_callback = nil
+    end
+    return true
+  end
+  local auto_dht = assert(kad_dht.new(auto_host, {
+    mode = "auto",
+    hash_function = fake_hash,
+  }))
+  if auto_dht.mode ~= "client" then
+    return nil, "auto-mode dht should start in client mode"
+  end
+  assert(auto_dht:start())
+  if auto_handled_protocol ~= nil then
+    return nil, "auto-mode dht should not serve before public self address"
+  end
+  local auto_ok, auto_err = auto_self_callback({ addrs = { "/ip4/203.0.113.10/tcp/4001" } })
+  if not auto_ok then
+    return nil, auto_err
+  end
+  if auto_dht.mode ~= "server" or auto_handled_protocol ~= kad_dht.PROTOCOL_ID then
+    return nil, "auto-mode dht should switch to server for public direct address"
+  end
+  if #auto_mode_events ~= 1
+    or auto_mode_events[1].old_mode ~= "client"
+    or auto_mode_events[1].mode ~= "server"
+    or auto_mode_events[1].reason ~= "public_self_address"
+    or auto_mode_events[1].auto ~= true
+  then
+    return nil, "auto-mode dht should emit server mode change event"
+  end
+  auto_ok, auto_err = auto_self_callback({ addrs = { "/ip4/192.168.1.5/tcp/4001" } })
+  if not auto_ok then
+    return nil, auto_err
+  end
+  if auto_dht.mode ~= "client" or auto_unhandled_protocol ~= kad_dht.PROTOCOL_ID then
+    return nil, "auto-mode dht should switch back to client without public direct address"
+  end
+  if #auto_mode_events ~= 2
+    or auto_mode_events[2].old_mode ~= "server"
+    or auto_mode_events[2].mode ~= "client"
+    or auto_mode_events[2].reason ~= "no_public_self_address"
+  then
+    return nil, "auto-mode dht should emit client mode change event"
+  end
+
   local protocol_callback = nil
   local event_host = {
     _peer = { id = "local" },

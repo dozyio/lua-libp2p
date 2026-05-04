@@ -227,21 +227,55 @@ function AddressManager:add_public_address_mapping(mapping)
   end
   local addr = mapping.external_addr
   add_unique(self._public_mapping_addrs, as_set(self._public_mapping_addrs), addr)
+  local existing = self._reachability[addr]
+  local existing_verified = type(existing) == "table" and existing.verified == true
+  local incoming_verified = mapping.verified == true
   local metadata = {
-    verified = mapping.verified == true,
+    verified = incoming_verified or existing_verified,
     type = "ip-mapping",
-    source = mapping.source or "upnp_nat",
-    status = mapping.status or (mapping.verified and "public" or "unknown"),
+    source = existing_verified and not incoming_verified and existing.source or (mapping.source or "upnp_nat"),
+    status = incoming_verified and (mapping.status or "public")
+      or (existing_verified and (existing.status or "public"))
+      or (mapping.status or "unknown"),
     internal_addr = mapping.internal_addr,
     external_addr = addr,
     expires = mapping.expires,
-    last_verified = mapping.verified and os.time() or nil,
+    last_verified = incoming_verified and os.time() or (existing_verified and existing.last_verified or nil),
   }
+  if type(existing) == "table" and existing_verified and not incoming_verified then
+    for k, v in pairs(existing) do
+      if metadata[k] == nil then
+        metadata[k] = v
+      end
+    end
+  end
   for k, v in pairs(mapping) do
-    if metadata[k] == nil then
+    if metadata[k] == nil and not (existing_verified and not incoming_verified and (k == "verified" or k == "status" or k == "source" or k == "last_verified")) then
       metadata[k] = v
     end
   end
+  self:set_reachability(addr, metadata)
+  return true
+end
+
+function AddressManager:verify_public_address_mapping(addr, info)
+  if type(addr) ~= "string" or addr == "" then
+    return false
+  end
+  local existing = self._reachability[addr] or {}
+  local metadata = {}
+  for k, v in pairs(existing) do
+    metadata[k] = v
+  end
+  for k, v in pairs(info or {}) do
+    metadata[k] = v
+  end
+  metadata.verified = true
+  metadata.status = "public"
+  metadata.type = metadata.type or "ip-mapping"
+  metadata.source = metadata.source or "autonat_v2"
+  metadata.last_verified = os.time()
+  add_unique(self._public_mapping_addrs, as_set(self._public_mapping_addrs), addr)
   self:set_reachability(addr, metadata)
   return true
 end

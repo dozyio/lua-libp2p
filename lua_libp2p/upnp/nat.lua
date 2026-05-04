@@ -219,11 +219,27 @@ function Service:map_ip_addresses()
         info.actual_internal_client = actual.internal_client
         info.actual_internal_port = actual.internal_port
       end
+      local mapping_key = addr.protocol .. ":" .. tostring(addr.port)
+      local previous = self.mappings[mapping_key]
+      if previous
+        and previous.external_addr
+        and previous.external_addr ~= ext_addr
+        and self.host
+        and self.host.address_manager
+      then
+        self.host.address_manager:remove_public_address_mapping(previous.external_addr)
+        emit_event(self.host, "upnp_nat:mapping:removed", {
+          internal_addr = previous.internal_addr,
+          external_addr = previous.external_addr,
+          replacement_addr = ext_addr,
+          reason = "external_address_changed",
+        })
+      end
       if self.host and self.host.address_manager then
         self.host.address_manager:add_public_address_mapping(info)
       end
       self.last_error = nil
-      self.mappings[addr.protocol .. ":" .. tostring(addr.port)] = info
+      self.mappings[mapping_key] = info
       mapped[#mapped + 1] = info
       emit_event(self.host, "upnp_nat:mapping:active", info)
       if self.host and type(self.host._emit_self_peer_update_if_changed) == "function" then

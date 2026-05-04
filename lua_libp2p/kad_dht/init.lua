@@ -9,6 +9,7 @@ local kbucket = require("lua_libp2p.kbucket")
 local multiaddr = require("lua_libp2p.multiaddr")
 local operation = require("lua_libp2p.operation")
 local peerid = require("lua_libp2p.peerid")
+local providers = require("lua_libp2p.kad_dht.providers")
 local protocol = require("lua_libp2p.kad_dht.protocol")
 local log = require("lua_libp2p.log")
 
@@ -28,6 +29,7 @@ M.DEFAULT_MAINTENANCE_MIN_RECHECK_SECONDS = 60
 M.DEFAULT_MAINTENANCE_MAX_CHECKS = 10
 M.DEFAULT_MAINTENANCE_WALK_EVERY = 4
 M.DEFAULT_MAX_FAILED_CHECKS_BEFORE_EVICT = 2
+M.DEFAULT_PROVIDER_TTL_SECONDS = providers.DEFAULT_TTL_SECONDS
 
 --- Create default bootstrap peer discovery source.
 -- `opts.bootstrappers` (`table<string>`) overrides bootstrap list.
@@ -85,6 +87,19 @@ function M.resolve_bootstrap_addrs(addrs, opts)
   return out
 end
 
+local function has_public_direct_addr(addrs)
+  for _, addr in ipairs(addrs or {}) do
+    if type(addr) == "string"
+      and addr ~= ""
+      and not multiaddr.is_private_addr(addr)
+      and not multiaddr.is_relay_addr(addr)
+    then
+      return true
+    end
+  end
+  return false
+end
+
 local DHT = {}
 DHT.__index = DHT
 
@@ -96,10 +111,8 @@ function DHT:start()
     return true
   end
 
-  if self.mode == "server" and self.host and type(self.host.handle) == "function" then
-    local ok, err = self.host:handle(self.protocol_id, function(stream, ctx)
-      return self:_handle_rpc(stream, ctx)
-    end)
+  if self.mode == "server" then
+    local ok, err = self:_register_handler()
     if not ok then
       return nil, err
     end
@@ -162,6 +175,83 @@ function DHT:start()
   return true
 end
 
+function DHT:_register_handler()
+  if self._handler_registered then
+    return true
+  end
+  if not (self.host and type(self.host.handle) == "function") then
+    return true
+  end
+  local ok, err = self.host:handle(self.protocol_id, function(stream, ctx)
+    return self:_handle_rpc(stream, ctx)
+  end)
+  if not ok then
+    return nil, err
+  end
+  self._handler_registered = true
+  return true
+end
+
+function DHT:_unregister_handler()
+  if not self._handler_registered then
+    return true
+  end
+  if self.host and type(self.host.unhandle) == "function" then
+    local removed, err = self.host:unhandle(self.protocol_id)
+    if removed == nil then
+      return nil, err
+    end
+  end
+  self._handler_registered = false
+  return true
+end
+
+function DHT:set_mode(mode, opts)
+  if mode ~= "client" and mode ~= "server" then
+    return nil, error_mod.new("input", "kad dht mode must be client or server")
+  end
+  if self.mode == mode then
+    return true
+  end
+  local options = opts or {}
+  local old_mode = self.mode
+  self.mode = mode
+  if self._running then
+    local ok, err
+    if mode == "server" then
+      ok, err = self:_register_handler()
+    else
+      ok, err = self:_unregister_handler()
+    end
+    if not ok then
+      self.mode = old_mode
+      return nil, err
+    end
+  end
+  if self.host and type(self.host.emit) == "function" then
+    local emit_ok, emit_err = self.host:emit("kad_dht:mode_changed", {
+      old_mode = old_mode,
+      mode = mode,
+      reason = options.reason or "set_mode",
+      auto = options.auto == true,
+    })
+    if not emit_ok then
+      return nil, emit_err
+    end
+  end
+  return true
+end
+
+function DHT:_on_self_peer_update(payload)
+  if not self._auto_server_mode then
+    return true
+  end
+  if has_public_direct_addr(payload and payload.addrs) then
+    return self:set_mode("server", { reason = "public_self_address", auto = true })
+  end
+  return self:set_mode("client", { reason = "no_public_self_address", auto = true })
+end
+
 --- Stop KAD service activity.
 -- @treturn true
 function DHT:stop()
@@ -169,7 +259,11 @@ function DHT:stop()
     if self._host_on_protocols_updated then
       self.host:off("peer_protocols_updated", self._host_on_protocols_updated)
     end
+    if self._host_on_self_peer_update then
+      self.host:off("self_peer_update", self._host_on_self_peer_update)
+    end
   end
+  self:_unregister_handler()
   if self._maintenance_task and self.host and type(self.host.cancel_task) == "function" then
     self.host:cancel_task(self._maintenance_task.id)
   end
@@ -262,6 +356,25 @@ end
 function DHT:find_closest_peers(key, count)
   local want = count or self.k
   return self.routing_table:nearest_peers(key, want)
+end
+
+--- Store a provider record locally.
+-- @tparam string key Content key/CID multihash bytes.
+-- @tparam table peer_info Provider peer info (`peer_id`/`id`, `addrs`).
+-- @tparam[opt] table opts `ttl` or `ttl_seconds`.
+-- @treturn true|nil ok
+-- @treturn[opt] table err
+function DHT:add_provider(key, peer_info, opts)
+  return self.provider_store:add(key, peer_info, opts)
+end
+
+--- Return locally stored, non-expired providers for a key.
+-- @tparam string key Content key/CID multihash bytes.
+-- @tparam[opt] table opts `limit`.
+-- @treturn table|nil providers
+-- @treturn[opt] table err
+function DHT:get_local_providers(key, opts)
+  return self.provider_store:get(key, opts)
 end
 
 local function decode_peer_id_text(id_bytes)
@@ -440,6 +553,86 @@ function DHT:_handle_find_node(req)
   }
 end
 
+local function provider_record_to_wire(entry)
+  local id = entry.id or entry.peer_id
+  local id_bytes = id
+  if type(id) == "string" then
+    id_bytes = protocol.peer_bytes(id)
+  end
+  return {
+    id = id_bytes,
+    addrs = entry.addrs or {},
+  }
+end
+
+function DHT:_handle_add_provider(req)
+  local key = req.key
+  if type(key) ~= "string" or key == "" then
+    return nil, error_mod.new("input", "ADD_PROVIDER request missing key")
+  end
+  if self.mode ~= "server" then
+    return nil, error_mod.new("unsupported", "client-mode dht does not accept provider records")
+  end
+
+  for _, provider_peer in ipairs(req.provider_peers or {}) do
+    local peer_id_text = decode_peer_id_text(provider_peer.id)
+    local addrs = self:_filter_addrs(decode_kad_multiaddrs(provider_peer.addrs), {
+      peer_id = peer_id_text,
+      purpose = "provider_record",
+    })
+    local ok, add_err = self:add_provider(key, {
+      peer_id = peer_id_text,
+      id = provider_peer.id,
+      addrs = addrs,
+    })
+    if not ok then
+      return nil, add_err
+    end
+    if self.host and self.host.peerstore and peer_id_text then
+      self.host.peerstore:merge(peer_id_text, {
+        addrs = addrs,
+      })
+    end
+  end
+
+  local closer, closer_err = self:_closest_peer_records(key, self.k)
+  if not closer then
+    return nil, closer_err
+  end
+  return {
+    type = protocol.MESSAGE_TYPE.ADD_PROVIDER,
+    key = key,
+    closer_peers = closer,
+  }
+end
+
+function DHT:_handle_get_providers(req)
+  local key = req.key
+  if type(key) ~= "string" or key == "" then
+    return nil, error_mod.new("input", "GET_PROVIDERS request missing key")
+  end
+
+  local local_providers, providers_err = self:get_local_providers(key, { limit = self.k })
+  if not local_providers then
+    return nil, providers_err
+  end
+  local provider_peers = {}
+  for _, entry in ipairs(local_providers) do
+    provider_peers[#provider_peers + 1] = provider_record_to_wire(entry)
+  end
+
+  local closer, closer_err = self:_closest_peer_records(key, self.k)
+  if not closer then
+    return nil, closer_err
+  end
+  return {
+    type = protocol.MESSAGE_TYPE.GET_PROVIDERS,
+    key = key,
+    provider_peers = provider_peers,
+    closer_peers = closer,
+  }
+end
+
 function DHT:_handle_rpc(stream)
   local req, req_err = protocol.read(stream, { max_message_size = self.max_message_size })
   if not req then
@@ -449,6 +642,10 @@ function DHT:_handle_rpc(stream)
   local response, response_err
   if req.type == protocol.MESSAGE_TYPE.FIND_NODE then
     response, response_err = self:_handle_find_node(req)
+  elseif req.type == protocol.MESSAGE_TYPE.ADD_PROVIDER then
+    response, response_err = self:_handle_add_provider(req)
+  elseif req.type == protocol.MESSAGE_TYPE.GET_PROVIDERS then
+    response, response_err = self:_handle_get_providers(req)
   else
     return nil, error_mod.new("unsupported", "kad-dht message type is not supported", { type = req.type })
   end
@@ -2046,11 +2243,13 @@ function DHT:random_walk(opts)
 end
 
 --- Build a KAD service instance.
--- Common `opts`: `mode`, `k`, `alpha`, `disjoint_paths`, `protocol_id`,
+-- Common `opts`: `mode`, `auto_server_mode`, `k`, `alpha`, `disjoint_paths`, `protocol_id`,
 -- `address_filter`, `peer_discovery`, `bootstrappers`, `routing_table`,
 -- and maintenance controls (`maintenance_enabled`, `maintenance_interval_seconds`, etc.).
 -- Additional options: `local_peer_id`, `dnsaddr_resolver`,
 -- `max_message_size`, and protocol-check tuning values.
+-- `mode="auto"` starts in client mode and switches to server mode when the
+-- host advertises a public direct address, matching js-libp2p DHT behavior.
 -- `opts.maintenance_enabled` defaults to `false`; interval/check knobs use
 -- `maintenance_*` names from module defaults.
 -- @tparam table host Host instance.
@@ -2072,6 +2271,20 @@ function M.new(host, opts)
   end
   if type(local_peer_id) ~= "string" or local_peer_id == "" then
     return nil, error_mod.new("input", "kad-dht needs local peer id or host with peer_id()")
+  end
+
+  local provider_store, provider_store_err
+  if options.provider_store then
+    provider_store = options.provider_store
+  else
+    provider_store, provider_store_err = providers.new({
+      datastore = options.provider_datastore or options.datastore,
+      default_ttl_seconds = options.provider_ttl_seconds or M.DEFAULT_PROVIDER_TTL_SECONDS,
+      now = options.now,
+    })
+    if not provider_store then
+      return nil, provider_store_err
+    end
   end
 
   local rt, rt_err
@@ -2096,14 +2309,17 @@ function M.new(host, opts)
     alpha = options.alpha or M.DEFAULT_ALPHA,
     disjoint_paths = options.disjoint_paths or M.DEFAULT_DISJOINT_PATHS,
     max_message_size = options.max_message_size or protocol.MAX_MESSAGE_SIZE,
-    mode = options.mode or "client",
+    mode = options.mode == "auto" and "client" or (options.mode or "client"),
     address_filter = address_filter,
     bootstrappers = options.bootstrappers,
     peer_discovery = options.peer_discovery,
+    provider_store = provider_store,
     routing_table = rt,
     _peer_health = {},
     _dnsaddr_resolver = options.dnsaddr_resolver,
     _host_on_protocols_updated = nil,
+    _host_on_self_peer_update = nil,
+    _auto_server_mode = options.auto_server_mode == true or options.mode == "auto",
     _maintenance_enabled = options.maintenance_enabled == true or M.DEFAULT_MAINTENANCE_ENABLED,
     _maintenance_interval_seconds = options.maintenance_interval_seconds or M.DEFAULT_MAINTENANCE_INTERVAL_SECONDS,
     _maintenance_min_recheck_seconds = options.maintenance_min_recheck_seconds or M.DEFAULT_MAINTENANCE_MIN_RECHECK_SECONDS,
@@ -2123,6 +2339,15 @@ function M.new(host, opts)
     local ok, on_err = host:on("peer_protocols_updated", self_obj._host_on_protocols_updated)
     if not ok then
       return nil, on_err
+    end
+    if self_obj._auto_server_mode then
+      self_obj._host_on_self_peer_update = function(payload)
+        return self_obj:_on_self_peer_update(payload)
+      end
+      ok, on_err = host:on("self_peer_update", self_obj._host_on_self_peer_update)
+      if not ok then
+        return nil, on_err
+      end
     end
   end
 
@@ -2149,6 +2374,7 @@ end
 M.DHT = DHT
 M.dnsaddr = dnsaddr
 M.discovery = discovery
+M.providers = providers
 M.protocol = protocol
 
 return M

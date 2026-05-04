@@ -323,7 +323,7 @@ local h = assert(host_mod.new({
     identify = { module = identify_service },
     ping = { module = ping_service },
     autonat = { module = autonat_service },
-    kad_dht = { module = kad_dht_service, config = { mode = "client" } },
+    kad_dht = { module = kad_dht_service, config = { mode = "auto" } },
     upnp_nat = {
       module = upnp_nat_service,
       config = {
@@ -375,8 +375,8 @@ h:on("autonat:address:reachable", function(payload)
   return true
 end)
 
-h:on("autonat:address:checked", function(payload)
-  print("autonat checked mapping: "
+h:on("autonat:reachability:checked", function(payload)
+  print("autonat reachability check: "
     .. tostring(payload and payload.addr)
     .. " reachable=" .. tostring(payload and payload.reachable)
     .. " response_status=" .. tostring(payload and payload.response_status)
@@ -439,6 +439,14 @@ end)
 h:on("autonat:monitor:verified", function(payload)
   print("autonat monitor verified: round=" .. tostring(payload and payload.round or 0))
   print_autonat_summary(payload and payload.stats or {})
+  return true
+end)
+
+h:on("kad_dht:mode_changed", function(payload)
+  print("kad dht mode changed: "
+    .. tostring(payload and payload.old_mode)
+    .. " -> " .. tostring(payload and payload.mode)
+    .. " reason=" .. tostring(payload and payload.reason))
   return true
 end)
 
