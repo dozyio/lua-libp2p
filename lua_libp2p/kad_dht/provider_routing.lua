@@ -1,6 +1,7 @@
 --- KAD-DHT provider routing workflows.
 -- @module lua_libp2p.kad_dht.provider_routing
 local error_mod = require("lua_libp2p.error")
+local log = require("lua_libp2p.log").subsystem("kad_dht")
 local multiaddr = require("lua_libp2p.multiaddr")
 local multihash = require("lua_libp2p.multiformats.multihash")
 local peerid = require("lua_libp2p.peerid")
@@ -226,6 +227,10 @@ function M.find_providers(dht, key, opts)
   local options = opts or {}
   local valid_key, key_err = M.validate_provider_key(key, "find_providers")
   if not valid_key then return nil, key_err end
+  log.debug("kad dht find providers started", {
+    key_size = #key,
+    limit = options.limit or 1,
+  })
   local providers = {}
   local lookup, lookup_err = dht:_run_client_lookup(key, options.peers or seed_candidates_from_routing_table(dht, key, dht.k), function(peer, ctx)
     local query_options = options
@@ -238,6 +243,11 @@ function M.find_providers(dht, key, opts)
     if not result then return nil, err end
     for _, provider in ipairs(result.providers or {}) do
       providers[#providers + 1] = provider
+      log.debug("kad dht provider found", {
+        key_size = #key,
+        provider_peer_id = provider.peer_id,
+        via_peer_id = peer.peer_id,
+      })
       if #providers >= (options.limit or 1) then
         return { closer_peers = result.closer_peers, stop = true }
       end
@@ -247,6 +257,12 @@ function M.find_providers(dht, key, opts)
   if not lookup then
     return nil, lookup_err
   end
+  log.debug("kad dht find providers completed", {
+    key_size = #key,
+    providers = #providers,
+    queried = lookup.queried,
+    termination = lookup.termination,
+  })
   return { providers = providers, provider_peers = providers, closer_peers = lookup.closest_peers, lookup = lookup, errors = lookup.errors }
 end
 
@@ -265,6 +281,11 @@ function M.provide(dht, key, opts)
   if not stored then
     return nil, store_err
   end
+  log.debug("kad dht provide local record stored", {
+    key_size = #key,
+    provider_peer_id = provider_info.peer_id,
+    addrs = #(provider_info.addrs or {}),
+  })
 
   local peers = options.peers
   local lookup
@@ -288,6 +309,11 @@ function M.provide(dht, key, opts)
 
   local report = { key = key, provider = provider_info, lookup = lookup, attempted = 0, succeeded = 0, failed = 0, peers = {}, errors = {} }
   local limit = options.count or dht.k
+  log.debug("kad dht provide announcing", {
+    key_size = #key,
+    peers = #(peers or {}),
+    limit = limit,
+  })
   for _, peer in ipairs(peers or {}) do
     if limit and report.attempted >= limit then break end
     local target = peer.addr or (peer.addrs and peer.addrs[1]) or { peer_id = peer.peer_id, addrs = peer.addrs }
@@ -296,12 +322,27 @@ function M.provide(dht, key, opts)
     if result then
       report.succeeded = report.succeeded + 1
       report.peers[#report.peers + 1] = peer.peer_id or target
+      log.debug("kad dht provide peer succeeded", {
+        key_size = #key,
+        peer_id = peer.peer_id or target,
+      })
     else
       report.failed = report.failed + 1
       report.errors[#report.errors + 1] = err
+      log.debug("kad dht provide peer failed", {
+        key_size = #key,
+        peer_id = peer.peer_id or target,
+        cause = tostring(err),
+      })
       if options.fail_fast then return nil, err end
     end
   end
+  log.debug("kad dht provide completed", {
+    key_size = #key,
+    attempted = report.attempted,
+    succeeded = report.succeeded,
+    failed = report.failed,
+  })
   return report
 end
 

@@ -1,6 +1,7 @@
 --- KAD-DHT provider re-announcement helpers.
 -- @module lua_libp2p.kad_dht.reprovider
 local error_mod = require("lua_libp2p.error")
+local log = require("lua_libp2p.log").subsystem("kad_dht")
 
 local M = {}
 
@@ -60,6 +61,11 @@ function M.reprovide(dht, opts)
   elseif type(keys) ~= "table" then
     return nil, error_mod.new("input", "reprovide keys must be a list")
   end
+  log.debug("kad dht reprovide started", {
+    keys = #keys,
+    max_parallel = max_parallel,
+    batch_size = options.batch_size or options.limit,
+  })
 
   local report = {
     keys = {},
@@ -78,6 +84,9 @@ function M.reprovide(dht, opts)
       local item = { key = key, ok = true, result = result }
       report.items[#report.items + 1] = item
       emit_event(dht.host, "kad_dht:reprovide:item", item)
+      log.debug("kad dht reprovide item succeeded", {
+        key_size = type(key) == "string" and #key or nil,
+      })
       return true
     end
     report.failed = report.failed + 1
@@ -85,6 +94,10 @@ function M.reprovide(dht, opts)
     local item = { key = key, ok = false, error = err }
     report.items[#report.items + 1] = item
     emit_event(dht.host, "kad_dht:reprovide:item", item)
+    log.debug("kad dht reprovide item failed", {
+      key_size = type(key) == "string" and #key or nil,
+      cause = tostring(err),
+    })
     if options.fail_fast then
       return nil, err
     end
@@ -147,6 +160,11 @@ function M.reprovide(dht, opts)
         if waited == nil and wait_err then return nil, wait_err end
       end
     end
+    log.debug("kad dht reprovide completed", {
+      attempted = report.attempted,
+      succeeded = report.succeeded,
+      failed = report.failed,
+    })
     return report
   end
 
@@ -156,6 +174,11 @@ function M.reprovide(dht, opts)
     if not ok then return nil, record_err end
   end
 
+  log.debug("kad dht reprovide completed", {
+    attempted = report.attempted,
+    succeeded = report.succeeded,
+    failed = report.failed,
+  })
   return report
 end
 
@@ -167,8 +190,18 @@ function M.start(dht)
 
   local task, task_err = dht.host:spawn_task("kad.reprovider", function(ctx)
     local next_delay = dht._reprovider_initial_delay_seconds or dht._reprovider_interval_seconds
+    log.debug("kad dht reprovider task started", {
+      initial_delay_seconds = next_delay,
+      interval_seconds = dht._reprovider_interval_seconds,
+      batch_size = dht._reprovider_batch_size,
+      max_parallel = dht._reprovider_max_parallel,
+    })
     while dht._running do
-      local sleep_ok, sleep_err = ctx:sleep(scheduled_delay(dht, next_delay))
+      local delay = scheduled_delay(dht, next_delay)
+      log.debug("kad dht reprovider sleeping", {
+        delay_seconds = delay,
+      })
+      local sleep_ok, sleep_err = ctx:sleep(delay)
       if sleep_ok == nil and sleep_err then
         return nil, sleep_err
       end
@@ -193,8 +226,16 @@ function M.start(dht)
       })
       if report then
         emit_event(dht.host, "kad_dht:reprovide:complete", report)
+        log.debug("kad dht reprovider cycle completed", {
+          attempted = report.attempted,
+          succeeded = report.succeeded,
+          failed = report.failed,
+        })
       else
         emit_event(dht.host, "kad_dht:reprovide:error", err)
+        log.debug("kad dht reprovider cycle failed", {
+          cause = tostring(err),
+        })
       end
     end
     return true
@@ -203,11 +244,17 @@ function M.start(dht)
     return nil, task_err
   end
   dht._reprovider_task = task
+  log.debug("kad dht reprovider task scheduled", {
+    task_id = task.id,
+  })
   return true
 end
 
 function M.stop(dht)
   if dht._reprovider_task and dht.host and type(dht.host.cancel_task) == "function" then
+    log.debug("kad dht reprovider task cancelling", {
+      task_id = dht._reprovider_task.id,
+    })
     dht.host:cancel_task(dht._reprovider_task.id)
   end
   dht._reprovider_task = nil

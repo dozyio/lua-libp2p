@@ -3,7 +3,7 @@
 local socket = require("socket")
 
 local error_mod = require("lua_libp2p.error")
-local log = require("lua_libp2p.log")
+local log = require("lua_libp2p.log").subsystem("pcp")
 
 local M = {}
 

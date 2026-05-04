@@ -1,7 +1,7 @@
 --- NAT-PMP mapping service.
 -- @module lua_libp2p.nat_pmp.service
 local error_mod = require("lua_libp2p.error")
-local log = require("lua_libp2p.log")
+local log = require("lua_libp2p.log").subsystem("nat_pmp")
 local multiaddr = require("lua_libp2p.multiaddr")
 local nat_pmp_client = require("lua_libp2p.nat_pmp.client")
 

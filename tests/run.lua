@@ -40,6 +40,7 @@ local tests = {
   (require("tests.unit.discovery")),
   (require("tests.unit.datastore")),
   (require("tests.unit.datastore_sqlite")),
+  (require("tests.unit.log")),
   (require("tests.unit.key_pb")),
   (require("tests.unit.host")),
   (require("tests.unit.host_advertise")),

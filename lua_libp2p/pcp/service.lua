@@ -1,7 +1,7 @@
 --- PCP mapping service.
 -- @module lua_libp2p.pcp.service
 local error_mod = require("lua_libp2p.error")
-local log = require("lua_libp2p.log")
+local log = require("lua_libp2p.log").subsystem("pcp")
 local multiaddr = require("lua_libp2p.multiaddr")
 local pcp_client = require("lua_libp2p.pcp.client")
 

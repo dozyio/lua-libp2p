@@ -2,6 +2,7 @@
 -- @module lua_libp2p.protocol_perf.protocol
 local ok_socket, socket = pcall(require, "socket")
 local error_mod = require("lua_libp2p.error")
+local log = require("lua_libp2p.log").subsystem("perf")
 
 local M = {}
 
@@ -270,20 +271,37 @@ function M.measure_once(conn, send_bytes, recv_bytes, opts)
   end
 
   local started = now()
+  log.debug("perf measurement started", {
+    upload_bytes = send_bytes,
+    download_bytes = recv_bytes,
+    write_block_size = write_block_size,
+  })
 
   local ok, write_err = conn:write(recv_be)
   if not ok then
+    log.debug("perf measurement failed", {
+      stage = "write_request",
+      cause = tostring(write_err),
+    })
     return nil, write_err
   end
 
   ok, write_err = write_repeated(conn, send_bytes, write_block_size)
   if not ok then
+    log.debug("perf measurement failed", {
+      stage = "write_upload",
+      cause = tostring(write_err),
+    })
     return nil, write_err
   end
 
   if type(conn.close_write) == "function" then
     local closed_ok, close_err = conn:close_write()
     if closed_ok == nil then
+      log.debug("perf measurement failed", {
+        stage = "close_write",
+        cause = tostring(close_err),
+      })
       return nil, close_err
     end
   end
@@ -297,6 +315,11 @@ function M.measure_once(conn, send_bytes, recv_bytes, opts)
     end
     local chunk, read_err = conn:read(want)
     if not chunk then
+      log.debug("perf measurement failed", {
+        stage = "read_download",
+        downloaded_bytes = downloaded,
+        cause = tostring(read_err),
+      })
       return nil, read_err
     end
     downloaded = downloaded + #chunk
@@ -304,6 +327,11 @@ function M.measure_once(conn, send_bytes, recv_bytes, opts)
   end
 
   local finished = now()
+  log.debug("perf measurement completed", {
+    upload_bytes = send_bytes,
+    download_bytes = downloaded,
+    duration = finished - started,
+  })
   return {
     time_seconds = finished - started,
     upload_bytes = send_bytes,

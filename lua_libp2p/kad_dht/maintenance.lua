@@ -1,7 +1,7 @@
 --- KAD-DHT maintenance loop and peer refresh helpers.
 -- @module lua_libp2p.kad_dht.maintenance
 local error_mod = require("lua_libp2p.error")
-local log = require("lua_libp2p.log")
+local log = require("lua_libp2p.log").subsystem("kad_dht")
 
 local M = {}
 
@@ -41,7 +41,6 @@ function M.start(dht)
       if not refresh_report and refresh_err then
         log.debug("kad dht maintenance refresh failed", {
           cause = tostring(refresh_err),
-          subsystem = "kad_dht",
         })
       else
         emit_event(dht.host, "kad_dht:maintenance:refresh", refresh_report)

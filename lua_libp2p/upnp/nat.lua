@@ -2,7 +2,7 @@
 -- @module lua_libp2p.upnp.nat
 local error_mod = require("lua_libp2p.error")
 local igd = require("lua_libp2p.upnp.igd")
-local log = require("lua_libp2p.log")
+local log = require("lua_libp2p.log").subsystem("upnp")
 local multiaddr = require("lua_libp2p.multiaddr")
 
 local M = {}

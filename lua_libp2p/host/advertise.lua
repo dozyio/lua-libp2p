@@ -1,6 +1,6 @@
 --- Host advertised address and protocol state.
 -- @module lua_libp2p.host.advertise
-local log = require("lua_libp2p.log")
+local log = require("lua_libp2p.log").subsystem("host")
 local multiaddr = require("lua_libp2p.multiaddr")
 
 local M = {}
@@ -82,7 +82,6 @@ function M.install(Host)
     self._last_advertised_addrs = list_copy(addrs)
     self._last_advertised_protocols = list_copy(protocols)
     log.info("self peer addresses updated", {
-      subsystem = "host",
       peer_id = self:peer_id().id,
       addrs = #addrs,
       multiaddrs = table.concat(addrs, ","),

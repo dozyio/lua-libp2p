@@ -1,7 +1,7 @@
 --- Host helpers for native luv transport integration.
 -- @module lua_libp2p.host.runtime_luv_native
 local error_mod = require("lua_libp2p.error")
-local log = require("lua_libp2p.log")
+local log = require("lua_libp2p.log").subsystem("host")
 local upgrader = require("lua_libp2p.network.upgrader")
 
 local M = {}
@@ -126,7 +126,6 @@ function M.process_connection(host, entry, router, is_nonfatal_stream_error)
       entry.scheduler_pump_task = nil
       local task_err = task.error or task.status
       log.debug("native connection pump task ended", {
-        subsystem = "host",
         connection_id = entry.id,
         peer_id = entry.state and entry.state.remote_peer_id or nil,
         status = task.status,
@@ -160,7 +159,6 @@ function M.process_connection(host, entry, router, is_nonfatal_stream_error)
     entry.pump_co = nil
     if pump_err then
       log.debug("native connection pump frame error", {
-        subsystem = "host",
         connection_id = entry.id,
         peer_id = entry.state and entry.state.remote_peer_id or nil,
         cause = tostring(pump_err),

@@ -3,6 +3,7 @@
 -- KAD random walks without embedding that policy in the host runtime.
 -- @module lua_libp2p.relay_discovery
 local error_mod = require("lua_libp2p.error")
+local log = require("lua_libp2p.log").subsystem("relay_discovery")
 
 local M = {
   provides = { "relay_discovery" },
@@ -21,17 +22,27 @@ end
 
 function RelayDiscovery:_schedule()
   if not self.pending then
+    log.debug("relay discovery schedule skipped", { reason = "not_pending" })
     return true
   end
   if task_active(self.task) then
+    log.debug("relay discovery schedule skipped", {
+      reason = "task_active",
+      task_status = self.task.status,
+    })
     return true
   end
   if not (self.host and self.host._running) then
+    log.debug("relay discovery schedule skipped", { reason = "host_not_running" })
     return true
   end
 
   local current = os.time()
   local delay = math.max(0, (self.next_allowed_at or 0) - current)
+  log.debug("relay discovery scheduled", {
+    reason = self.reason,
+    delay_seconds = delay,
+  })
   local task, task_err = self.host:spawn_task("relay_discovery.replenish", function(ctx)
     if delay > 0 then
       local slept, sleep_err = ctx:sleep(delay)
@@ -54,6 +65,9 @@ end
 function RelayDiscovery:request(reason)
   self.pending = true
   self.reason = reason
+  log.debug("relay discovery requested", {
+    reason = reason,
+  })
   return self:_schedule()
 end
 
@@ -66,15 +80,21 @@ end
 
 function RelayDiscovery:run_once(now)
   if not self.pending then
+    log.debug("relay discovery run skipped", { reason = "not_pending" })
     return true
   end
   if self.host.autorelay and self.host.autorelay.need_more_relays == false then
     self.pending = false
     self.task = nil
+    log.debug("relay discovery run skipped", { reason = "relays_sufficient" })
     return true
   end
   local current = now or os.time()
   if current < (self.next_allowed_at or 0) then
+    log.debug("relay discovery run delayed", {
+      next_allowed_at = self.next_allowed_at,
+      now = current,
+    })
     return true
   end
 
@@ -87,6 +107,10 @@ function RelayDiscovery:run_once(now)
   end
 
   if ktable_peers == 0 and self.host._bootstrap_discovery and self.host._bootstrap_discovery.dial_on_start ~= false then
+    log.debug("relay discovery triggering bootstrap discovery", {
+      reason = self.reason,
+      cooldown_seconds = self.cooldown_seconds,
+    })
     self.host._bootstrap_discovery_done = false
     self.next_allowed_at = current + self.cooldown_seconds
     local boot_ok, boot_err = self.host:_schedule_bootstrap_discovery(0)
@@ -101,13 +125,24 @@ function RelayDiscovery:run_once(now)
     if task_active(self.walk_task) then
       self.next_allowed_at = current + 1
       self.task = nil
+      log.debug("relay discovery random walk skipped", {
+        reason = "walk_active",
+        walk_task_status = self.walk_task.status,
+      })
       return self:_schedule()
     end
+    log.debug("relay discovery random walk started", {
+      reason = self.reason,
+      routing_table_peers = ktable_peers,
+    })
     local walk_op, walk_err = self.host.kad_dht:random_walk({
       alpha = self.host.kad_dht.alpha,
       disjoint_paths = self.host.kad_dht.disjoint_paths,
     })
     if not walk_op then
+      log.debug("relay discovery random walk failed", {
+        cause = tostring(walk_err),
+      })
       return nil, walk_err
     end
     self.walk_task = walk_op:task()
@@ -118,6 +153,10 @@ function RelayDiscovery:run_once(now)
 
   self.pending = false
   self.next_allowed_at = current + self.cooldown_seconds
+  log.debug("relay discovery run completed", {
+    reason = "no_discovery_path",
+    cooldown_seconds = self.cooldown_seconds,
+  })
   return true
 end
 
@@ -137,6 +176,9 @@ function RelayDiscovery:start()
   end
   self._not_enough_subscription = token
   self.started = true
+  log.debug("relay discovery service started", {
+    cooldown_seconds = self.cooldown_seconds,
+  })
   if self.host.autorelay.need_more_relays == true then
     self:request("initial_need_more_relays")
   end
@@ -149,6 +191,7 @@ function RelayDiscovery:stop()
   end
   self._not_enough_subscription = nil
   self.started = false
+  log.debug("relay discovery service stopped")
   return true
 end
 

@@ -6,7 +6,7 @@ local address_manager = require("lua_libp2p.address_manager")
 local connection_manager = require("lua_libp2p.connection_manager")
 local keys = require("lua_libp2p.crypto.keys")
 local error_mod = require("lua_libp2p.error")
-local log = require("lua_libp2p.log")
+local log = require("lua_libp2p.log").subsystem("host")
 local host_advertise = require("lua_libp2p.host.advertise")
 local host_bootstrap = require("lua_libp2p.host.bootstrap")
 local host_connections = require("lua_libp2p.host.connections")
@@ -621,7 +621,6 @@ function Host:_unregister_connection(index, entry, cause)
     security = entry.state and entry.state.security or nil,
     muxer = entry.state and entry.state.muxer or nil,
     cause = tostring(cause),
-    subsystem = "host",
   })
   if self.connection_manager and type(self.connection_manager.on_connection_closed) == "function" then
     self.connection_manager:on_connection_closed(entry)
@@ -673,7 +672,6 @@ function Host:_set_runtime_error(runtime_name, err)
   self._runtime_last_error = err
   self._running = false
   local fields = flatten_error_fields(err, "cause", {
-    subsystem = "host",
     runtime = runtime_name,
   })
   log.error("host runtime tick failed", fields)
@@ -684,7 +682,6 @@ function Host:_set_runtime_error(runtime_name, err)
   })
   if not ok then
     log.error("host runtime error emit failed", {
-      subsystem = "host",
       runtime = runtime_name,
       cause = tostring(emit_err),
     })
