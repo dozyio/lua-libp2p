@@ -1,12 +1,18 @@
 local kad_dht = require("lua_libp2p.kad_dht")
 local kad_protocol = require("lua_libp2p.kad_dht.protocol")
+local multihash = require("lua_libp2p.multiformats.multihash")
+
+local CONTENT_KEY = assert(multihash.sha2_256("cid-key"))
 
 local function fake_hash(value)
   local map = {
     ["local"] = string.char(0) .. string.rep("\0", 31),
     ["peer-a"] = string.char(128) .. string.rep("\0", 31),
     ["peer-b"] = string.char(129) .. string.rep("\0", 31),
+    ["closest-a"] = string.char(128) .. string.rep("\0", 31),
+    ["closest-b"] = string.char(200) .. string.rep("\0", 31),
     ["target"] = string.char(128) .. string.rep("\0", 31),
+    [CONTENT_KEY] = string.char(128) .. string.rep("\0", 31),
   }
   return map[value] or (string.char(255) .. string.rep("\0", 31))
 end
@@ -17,10 +23,27 @@ local function run()
   local registered_handler = nil
   local host = {
     _peer = { id = "local" },
+    peerstore = {
+      addrs = {
+        ["peer-a"] = { "/ip4/8.8.8.8/tcp/4001" },
+        ["peer-b"] = { "/ip4/8.8.4.4/tcp/4001" },
+      },
+    },
   }
 
   function host:peer_id()
     return self._peer
+  end
+
+  function host.peerstore:get_addrs(peer_id)
+    return self.addrs[peer_id] or {}
+  end
+
+  function host.peerstore:merge(peer_id, info)
+    if info and type(info.addrs) == "table" then
+      self.addrs[peer_id] = info.addrs
+    end
+    return true
   end
 
   function host:handle(protocol_id, handler)
@@ -360,6 +383,7 @@ local function run()
         type = expected_type,
         key = request.key,
         closer_peers = {
+          { id = "closest-b", addrs = { "/ip4/8.8.4.5/tcp/4001" } },
           { id = "closest-a", addrs = { "/ip4/8.8.4.4/tcp/4001" } },
         },
       }
@@ -375,7 +399,7 @@ local function run()
     return nil, "get_value should return record value"
   end
 
-  local providers_result, providers_err = dht:_get_providers("peer-a", "cid-key")
+  local providers_result, providers_err = dht:_get_providers("peer-a", CONTENT_KEY)
   if not providers_result then
     return nil, providers_err
   end
@@ -391,7 +415,7 @@ local function run()
     return nil, "find_value should return first found record"
   end
 
-  local found_providers, find_providers_err = dht:_find_providers("cid-key", { peers = { { peer_id = "peer-a", addr = "peer-a" } } })
+  local found_providers, find_providers_err = dht:_find_providers(CONTENT_KEY, { peers = { { peer_id = "peer-a", addr = "peer-a" } } })
   if not found_providers then
     return nil, find_providers_err
   end
@@ -399,12 +423,12 @@ local function run()
     return nil, "find_providers should return discovered providers"
   end
 
-  local closest_peers, closest_lookup = dht:_get_closest_peers("target", { peers = { { peer_id = "peer-a", addr = "peer-a" } }, count = 1 })
+  local closest_peers, closest_lookup = dht:_get_closest_peers("target", { peers = { { peer_id = "peer-a", addr = "peer-a" } }, count = 2 })
   if not closest_peers then
     return nil, closest_lookup
   end
-  if #closest_peers ~= 1 or closest_peers[1].peer_id ~= "closest-a" then
-    return nil, "get_closest_peers should return closest discovered peers"
+  if #closest_peers ~= 2 or closest_peers[1].peer_id ~= "closest-a" or closest_peers[2].peer_id ~= "closest-b" then
+    return nil, "get_closest_peers should sort discovered peers by KAD distance"
   end
   if closest_lookup.termination ~= "starvation" and closest_lookup.termination ~= "closest_queried" then
     return nil, "get_closest_peers should include lookup termination"
@@ -766,6 +790,8 @@ local function run()
         ["peer-c"] = { "/ip4/198.51.100.3/tcp/4001" },
         ["peer-d"] = { "/ip6/2001:db8::1/tcp/4001" },
         ["peer-e"] = { "/ip6/2001:db8:1::1/tcp/4001" },
+        ["peer-f"] = { "/ip4/12.1.1.1/tcp/4001" },
+        ["peer-g"] = { "/ip4/12.2.1.1/tcp/4001" },
       },
     },
   }
@@ -802,6 +828,80 @@ local function run()
   local ip_group_e, ip_group_e_err = ip_group_dht:add_peer("peer-e")
   if ip_group_e ~= nil or not ip_group_e_err or ip_group_e_err.kind ~= "filtered" then
     return nil, "built-in ip group diversity should reject overrepresented ipv6 /32 peers"
+  end
+  local legacy_dht = assert(kad_dht.new(ip_group_host, {
+    hash_function = fake_hash,
+    address_filter = "all",
+    peer_diversity_max_peers_per_ip_group = 1,
+  }))
+  assert(legacy_dht:add_peer("peer-f"))
+  local legacy_added, legacy_err = legacy_dht:add_peer("peer-g")
+  if legacy_added ~= nil or not legacy_err or legacy_err.kind ~= "filtered" then
+    return nil, "built-in ip group diversity should group legacy class A ipv4 blocks by /8"
+  end
+  local per_bucket_dht = assert(kad_dht.new(ip_group_host, {
+    hash_function = fake_hash,
+    address_filter = "all",
+    peer_diversity_max_peers_per_ip_group = 3,
+    peer_diversity_max_peers_per_ip_group_per_bucket = 1,
+  }))
+  assert(per_bucket_dht:add_peer("peer-a"))
+  local per_bucket_added, per_bucket_err = per_bucket_dht:add_peer("peer-b")
+  if per_bucket_added ~= nil or not per_bucket_err or per_bucket_err.kind ~= "filtered" then
+    return nil, "built-in ip group diversity should enforce per-bucket limits"
+  end
+
+  local find_node_target_peer = wire_peer_id
+  local find_node_target_bytes = assert(kad_protocol.peer_bytes(find_node_target_peer))
+  local find_node_host = {
+    _peer = { id = "local" },
+    peerstore = {
+      addrs = {
+        [find_node_target_peer] = { "/ip4/10.0.0.1/tcp/4001" },
+        ["peer-a"] = { "/ip4/8.8.8.8/tcp/4001", "/ip4/127.0.0.1/tcp/4001" },
+        ["peer-b"] = { "/ip4/8.8.4.4/tcp/4001" },
+        ["local"] = { "/ip4/8.8.4.5/tcp/4001" },
+      },
+    },
+  }
+  function find_node_host:peer_id()
+    return self._peer
+  end
+  function find_node_host.peerstore:get_addrs(peer_id)
+    return self.addrs[peer_id] or {}
+  end
+  local find_node_dht = assert(kad_dht.new(find_node_host, {
+    hash_function = fake_hash,
+  }))
+  assert(find_node_dht:add_peer("peer-a", { skip_kad_protocol_filter = true }))
+  assert(find_node_dht:add_peer("peer-b", { skip_kad_protocol_filter = true }))
+  local find_node_response = assert(find_node_dht:_handle_find_node({
+    type = kad_protocol.MESSAGE_TYPE.FIND_NODE,
+    key = find_node_target_bytes,
+  }, { peer_id = "peer-a" }))
+  local response_ids = {}
+  local target_record
+  for _, peer in ipairs(find_node_response.closer_peers or {}) do
+    local id = peer.id == find_node_target_bytes and find_node_target_peer or peer.id
+    response_ids[id] = peer
+    if peer.id == find_node_target_bytes then
+      target_record = peer
+    end
+  end
+  if not target_record then
+    return nil, "FIND_NODE should include target peer from peerstore even when it is not a DHT server"
+  end
+  if response_ids["peer-a"] or response_ids["local"] then
+    return nil, "FIND_NODE should exclude requester and self from closer peers"
+  end
+  if not response_ids["peer-b"] then
+    return nil, "FIND_NODE should keep returning other closest peers after exclusions"
+  end
+  if target_record.addrs[1] ~= nil then
+    return nil, "public FIND_NODE responses should filter private target addresses by default"
+  end
+  if #response_ids["peer-b"].addrs ~= 1 or response_ids["peer-b"].addrs[1] ~= "/ip4/8.8.4.4/tcp/4001" then
+    return nil, "public FIND_NODE responses should include only public addresses"
   end
 
   dht._rpc = nil

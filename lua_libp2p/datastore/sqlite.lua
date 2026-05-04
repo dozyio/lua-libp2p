@@ -148,10 +148,11 @@ function Store:get(key)
   if not cursor then return nil, query_err end
   local row = cursor:fetch({}, "a")
   cursor_close(cursor)
-  if not row then return nil end
+  if not row or row.value == nil then return nil end
   local expires_at = tonumber(row.expires_at)
   if expires_at and expires_at <= os.time() then
-    self:delete(key)
+    local _, delete_err = exec(self._conn, "DELETE FROM " .. self._table .. " WHERE key = " .. sql_string(key))
+    if delete_err then return nil, delete_err end
     return nil
   end
   return decode_from_store(row.value)
@@ -176,7 +177,11 @@ end
 function Store:delete(key)
   local ok, key_err = datastore.validate_key(key)
   if not ok then return nil, key_err end
-  local existed = self:get(key) ~= nil
+  local cursor, query_err = exec(self._conn, "SELECT 1 AS present FROM " .. self._table .. " WHERE key = " .. sql_string(key) .. " LIMIT 1")
+  if not cursor then return nil, query_err end
+  local row = cursor:fetch({}, "a")
+  cursor_close(cursor)
+  local existed = row ~= nil and row.present ~= nil
   local result, delete_err = exec(self._conn, "DELETE FROM " .. self._table .. " WHERE key = " .. sql_string(key))
   if not result then return nil, delete_err end
   return existed
@@ -190,7 +195,7 @@ function Store:list(prefix)
   local keys = {}
   while true do
     local row = cursor:fetch({}, "a")
-    if not row then break end
+    if not row or row.key == nil then break end
     local key = row.key
     local expires_at = tonumber(row.expires_at)
     if expires_at and expires_at <= os.time() then

@@ -38,12 +38,14 @@ M.DEFAULT_MAINTENANCE_MAX_CHECKS = maintenance.DEFAULT_MAX_CHECKS
 M.DEFAULT_MAINTENANCE_WALK_EVERY = maintenance.DEFAULT_WALK_EVERY
 M.DEFAULT_MAX_FAILED_CHECKS_BEFORE_EVICT = maintenance.DEFAULT_MAX_FAILED_CHECKS_BEFORE_EVICT
 M.DEFAULT_PROVIDER_TTL_SECONDS = providers.DEFAULT_TTL_SECONDS
+M.DEFAULT_PROVIDER_ADDR_TTL_SECONDS = 24 * 60 * 60
 M.DEFAULT_RECORD_TTL_SECONDS = records.DEFAULT_TTL_SECONDS
 M.DEFAULT_REPROVIDER_ENABLED = reprovider.DEFAULT_ENABLED
 M.DEFAULT_REPROVIDER_INTERVAL_SECONDS = reprovider.DEFAULT_INTERVAL_SECONDS
 M.DEFAULT_REPROVIDER_INITIAL_DELAY_SECONDS = reprovider.DEFAULT_INITIAL_DELAY_SECONDS
 M.DEFAULT_REPROVIDER_JITTER_SECONDS = reprovider.DEFAULT_JITTER_SECONDS
 M.DEFAULT_REPROVIDER_BATCH_SIZE = reprovider.DEFAULT_BATCH_SIZE
+M.DEFAULT_REPROVIDER_MAX_PARALLEL = reprovider.DEFAULT_MAX_PARALLEL
 M.DEFAULT_REPROVIDER_TIMEOUT = reprovider.DEFAULT_TIMEOUT
 M.MODE_CLIENT = "client"
 M.MODE_SERVER = "server"
@@ -219,11 +221,25 @@ local function addr_ip_group(addr)
   if not parsed then
     return nil
   end
+  local legacy_class_a = {
+    [12] = true,
+    [17] = true,
+    [19] = true,
+    [38] = true,
+    [48] = true,
+    [53] = true,
+    [56] = true,
+    [73] = true,
+  }
   for _, component in ipairs(parsed.components or {}) do
     if component.protocol == "ip4" then
       local a, b = tostring(component.value or ""):match("^(%d+)%.(%d+)%.(%d+)%.(%d+)$")
       if a and b then
-        return "ip4:" .. tostring(tonumber(a)) .. "." .. tostring(tonumber(b)) .. ".0.0/16"
+        local first = tonumber(a)
+        if legacy_class_a[first] then
+          return "ip4:" .. tostring(first) .. ".0.0.0/8"
+        end
+        return "ip4:" .. tostring(first) .. "." .. tostring(tonumber(b)) .. ".0.0/16"
       end
     elseif component.protocol == "ip6" then
       local groups = {}
@@ -285,8 +301,9 @@ function DHT:_peer_addrs(peer_id, opts)
 end
 
 function DHT:_check_ip_group_diversity(peer_id, opts)
-  local max = self.peer_diversity_max_peers_per_ip_group
-  if not max or max <= 0 then
+  local max_global = self.peer_diversity_max_peers_per_ip_group
+  local max_per_bucket = self.peer_diversity_max_peers_per_ip_group_per_bucket
+  if (not max_global or max_global <= 0) and (not max_per_bucket or max_per_bucket <= 0) then
     return true
   end
   local groups = peer_ip_groups(self:_peer_addrs(peer_id, opts))
@@ -298,21 +315,37 @@ function DHT:_check_ip_group_diversity(peer_id, opts)
     wanted[group] = true
   end
   local counts = {}
+  local bucket_counts = {}
+  local candidate_bucket, candidate_bucket_err = self.routing_table:bucket_for_peer(peer_id)
+  if not candidate_bucket and candidate_bucket_err then
+    return nil, candidate_bucket_err
+  end
   for _, peer in ipairs(self.routing_table:all_peers()) do
     if peer.peer_id ~= peer_id then
       for _, group in ipairs(peer_ip_groups(self:_peer_addrs(peer.peer_id))) do
         if wanted[group] then
           counts[group] = (counts[group] or 0) + 1
+          if candidate_bucket and peer.bucket == candidate_bucket then
+            bucket_counts[group] = (bucket_counts[group] or 0) + 1
+          end
         end
       end
     end
   end
   for group in pairs(wanted) do
-    if (counts[group] or 0) >= max then
+    if max_global and max_global > 0 and (counts[group] or 0) >= max_global then
       return nil, error_mod.new("filtered", "peer rejected by ip group diversity limit", {
         peer_id = peer_id,
         ip_group = group,
-        max_peers_per_ip_group = max,
+        max_peers_per_ip_group = max_global,
+      })
+    end
+    if max_per_bucket and max_per_bucket > 0 and (bucket_counts[group] or 0) >= max_per_bucket then
+      return nil, error_mod.new("filtered", "peer rejected by bucket ip group diversity limit", {
+        peer_id = peer_id,
+        ip_group = group,
+        bucket = candidate_bucket,
+        max_peers_per_ip_group_per_bucket = max_per_bucket,
       })
     end
   end
@@ -543,6 +576,8 @@ end
 -- @treturn true|nil ok
 -- @treturn[opt] table err
 function DHT:add_provider(key, peer_info, opts)
+  local valid_key, key_err = provider_routing.validate_provider_key(key, "provider")
+  if not valid_key then return nil, key_err end
   return self.provider_store:add(key, peer_info, opts)
 end
 
@@ -552,6 +587,8 @@ end
 -- @treturn table|nil providers
 -- @treturn[opt] table err
 function DHT:get_local_providers(key, opts)
+  local valid_key, key_err = provider_routing.validate_provider_key(key, "provider")
+  if not valid_key then return nil, key_err end
   return self.provider_store:get(key, opts)
 end
 
@@ -736,40 +773,93 @@ function DHT:_filter_addrs(addrs, ctx)
   return out
 end
 
-function DHT:_closest_peer_records(target_key, count)
-  local nearest, nearest_err = self:find_closest_peers(target_key, count)
+local function find_node_target_peer_id(target_key)
+  local parsed = peerid.from_bytes(target_key)
+  if parsed and parsed.id then
+    return parsed.id
+  end
+  parsed = peerid.parse(target_key)
+  if parsed and parsed.id then
+    return parsed.id
+  end
+  return nil
+end
+
+function DHT:_peer_record(peer_id, purpose)
+  if type(peer_id) ~= "string" or peer_id == "" then
+    return nil
+  end
+  local id_bytes, id_err = protocol.peer_bytes(peer_id)
+  if not id_bytes then
+    return nil, id_err
+  end
+  local addrs = {}
+  if self.host and self.host.peerstore and type(self.host.peerstore.get_addrs) == "function" then
+    addrs = self:_filter_addrs(self.host.peerstore:get_addrs(peer_id), {
+      peer_id = peer_id,
+      purpose = purpose or "response",
+    })
+  end
+  return {
+    id = id_bytes,
+    addrs = addrs,
+  }
+end
+
+function DHT:_closest_peer_records(target_key, count, opts)
+  local options = opts or {}
+  local exclude = options.exclude or {}
+  local want = tonumber(count) or self.k
+  local nearest, nearest_err = self:find_closest_peers(target_key, want + 2)
   if not nearest then
     return nil, nearest_err
   end
 
   local peers = {}
+  local seen = {}
+  local function add_peer_record(peer_id, purpose, allow_empty_addrs)
+    if exclude[peer_id] or seen[peer_id] then
+      return true
+    end
+    local record, record_err = self:_peer_record(peer_id, purpose)
+    if not record then
+      return nil, record_err
+    end
+    if allow_empty_addrs or #record.addrs > 0 then
+      peers[#peers + 1] = record
+      seen[peer_id] = true
+    end
+    return true
+  end
+
+  local target_peer_id = find_node_target_peer_id(target_key)
+  if target_peer_id then
+    local ok, err = add_peer_record(target_peer_id, "find_node_target", true)
+    if not ok then return nil, err end
+  end
+
   for _, entry in ipairs(nearest) do
-    local id_bytes, id_err = protocol.peer_bytes(entry.peer_id)
-    if not id_bytes then
-      return nil, id_err
-    end
-    local addrs = {}
-    if self.host and self.host.peerstore then
-      addrs = self:_filter_addrs(self.host.peerstore:get_addrs(entry.peer_id), {
-        peer_id = entry.peer_id,
-        purpose = "response",
-      })
-    end
-    peers[#peers + 1] = {
-      id = id_bytes,
-      addrs = addrs,
-    }
+    if #peers >= want then break end
+    local ok, err = add_peer_record(entry.peer_id, "response", false)
+    if not ok then return nil, err end
   end
   return peers
 end
 
-function DHT:_handle_find_node(req)
+function DHT:_handle_find_node(req, ctx)
   local target_key = req.key
   if type(target_key) ~= "string" or target_key == "" then
     return nil, error_mod.new("input", "FIND_NODE request missing key")
   end
 
-  local peers, peers_err = self:_closest_peer_records(target_key, self.k)
+  local exclude = {
+    [self.local_peer_id] = true,
+  }
+  local requester = ctx and (ctx.peer_id or (ctx.state and ctx.state.remote_peer_id))
+  if requester then
+    exclude[requester] = true
+  end
+  local peers, peers_err = self:_closest_peer_records(target_key, self.k, { exclude = exclude })
   if not peers then
     return nil, peers_err
   end
@@ -815,15 +905,23 @@ function DHT:_add_provider(peer_or_addr, key, provider_info, opts)
   return provider_routing.add_provider(self, peer_or_addr, key, provider_info, opts)
 end
 
-function DHT:_handle_rpc(stream)
+local function reset_stream(stream)
+  if stream and type(stream.reset) == "function" then
+    return stream:reset()
+  end
+  return true
+end
+
+function DHT:_handle_rpc(stream, ctx)
   local req, req_err = protocol.read(stream, { max_message_size = self.max_message_size })
   if not req then
+    reset_stream(stream)
     return nil, req_err
   end
 
   local response, response_err
   if req.type == protocol.MESSAGE_TYPE.FIND_NODE then
-    response, response_err = self:_handle_find_node(req)
+    response, response_err = self:_handle_find_node(req, ctx)
   elseif req.type == protocol.MESSAGE_TYPE.GET_VALUE then
     response, response_err = self:_handle_get_value(req)
   elseif req.type == protocol.MESSAGE_TYPE.PUT_VALUE then
@@ -833,10 +931,12 @@ function DHT:_handle_rpc(stream)
   elseif req.type == protocol.MESSAGE_TYPE.GET_PROVIDERS then
     response, response_err = self:_handle_get_providers(req)
   else
+    reset_stream(stream)
     return nil, error_mod.new("unsupported", "kad-dht message type is not supported", { type = req.type })
   end
   if not response then
     if response_err then
+      reset_stream(stream)
       return nil, response_err
     end
     if type(stream.close_write) == "function" then
@@ -1155,10 +1255,15 @@ function DHT:_get_closest_peers(key, opts)
     if peer.peer_id and not seen[peer.peer_id] then
       seen[peer.peer_id] = true
       out[#out + 1] = peer
-      if #out >= (options.count or self.k) then
-        break
-      end
     end
+  end
+  local target_bytes = protocol.peer_bytes(key) or key
+  local target_hash = self.routing_table:_hash(target_bytes)
+  if target_hash then
+    query.sort_candidates(self, target_hash, out)
+  end
+  while #out > (options.count or self.k) do
+    out[#out] = nil
   end
   lookup.peers = out
   return out, lookup
@@ -1627,6 +1732,16 @@ function M.new(host, opts)
     end
   end
 
+  local max_peers_per_ip_group_per_bucket = options.peer_diversity_max_peers_per_ip_group_per_bucket
+  if max_peers_per_ip_group_per_bucket == false then
+    max_peers_per_ip_group_per_bucket = nil
+  elseif max_peers_per_ip_group_per_bucket ~= nil then
+    max_peers_per_ip_group_per_bucket = tonumber(max_peers_per_ip_group_per_bucket)
+    if not max_peers_per_ip_group_per_bucket or max_peers_per_ip_group_per_bucket < 0 then
+      return nil, error_mod.new("input", "peer_diversity_max_peers_per_ip_group_per_bucket must be a non-negative number")
+    end
+  end
+
   local local_peer_id = options.local_peer_id
   if not local_peer_id and host and type(host.peer_id) == "function" then
     local p = host:peer_id()
@@ -1703,6 +1818,8 @@ function M.new(host, opts)
     routing_table_filter = options.routing_table_filter,
     peer_diversity_filter = options.peer_diversity_filter,
     peer_diversity_max_peers_per_ip_group = max_peers_per_ip_group,
+    peer_diversity_max_peers_per_ip_group_per_bucket = max_peers_per_ip_group_per_bucket,
+    provider_addr_ttl_seconds = options.provider_addr_ttl_seconds == nil and M.DEFAULT_PROVIDER_ADDR_TTL_SECONDS or options.provider_addr_ttl_seconds,
     provider_store = provider_store,
     record_store = record_store,
     record_validator = options.record_validator,
@@ -1730,6 +1847,7 @@ function M.new(host, opts)
     _reprovider_jitter_seconds = options.reprovider_jitter_seconds or M.DEFAULT_REPROVIDER_JITTER_SECONDS,
     _reprovider_random = options.reprovider_random,
     _reprovider_batch_size = options.reprovider_batch_size or M.DEFAULT_REPROVIDER_BATCH_SIZE,
+    _reprovider_max_parallel = options.reprovider_max_parallel or reprovider.DEFAULT_MAX_PARALLEL,
     _reprovider_timeout = options.reprovider_timeout or M.DEFAULT_REPROVIDER_TIMEOUT,
     _reprovider_task = nil,
     _running = false,

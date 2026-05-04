@@ -53,6 +53,7 @@
   <li><a href="../modules/lua_libp2p.crypto.keys.html">lua_libp2p.crypto.keys</a></li>
   <li><a href="../modules/lua_libp2p.datastore.html">lua_libp2p.datastore</a></li>
   <li><a href="../modules/lua_libp2p.datastore.memory.html">lua_libp2p.datastore.memory</a></li>
+  <li><a href="../modules/lua_libp2p.datastore.sqlite.html">lua_libp2p.datastore.sqlite</a></li>
   <li><a href="../modules/lua_libp2p.discovery.html">lua_libp2p.discovery</a></li>
   <li><a href="../modules/lua_libp2p.dnsaddr.html">lua_libp2p.dnsaddr</a></li>
   <li><a href="../modules/lua_libp2p.error.html">lua_libp2p.error</a></li>
@@ -70,7 +71,17 @@
   <li><a href="../modules/lua_libp2p.host.service_manager.html">lua_libp2p.host.service_manager</a></li>
   <li><a href="../modules/lua_libp2p.host.tasks.html">lua_libp2p.host.tasks</a></li>
   <li><strong>lua_libp2p.kad_dht</strong></li>
+  <li><a href="../modules/lua_libp2p.kad_dht.bootstrap.html">lua_libp2p.kad_dht.bootstrap</a></li>
+  <li><a href="../modules/lua_libp2p.kad_dht.maintenance.html">lua_libp2p.kad_dht.maintenance</a></li>
   <li><a href="../modules/lua_libp2p.kad_dht.protocol.html">lua_libp2p.kad_dht.protocol</a></li>
+  <li><a href="../modules/lua_libp2p.kad_dht.provider_routing.html">lua_libp2p.kad_dht.provider_routing</a></li>
+  <li><a href="../modules/lua_libp2p.kad_dht.providers.html">lua_libp2p.kad_dht.providers</a></li>
+  <li><a href="../modules/lua_libp2p.kad_dht.query.html">lua_libp2p.kad_dht.query</a></li>
+  <li><a href="../modules/lua_libp2p.kad_dht.random_walk.html">lua_libp2p.kad_dht.random_walk</a></li>
+  <li><a href="../modules/lua_libp2p.kad_dht.record_validators.html">lua_libp2p.kad_dht.record_validators</a></li>
+  <li><a href="../modules/lua_libp2p.kad_dht.records.html">lua_libp2p.kad_dht.records</a></li>
+  <li><a href="../modules/lua_libp2p.kad_dht.reprovider.html">lua_libp2p.kad_dht.reprovider</a></li>
+  <li><a href="../modules/lua_libp2p.kad_dht.values.html">lua_libp2p.kad_dht.values</a></li>
   <li><a href="../modules/lua_libp2p.kbucket.html">lua_libp2p.kbucket</a></li>
   <li><a href="../modules/lua_libp2p.log.html">lua_libp2p.log</a></li>
   <li><a href="../modules/lua_libp2p.multiaddr.html">lua_libp2p.multiaddr</a></li>
@@ -111,6 +122,7 @@
   <li><a href="../modules/lua_libp2p.record.peer_record.html">lua_libp2p.record.peer_record</a></li>
   <li><a href="../modules/lua_libp2p.record.signed_envelope.html">lua_libp2p.record.signed_envelope</a></li>
   <li><a href="../modules/lua_libp2p.relay_discovery.html">lua_libp2p.relay_discovery</a></li>
+  <li><a href="../modules/lua_libp2p.resource_manager.html">lua_libp2p.resource_manager</a></li>
   <li><a href="../modules/lua_libp2p.transport_circuit_relay_v2.autorelay.html">lua_libp2p.transport_circuit_relay_v2.autorelay</a></li>
   <li><a href="../modules/lua_libp2p.transport_circuit_relay_v2.client.html">lua_libp2p.transport_circuit_relay_v2.client</a></li>
   <li><a href="../modules/lua_libp2p.transport_circuit_relay_v2.protocol.html">lua_libp2p.transport_circuit_relay_v2.protocol</a></li>
@@ -137,12 +149,20 @@
 <h2><a href="#Functions">Functions</a></h2>
 <table class="function_list">
 	<tr>
+	<td class="name" nowrap><a href="#DHT:_add_provider">DHT:_add_provider (peer_or_addr, key, provider_info, opts)</a></td>
+	<td class="summary">Internal ADD_PROVIDER RPC wrapper.</td>
+	</tr>
+	<tr>
 	<td class="name" nowrap><a href="#DHT:_bootstrap">DHT:_bootstrap (opts)</a></td>
 	<td class="summary">Internal bootstrap dial workflow.</td>
 	</tr>
 	<tr>
 	<td class="name" nowrap><a href="#DHT:_find_node">DHT:_find_node (peer_or_addr, target_key, opts)</a></td>
 	<td class="summary">Internal FIND_NODE RPC wrapper.</td>
+	</tr>
+	<tr>
+	<td class="name" nowrap><a href="#DHT:_find_peer_network">DHT:_find_peer_network (peer_id[, opts])</a></td>
+	<td class="summary">Network peer-routing lookup with optional local routing-table cache.</td>
 	</tr>
 	<tr>
 	<td class="name" nowrap><a href="#DHT:_find_providers">DHT:_find_providers (key, opts)</a></td>
@@ -163,6 +183,18 @@
 	<tr>
 	<td class="name" nowrap><a href="#DHT:_get_value">DHT:_get_value (peer_or_addr, key, opts)</a></td>
 	<td class="summary">Internal GET_VALUE RPC wrapper.</td>
+	</tr>
+	<tr>
+	<td class="name" nowrap><a href="#DHT:_provide">DHT:_provide (key, opts)</a></td>
+	<td class="summary">Internal provider announcement workflow.</td>
+	</tr>
+	<tr>
+	<td class="name" nowrap><a href="#DHT:_put_value">DHT:_put_value (peer_or_addr, key, record, opts)</a></td>
+	<td class="summary">Internal PUT_VALUE RPC wrapper.</td>
+	</tr>
+	<tr>
+	<td class="name" nowrap><a href="#DHT:_put_value_workflow">DHT:_put_value_workflow (key, value_or_record, opts)</a></td>
+	<td class="summary">Internal value publication workflow.</td>
 	</tr>
 	<tr>
 	<td class="name" nowrap><a href="#DHT:_random_walk">DHT:_random_walk (opts)</a></td>
@@ -189,6 +221,10 @@
 	<td class="summary">Add a peer to the routing table.</td>
 	</tr>
 	<tr>
+	<td class="name" nowrap><a href="#DHT:add_provider">DHT:add_provider (key, peer_info[, opts])</a></td>
+	<td class="summary">Store a provider record locally.</td>
+	</tr>
+	<tr>
 	<td class="name" nowrap><a href="#DHT:bootstrap_targets">DHT:bootstrap_targets ([opts])</a></td>
 	<td class="summary">Resolve bootstrap targets into dialable addresses.</td>
 	</tr>
@@ -205,8 +241,12 @@
 	<td class="summary">Find a peer by id via lookup.</td>
 	</tr>
 	<tr>
-	<td class="name" nowrap><a href="#DHT:find_peer">DHT:find_peer (peer_id)</a></td>
-	<td class="summary">Lookup a peer in local routing table.</td>
+	<td class="name" nowrap><a href="#DHT:find_peer">DHT:find_peer (peer_id, opts)</a></td>
+	<td class="summary">Find a peer through peer routing, using local cache by default.</td>
+	</tr>
+	<tr>
+	<td class="name" nowrap><a href="#DHT:find_peer_network">DHT:find_peer_network (peer_id, opts)</a></td>
+	<td class="summary">Find a peer through peer routing, optionally using local cache first.</td>
 	</tr>
 	<tr>
 	<td class="name" nowrap><a href="#DHT:find_providers">DHT:find_providers (key, opts)</a></td>
@@ -217,8 +257,24 @@
 	<td class="summary">Lookup value through iterative query.</td>
 	</tr>
 	<tr>
+	<td class="name" nowrap><a href="#DHT:get">DHT:get (key, opts)</a></td>
+	<td class="summary">JS/libp2p-style value routing alias for <a href="../modules/lua_libp2p.kad_dht.html#DHT:find_value">find_value</a>.</td>
+	</tr>
+	<tr>
 	<td class="name" nowrap><a href="#DHT:get_closest_peers">DHT:get_closest_peers (key, opts)</a></td>
 	<td class="summary">Lookup closest peers through iterative query.</td>
+	</tr>
+	<tr>
+	<td class="name" nowrap><a href="#DHT:get_local_peer">DHT:get_local_peer (peer_id)</a></td>
+	<td class="summary">Lookup a peer in local routing table.</td>
+	</tr>
+	<tr>
+	<td class="name" nowrap><a href="#DHT:get_local_providers">DHT:get_local_providers (key[, opts])</a></td>
+	<td class="summary">Return locally stored, non-expired providers for a key.</td>
+	</tr>
+	<tr>
+	<td class="name" nowrap><a href="#DHT:get_local_record">DHT:get_local_record (key[, opts])</a></td>
+	<td class="summary">Return a locally stored, non-expired value record.</td>
 	</tr>
 	<tr>
 	<td class="name" nowrap><a href="#DHT:get_providers">DHT:get_providers (peer_or_addr, key, opts)</a></td>
@@ -227,6 +283,30 @@
 	<tr>
 	<td class="name" nowrap><a href="#DHT:get_value">DHT:get_value (peer_or_addr, key, opts)</a></td>
 	<td class="summary">Query a peer for value records.</td>
+	</tr>
+	<tr>
+	<td class="name" nowrap><a href="#DHT:list_local_provider_keys">DHT:list_local_provider_keys ([opts])</a></td>
+	<td class="summary">Return provider keys where this host is the local provider.</td>
+	</tr>
+	<tr>
+	<td class="name" nowrap><a href="#DHT:provide">DHT:provide (key, opts)</a></td>
+	<td class="summary">Announce this host as a provider for a content key.</td>
+	</tr>
+	<tr>
+	<td class="name" nowrap><a href="#DHT:put">DHT:put (key, value_or_record, opts)</a></td>
+	<td class="summary">JS/libp2p-style value routing alias for <a href="../modules/lua_libp2p.kad_dht.html#DHT:put_value">put_value</a>.</td>
+	</tr>
+	<tr>
+	<td class="name" nowrap><a href="#DHT:put_local_record">DHT:put_local_record (key, record[, opts])</a></td>
+	<td class="summary">Store a value record locally.</td>
+	</tr>
+	<tr>
+	<td class="name" nowrap><a href="#DHT:put_value">DHT:put_value (key, value_or_record, opts)</a></td>
+	<td class="summary">Store and publish a value record to closest peers.</td>
+	</tr>
+	<tr>
+	<td class="name" nowrap><a href="#DHT:put_value_to_peer">DHT:put_value_to_peer (peer_or_addr, key, record, opts)</a></td>
+	<td class="summary">Query a peer to store a value record.</td>
 	</tr>
 	<tr>
 	<td class="name" nowrap><a href="#DHT:random_walk">DHT:random_walk ([opts])</a></td>
@@ -239,6 +319,18 @@
 	<tr>
 	<td class="name" nowrap><a href="#DHT:remove_peer">DHT:remove_peer (peer_id)</a></td>
 	<td class="summary">Remove a peer from routing table and health tracking.</td>
+	</tr>
+	<tr>
+	<td class="name" nowrap><a href="#DHT:reprovide">DHT:reprovide (opts)</a></td>
+	<td class="summary">Re-announce locally stored provider records.</td>
+	</tr>
+	<tr>
+	<td class="name" nowrap><a href="#DHT:set_record_selector">DHT:set_record_selector (namespace, fn)</a></td>
+	<td class="summary">Register or clear a value record selector for a key namespace.</td>
+	</tr>
+	<tr>
+	<td class="name" nowrap><a href="#DHT:set_record_validator">DHT:set_record_validator (namespace, fn)</a></td>
+	<td class="summary">Register or clear a value record validator for a key namespace.</td>
 	</tr>
 	<tr>
 	<td class="name" nowrap><a href="#DHT:start">DHT:start ()</a></td>
@@ -269,6 +361,44 @@
     <h2 class="section-header "><a name="Functions"></a>Functions</h2>
 
     <dl class="function">
+    <dt>
+    <a name = "DHT:_add_provider"></a>
+    <strong>DHT:_add_provider (peer_or_addr, key, provider_info, opts)</strong>
+    </dt>
+    <dd>
+    Internal ADD_PROVIDER RPC wrapper.
+ <code>opts</code> uses same transport fields as <a href="../modules/lua_libp2p.kad_dht.html#DHT:_rpc">_rpc</a>.
+
+
+    <h3>Parameters:</h3>
+    <ul>
+        <li><span class="parameter">peer_or_addr</span>
+
+
+
+        </li>
+        <li><span class="parameter">key</span>
+
+
+
+        </li>
+        <li><span class="parameter">provider_info</span>
+
+
+
+        </li>
+        <li><span class="parameter">opts</span>
+
+
+
+        </li>
+    </ul>
+
+
+
+
+
+</dd>
     <dt>
     <a name = "DHT:_bootstrap"></a>
     <strong>DHT:_bootstrap (opts)</strong>
@@ -321,6 +451,44 @@
         </li>
     </ul>
 
+
+
+
+
+</dd>
+    <dt>
+    <a name = "DHT:_find_peer_network"></a>
+    <strong>DHT:_find_peer_network (peer_id[, opts])</strong>
+    </dt>
+    <dd>
+    Network peer-routing lookup with optional local routing-table cache.
+ Returns a report containing <code>peer</code> when found, plus closest peers/lookup data.
+ <code>opts.use_cache=false</code> forces a network lookup even when the peer is local.
+ <code>opts.use_network=false</code> checks only the local cache.
+
+
+    <h3>Parameters:</h3>
+    <ul>
+        <li><span class="parameter">peer_id</span>
+            <span class="types"><a class="type" href="https://www.lua.org/manual/5.4/manual.html#6.4">string</a></span>
+         Peer id to find.
+        </li>
+        <li><span class="parameter">opts</span>
+            <span class="types"><a class="type" href="https://www.lua.org/manual/5.4/manual.html#6.6">table</a></span>
+         Lookup controls.
+         (<em>optional</em>)
+        </li>
+    </ul>
+
+    <h3>Returns:</h3>
+    <ol>
+        <li>
+           <span class="types"><a class="type" href="https://www.lua.org/manual/5.4/manual.html#6.6">table</a> or <span class="type">nil</span></span>
+        report</li>
+        <li>
+           <span class="types"><a class="type" href="https://www.lua.org/manual/5.4/manual.html#6.6">table</a></span>
+        err</li>
+    </ol>
 
 
 
@@ -462,6 +630,106 @@
 
         </li>
         <li><span class="parameter">key</span>
+
+
+
+        </li>
+        <li><span class="parameter">opts</span>
+
+
+
+        </li>
+    </ul>
+
+
+
+
+
+</dd>
+    <dt>
+    <a name = "DHT:_provide"></a>
+    <strong>DHT:_provide (key, opts)</strong>
+    </dt>
+    <dd>
+    Internal provider announcement workflow.
+ Stores the local provider record and announces it to closest known peers.
+
+
+    <h3>Parameters:</h3>
+    <ul>
+        <li><span class="parameter">key</span>
+
+
+
+        </li>
+        <li><span class="parameter">opts</span>
+
+
+
+        </li>
+    </ul>
+
+
+
+
+
+</dd>
+    <dt>
+    <a name = "DHT:_put_value"></a>
+    <strong>DHT:_put_value (peer_or_addr, key, record, opts)</strong>
+    </dt>
+    <dd>
+    Internal PUT_VALUE RPC wrapper.
+ <code>opts</code> uses same transport fields as <a href="../modules/lua_libp2p.kad_dht.html#DHT:_rpc">_rpc</a>.
+ <code>opts.timeout</code>, <code>opts.ctx</code>, <code>opts.stream_opts</code>, and <code>opts.max_message_size</code> are honored.
+
+
+    <h3>Parameters:</h3>
+    <ul>
+        <li><span class="parameter">peer_or_addr</span>
+
+
+
+        </li>
+        <li><span class="parameter">key</span>
+
+
+
+        </li>
+        <li><span class="parameter">record</span>
+
+
+
+        </li>
+        <li><span class="parameter">opts</span>
+
+
+
+        </li>
+    </ul>
+
+
+
+
+
+</dd>
+    <dt>
+    <a name = "DHT:_put_value_workflow"></a>
+    <strong>DHT:_put_value_workflow (key, value_or_record, opts)</strong>
+    </dt>
+    <dd>
+    Internal value publication workflow.
+ Stores the local record and announces it to closest known peers.
+
+
+    <h3>Parameters:</h3>
+    <ul>
+        <li><span class="parameter">key</span>
+
+
+
+        </li>
+        <li><span class="parameter">value_or_record</span>
 
 
 
@@ -681,6 +949,45 @@
 
 </dd>
     <dt>
+    <a name = "DHT:add_provider"></a>
+    <strong>DHT:add_provider (key, peer_info[, opts])</strong>
+    </dt>
+    <dd>
+    Store a provider record locally.
+
+
+    <h3>Parameters:</h3>
+    <ul>
+        <li><span class="parameter">key</span>
+            <span class="types"><a class="type" href="https://www.lua.org/manual/5.4/manual.html#6.4">string</a></span>
+         Content key/CID multihash bytes.
+        </li>
+        <li><span class="parameter">peer_info</span>
+            <span class="types"><a class="type" href="https://www.lua.org/manual/5.4/manual.html#6.6">table</a></span>
+         Provider peer info (<code>peer_id</code>/<code>id</code>, <code>addrs</code>).
+        </li>
+        <li><span class="parameter">opts</span>
+            <span class="types"><a class="type" href="https://www.lua.org/manual/5.4/manual.html#6.6">table</a></span>
+         <code>ttl</code> or <code>ttl_seconds</code>.
+         (<em>optional</em>)
+        </li>
+    </ul>
+
+    <h3>Returns:</h3>
+    <ol>
+        <li>
+           <span class="types"><span class="type">true</span> or <span class="type">nil</span></span>
+        ok</li>
+        <li>
+           <span class="types"><a class="type" href="https://www.lua.org/manual/5.4/manual.html#6.6">table</a></span>
+        err</li>
+    </ol>
+
+
+
+
+</dd>
+    <dt>
     <a name = "DHT:bootstrap_targets"></a>
     <strong>DHT:bootstrap_targets ([opts])</strong>
     </dt>
@@ -825,16 +1132,23 @@
 </dd>
     <dt>
     <a name = "DHT:find_peer"></a>
-    <strong>DHT:find_peer (peer_id)</strong>
+    <strong>DHT:find_peer (peer_id, opts)</strong>
     </dt>
     <dd>
-    Lookup a peer in local routing table.
+    Find a peer through peer routing, using local cache by default.
+ Pass <code>use_cache=false</code> to force a network lookup. For local-only routing
+ table lookup use <a href="../modules/lua_libp2p.kad_dht.html#DHT:get_local_peer">get_local_peer</a>. Pass <code>use_network=false</code> to avoid
+ network lookup after a cache miss.
 
 
     <h3>Parameters:</h3>
     <ul>
         <li><span class="parameter">peer_id</span>
-            <span class="types"><a class="type" href="https://www.lua.org/manual/5.4/manual.html#6.4">string</a></span>
+
+
+
+        </li>
+        <li><span class="parameter">opts</span>
 
 
 
@@ -843,9 +1157,50 @@
 
     <h3>Returns:</h3>
     <ol>
-
+        <li>
            <span class="types"><a class="type" href="https://www.lua.org/manual/5.4/manual.html#6.6">table</a> or <span class="type">nil</span></span>
-        peer
+        op</li>
+        <li>
+           <span class="types"><a class="type" href="https://www.lua.org/manual/5.4/manual.html#6.6">table</a></span>
+        err</li>
+    </ol>
+
+
+
+
+</dd>
+    <dt>
+    <a name = "DHT:find_peer_network"></a>
+    <strong>DHT:find_peer_network (peer_id, opts)</strong>
+    </dt>
+    <dd>
+    Find a peer through peer routing, optionally using local cache first.
+ Unlike <a href="../modules/lua_libp2p.kad_dht.html#DHT:find_peer">find_peer</a>, this is a network-capable operation. Pass
+ <code>use_cache=false</code> to bypass the local routing table.
+
+
+    <h3>Parameters:</h3>
+    <ul>
+        <li><span class="parameter">peer_id</span>
+
+
+
+        </li>
+        <li><span class="parameter">opts</span>
+
+
+
+        </li>
+    </ul>
+
+    <h3>Returns:</h3>
+    <ol>
+        <li>
+           <span class="types"><a class="type" href="https://www.lua.org/manual/5.4/manual.html#6.6">table</a> or <span class="type">nil</span></span>
+        op</li>
+        <li>
+           <span class="types"><a class="type" href="https://www.lua.org/manual/5.4/manual.html#6.6">table</a></span>
+        err</li>
     </ol>
 
 
@@ -930,6 +1285,42 @@
 
 </dd>
     <dt>
+    <a name = "DHT:get"></a>
+    <strong>DHT:get (key, opts)</strong>
+    </dt>
+    <dd>
+    JS/libp2p-style value routing alias for <a href="../modules/lua_libp2p.kad_dht.html#DHT:find_value">find_value</a>.
+
+
+    <h3>Parameters:</h3>
+    <ul>
+        <li><span class="parameter">key</span>
+
+
+
+        </li>
+        <li><span class="parameter">opts</span>
+
+
+
+        </li>
+    </ul>
+
+    <h3>Returns:</h3>
+    <ol>
+        <li>
+           <span class="types"><a class="type" href="https://www.lua.org/manual/5.4/manual.html#6.6">table</a> or <span class="type">nil</span></span>
+        op</li>
+        <li>
+           <span class="types"><a class="type" href="https://www.lua.org/manual/5.4/manual.html#6.6">table</a></span>
+        err</li>
+    </ol>
+
+
+
+
+</dd>
+    <dt>
     <a name = "DHT:get_closest_peers"></a>
     <strong>DHT:get_closest_peers (key, opts)</strong>
     </dt>
@@ -958,6 +1349,105 @@
         <li>
            <span class="types"><a class="type" href="https://www.lua.org/manual/5.4/manual.html#6.6">table</a> or <span class="type">nil</span></span>
         op</li>
+        <li>
+           <span class="types"><a class="type" href="https://www.lua.org/manual/5.4/manual.html#6.6">table</a></span>
+        err</li>
+    </ol>
+
+
+
+
+</dd>
+    <dt>
+    <a name = "DHT:get_local_peer"></a>
+    <strong>DHT:get_local_peer (peer_id)</strong>
+    </dt>
+    <dd>
+    Lookup a peer in local routing table.
+
+
+    <h3>Parameters:</h3>
+    <ul>
+        <li><span class="parameter">peer_id</span>
+            <span class="types"><a class="type" href="https://www.lua.org/manual/5.4/manual.html#6.4">string</a></span>
+
+
+
+        </li>
+    </ul>
+
+    <h3>Returns:</h3>
+    <ol>
+
+           <span class="types"><a class="type" href="https://www.lua.org/manual/5.4/manual.html#6.6">table</a> or <span class="type">nil</span></span>
+        peer
+    </ol>
+
+
+
+
+</dd>
+    <dt>
+    <a name = "DHT:get_local_providers"></a>
+    <strong>DHT:get_local_providers (key[, opts])</strong>
+    </dt>
+    <dd>
+    Return locally stored, non-expired providers for a key.
+
+
+    <h3>Parameters:</h3>
+    <ul>
+        <li><span class="parameter">key</span>
+            <span class="types"><a class="type" href="https://www.lua.org/manual/5.4/manual.html#6.4">string</a></span>
+         Content key/CID multihash bytes.
+        </li>
+        <li><span class="parameter">opts</span>
+            <span class="types"><a class="type" href="https://www.lua.org/manual/5.4/manual.html#6.6">table</a></span>
+         <code>limit</code>.
+         (<em>optional</em>)
+        </li>
+    </ul>
+
+    <h3>Returns:</h3>
+    <ol>
+        <li>
+           <span class="types"><a class="type" href="https://www.lua.org/manual/5.4/manual.html#6.6">table</a> or <span class="type">nil</span></span>
+        providers</li>
+        <li>
+           <span class="types"><a class="type" href="https://www.lua.org/manual/5.4/manual.html#6.6">table</a></span>
+        err</li>
+    </ol>
+
+
+
+
+</dd>
+    <dt>
+    <a name = "DHT:get_local_record"></a>
+    <strong>DHT:get_local_record (key[, opts])</strong>
+    </dt>
+    <dd>
+    Return a locally stored, non-expired value record.
+
+
+    <h3>Parameters:</h3>
+    <ul>
+        <li><span class="parameter">key</span>
+            <span class="types"><a class="type" href="https://www.lua.org/manual/5.4/manual.html#6.4">string</a></span>
+         Record key bytes.
+        </li>
+        <li><span class="parameter">opts</span>
+            <span class="types"><a class="type" href="https://www.lua.org/manual/5.4/manual.html#6.6">table</a></span>
+         Reserved for future selectors.
+         (<em>optional</em>)
+        </li>
+    </ul>
+
+    <h3>Returns:</h3>
+    <ol>
+        <li>
+           <span class="types"><a class="type" href="https://www.lua.org/manual/5.4/manual.html#6.6">table</a> or <span class="type">nil</span></span>
+        record</li>
         <li>
            <span class="types"><a class="type" href="https://www.lua.org/manual/5.4/manual.html#6.6">table</a></span>
         err</li>
@@ -1026,6 +1516,243 @@
 
         </li>
         <li><span class="parameter">key</span>
+
+
+
+        </li>
+        <li><span class="parameter">opts</span>
+
+
+
+        </li>
+    </ul>
+
+    <h3>Returns:</h3>
+    <ol>
+        <li>
+           <span class="types"><a class="type" href="https://www.lua.org/manual/5.4/manual.html#6.6">table</a> or <span class="type">nil</span></span>
+        op</li>
+        <li>
+           <span class="types"><a class="type" href="https://www.lua.org/manual/5.4/manual.html#6.6">table</a></span>
+        err</li>
+    </ol>
+
+
+
+
+</dd>
+    <dt>
+    <a name = "DHT:list_local_provider_keys"></a>
+    <strong>DHT:list_local_provider_keys ([opts])</strong>
+    </dt>
+    <dd>
+    Return provider keys where this host is the local provider.
+
+
+    <h3>Parameters:</h3>
+    <ul>
+        <li><span class="parameter">opts</span>
+            <span class="types"><a class="type" href="https://www.lua.org/manual/5.4/manual.html#6.6">table</a></span>
+         <code>limit</code>.
+         (<em>optional</em>)
+        </li>
+    </ul>
+
+    <h3>Returns:</h3>
+    <ol>
+        <li>
+           <span class="types"><a class="type" href="https://www.lua.org/manual/5.4/manual.html#6.6">table</a> or <span class="type">nil</span></span>
+        keys</li>
+        <li>
+           <span class="types"><a class="type" href="https://www.lua.org/manual/5.4/manual.html#6.6">table</a></span>
+        err</li>
+    </ol>
+
+
+
+
+</dd>
+    <dt>
+    <a name = "DHT:provide"></a>
+    <strong>DHT:provide (key, opts)</strong>
+    </dt>
+    <dd>
+    Announce this host as a provider for a content key.
+ <code>opts</code> supports lookup controls, <code>addrs</code>, provider TTL controls, and <code>fail_fast</code>.
+
+
+    <h3>Parameters:</h3>
+    <ul>
+        <li><span class="parameter">key</span>
+
+
+
+        </li>
+        <li><span class="parameter">opts</span>
+
+
+
+        </li>
+    </ul>
+
+    <h3>Returns:</h3>
+    <ol>
+        <li>
+           <span class="types"><a class="type" href="https://www.lua.org/manual/5.4/manual.html#6.6">table</a> or <span class="type">nil</span></span>
+        op</li>
+        <li>
+           <span class="types"><a class="type" href="https://www.lua.org/manual/5.4/manual.html#6.6">table</a></span>
+        err</li>
+    </ol>
+
+
+
+
+</dd>
+    <dt>
+    <a name = "DHT:put"></a>
+    <strong>DHT:put (key, value_or_record, opts)</strong>
+    </dt>
+    <dd>
+    JS/libp2p-style value routing alias for <a href="../modules/lua_libp2p.kad_dht.html#DHT:put_value">put_value</a>.
+
+
+    <h3>Parameters:</h3>
+    <ul>
+        <li><span class="parameter">key</span>
+
+
+
+        </li>
+        <li><span class="parameter">value_or_record</span>
+
+
+
+        </li>
+        <li><span class="parameter">opts</span>
+
+
+
+        </li>
+    </ul>
+
+    <h3>Returns:</h3>
+    <ol>
+        <li>
+           <span class="types"><a class="type" href="https://www.lua.org/manual/5.4/manual.html#6.6">table</a> or <span class="type">nil</span></span>
+        op</li>
+        <li>
+           <span class="types"><a class="type" href="https://www.lua.org/manual/5.4/manual.html#6.6">table</a></span>
+        err</li>
+    </ol>
+
+
+
+
+</dd>
+    <dt>
+    <a name = "DHT:put_local_record"></a>
+    <strong>DHT:put_local_record (key, record[, opts])</strong>
+    </dt>
+    <dd>
+    Store a value record locally.
+
+
+    <h3>Parameters:</h3>
+    <ul>
+        <li><span class="parameter">key</span>
+            <span class="types"><a class="type" href="https://www.lua.org/manual/5.4/manual.html#6.4">string</a></span>
+         Record key bytes.
+        </li>
+        <li><span class="parameter">record</span>
+            <span class="types"><a class="type" href="https://www.lua.org/manual/5.4/manual.html#6.6">table</a></span>
+         KAD record (<code>key</code>, <code>value</code>, optional <code>time_received</code>).
+        </li>
+        <li><span class="parameter">opts</span>
+            <span class="types"><a class="type" href="https://www.lua.org/manual/5.4/manual.html#6.6">table</a></span>
+         <code>ttl</code> or <code>ttl_seconds</code>.
+         (<em>optional</em>)
+        </li>
+    </ul>
+
+    <h3>Returns:</h3>
+    <ol>
+        <li>
+           <span class="types"><span class="type">true</span> or <span class="type">nil</span></span>
+        ok</li>
+        <li>
+           <span class="types"><a class="type" href="https://www.lua.org/manual/5.4/manual.html#6.6">table</a></span>
+        err</li>
+    </ol>
+
+
+
+
+</dd>
+    <dt>
+    <a name = "DHT:put_value"></a>
+    <strong>DHT:put_value (key, value_or_record, opts)</strong>
+    </dt>
+    <dd>
+    Store and publish a value record to closest peers.
+ <code>value_or_record</code> may be raw value bytes or a KAD record table.
+
+
+    <h3>Parameters:</h3>
+    <ul>
+        <li><span class="parameter">key</span>
+
+
+
+        </li>
+        <li><span class="parameter">value_or_record</span>
+
+
+
+        </li>
+        <li><span class="parameter">opts</span>
+
+
+
+        </li>
+    </ul>
+
+    <h3>Returns:</h3>
+    <ol>
+        <li>
+           <span class="types"><a class="type" href="https://www.lua.org/manual/5.4/manual.html#6.6">table</a> or <span class="type">nil</span></span>
+        op</li>
+        <li>
+           <span class="types"><a class="type" href="https://www.lua.org/manual/5.4/manual.html#6.6">table</a></span>
+        err</li>
+    </ol>
+
+
+
+
+</dd>
+    <dt>
+    <a name = "DHT:put_value_to_peer"></a>
+    <strong>DHT:put_value_to_peer (peer_or_addr, key, record, opts)</strong>
+    </dt>
+    <dd>
+    Query a peer to store a value record.
+ <code>opts</code> supports <code>timeout</code>, <code>ctx</code>, and <code>stream_opts</code>.
+
+
+    <h3>Parameters:</h3>
+    <ul>
+        <li><span class="parameter">peer_or_addr</span>
+
+
+
+        </li>
+        <li><span class="parameter">key</span>
+
+
+
+        </li>
+        <li><span class="parameter">record</span>
 
 
 
@@ -1151,6 +1878,96 @@
 
 </dd>
     <dt>
+    <a name = "DHT:reprovide"></a>
+    <strong>DHT:reprovide (opts)</strong>
+    </dt>
+    <dd>
+    Re-announce locally stored provider records.
+ <code>opts.keys</code> can limit to explicit provider keys; otherwise local provider keys
+ are read from the provider store. <code>opts.batch_size</code> bounds listed keys.
+
+
+    <h3>Parameters:</h3>
+    <ul>
+        <li><span class="parameter">opts</span>
+
+
+
+        </li>
+    </ul>
+
+    <h3>Returns:</h3>
+    <ol>
+        <li>
+           <span class="types"><a class="type" href="https://www.lua.org/manual/5.4/manual.html#6.6">table</a> or <span class="type">nil</span></span>
+        op</li>
+        <li>
+           <span class="types"><a class="type" href="https://www.lua.org/manual/5.4/manual.html#6.6">table</a></span>
+        err</li>
+    </ol>
+
+
+
+
+</dd>
+    <dt>
+    <a name = "DHT:set_record_selector"></a>
+    <strong>DHT:set_record_selector (namespace, fn)</strong>
+    </dt>
+    <dd>
+    Register or clear a value record selector for a key namespace.
+ Selectors receive <code>(key, existing, incoming, dht)</code> and return <code>&quot;incoming&quot;</code>,
+ <code>&quot;existing&quot;</code>, <code>true</code> (incoming), or <code>false</code> (existing).
+
+
+    <h3>Parameters:</h3>
+    <ul>
+        <li><span class="parameter">namespace</span>
+
+
+
+        </li>
+        <li><span class="parameter">fn</span>
+
+
+
+        </li>
+    </ul>
+
+
+
+
+
+</dd>
+    <dt>
+    <a name = "DHT:set_record_validator"></a>
+    <strong>DHT:set_record_validator (namespace, fn)</strong>
+    </dt>
+    <dd>
+    Register or clear a value record validator for a key namespace.
+ Namespace is the first path segment, e.g. <code>/ipns/&lt;name&gt;</code> -> <code>ipns</code>.
+
+
+    <h3>Parameters:</h3>
+    <ul>
+        <li><span class="parameter">namespace</span>
+
+
+
+        </li>
+        <li><span class="parameter">fn</span>
+
+
+
+        </li>
+    </ul>
+
+
+
+
+
+</dd>
+    <dt>
     <a name = "DHT:start"></a>
     <strong>DHT:start ()</strong>
     </dt>
@@ -1227,11 +2044,13 @@
     </dt>
     <dd>
     Build a KAD service instance.
- Common <code>opts</code>: <code>mode</code>, <code>k</code>, <code>alpha</code>, <code>disjoint_paths</code>, <code>protocol_id</code>,
+ Common <code>opts</code>: <code>mode</code>, <code>auto_server_mode</code>, <code>k</code>, <code>alpha</code>, <code>disjoint_paths</code>, <code>protocol_id</code>,
  <code>address_filter</code>, <code>peer_discovery</code>, <code>bootstrappers</code>, <code>routing_table</code>,
  and maintenance controls (<code>maintenance_enabled</code>, <code>maintenance_interval_seconds</code>, etc.).
  Additional options: <code>local_peer_id</code>, <code>dnsaddr_resolver</code>,
  <code>max_message_size</code>, and protocol-check tuning values.
+ <code>mode=&quot;auto&quot;</code> starts in client mode and switches to server mode when the
+ host advertises a public direct address, matching js-libp2p DHT behavior.
  <code>opts.maintenance_enabled</code> defaults to <code>false</code>; interval/check knobs use
  <code>maintenance_*</code> names from module defaults.
 
@@ -1301,7 +2120,7 @@
 </div> <!-- id="main" -->
 <div id="about">
 <i>generated by <a href="http://github.com/lunarmodules/LDoc">LDoc 1.5.0</a></i>
-<i style="float:right;">Last updated 2026-05-03 21:47:30 </i>
+<i style="float:right;">Last updated 2026-05-05 00:04:08 </i>
 </div> <!-- id="about" -->
 </div> <!-- id="container" -->
 </body>

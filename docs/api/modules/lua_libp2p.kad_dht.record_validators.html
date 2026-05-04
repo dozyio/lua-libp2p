@@ -1,0 +1,240 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN"
+   "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html>
+<meta http-equiv="Content-Type" content="text/html; charset=UTF-8"/>
+<head>
+    <title>lua-libp2p API Documentation</title>
+    <link rel="stylesheet" href="../ldoc_fixed.css" type="text/css" />
+</head>
+<body>
+
+<div id="container">
+
+<div id="product">
+	<div id="product_logo"></div>
+	<div id="product_name"><big><b></b></big></div>
+	<div id="product_description"></div>
+</div> <!-- id="product" -->
+
+
+<div id="main">
+
+
+<!-- Menu -->
+
+<div id="navigation">
+<br/>
+<h1>lua-libp2p</h1>
+
+
+<ul>
+  <li><a href="../index.html">Index</a></li>
+</ul>
+
+<h2>Contents</h2>
+<ul>
+<li><a href="#Functions">Functions</a></li>
+</ul>
+
+
+<h2>Modules</h2>
+<ul class="nowrap">
+  <li><a href="../modules/lua_libp2p.html">lua_libp2p</a></li>
+  <li><a href="../modules/lua_libp2p.address_manager.html">lua_libp2p.address_manager</a></li>
+  <li><a href="../modules/lua_libp2p.autonat.html">lua_libp2p.autonat</a></li>
+  <li><a href="../modules/lua_libp2p.autonat.client.html">lua_libp2p.autonat.client</a></li>
+  <li><a href="../modules/lua_libp2p.bootstrap.html">lua_libp2p.bootstrap</a></li>
+  <li><a href="../modules/lua_libp2p.connection_encrypter_noise.protocol.html">lua_libp2p.connection_encrypter_noise.protocol</a></li>
+  <li><a href="../modules/lua_libp2p.connection_encrypter_plaintext.protocol.html">lua_libp2p.connection_encrypter_plaintext.protocol</a></li>
+  <li><a href="../modules/lua_libp2p.connection_manager.html">lua_libp2p.connection_manager</a></li>
+  <li><a href="../modules/lua_libp2p.crypto.html">lua_libp2p.crypto</a></li>
+  <li><a href="../modules/lua_libp2p.crypto.ed25519.html">lua_libp2p.crypto.ed25519</a></li>
+  <li><a href="../modules/lua_libp2p.crypto.key_pb.html">lua_libp2p.crypto.key_pb</a></li>
+  <li><a href="../modules/lua_libp2p.crypto.keys.html">lua_libp2p.crypto.keys</a></li>
+  <li><a href="../modules/lua_libp2p.datastore.html">lua_libp2p.datastore</a></li>
+  <li><a href="../modules/lua_libp2p.datastore.memory.html">lua_libp2p.datastore.memory</a></li>
+  <li><a href="../modules/lua_libp2p.datastore.sqlite.html">lua_libp2p.datastore.sqlite</a></li>
+  <li><a href="../modules/lua_libp2p.discovery.html">lua_libp2p.discovery</a></li>
+  <li><a href="../modules/lua_libp2p.dnsaddr.html">lua_libp2p.dnsaddr</a></li>
+  <li><a href="../modules/lua_libp2p.error.html">lua_libp2p.error</a></li>
+  <li><a href="../modules/lua_libp2p.host.html">lua_libp2p.host</a></li>
+  <li><a href="../modules/lua_libp2p.host.advertise.html">lua_libp2p.host.advertise</a></li>
+  <li><a href="../modules/lua_libp2p.host.bootstrap.html">lua_libp2p.host.bootstrap</a></li>
+  <li><a href="../modules/lua_libp2p.host.connections.html">lua_libp2p.host.connections</a></li>
+  <li><a href="../modules/lua_libp2p.host.dialer.html">lua_libp2p.host.dialer</a></li>
+  <li><a href="../modules/lua_libp2p.host.events.html">lua_libp2p.host.events</a></li>
+  <li><a href="../modules/lua_libp2p.host.identify.html">lua_libp2p.host.identify</a></li>
+  <li><a href="../modules/lua_libp2p.host.listeners.html">lua_libp2p.host.listeners</a></li>
+  <li><a href="../modules/lua_libp2p.host.protocols.html">lua_libp2p.host.protocols</a></li>
+  <li><a href="../modules/lua_libp2p.host.runtime_luv.html">lua_libp2p.host.runtime_luv</a></li>
+  <li><a href="../modules/lua_libp2p.host.runtime_luv_native.html">lua_libp2p.host.runtime_luv_native</a></li>
+  <li><a href="../modules/lua_libp2p.host.service_manager.html">lua_libp2p.host.service_manager</a></li>
+  <li><a href="../modules/lua_libp2p.host.tasks.html">lua_libp2p.host.tasks</a></li>
+  <li><a href="../modules/lua_libp2p.kad_dht.html">lua_libp2p.kad_dht</a></li>
+  <li><a href="../modules/lua_libp2p.kad_dht.bootstrap.html">lua_libp2p.kad_dht.bootstrap</a></li>
+  <li><a href="../modules/lua_libp2p.kad_dht.maintenance.html">lua_libp2p.kad_dht.maintenance</a></li>
+  <li><a href="../modules/lua_libp2p.kad_dht.protocol.html">lua_libp2p.kad_dht.protocol</a></li>
+  <li><a href="../modules/lua_libp2p.kad_dht.provider_routing.html">lua_libp2p.kad_dht.provider_routing</a></li>
+  <li><a href="../modules/lua_libp2p.kad_dht.providers.html">lua_libp2p.kad_dht.providers</a></li>
+  <li><a href="../modules/lua_libp2p.kad_dht.query.html">lua_libp2p.kad_dht.query</a></li>
+  <li><a href="../modules/lua_libp2p.kad_dht.random_walk.html">lua_libp2p.kad_dht.random_walk</a></li>
+  <li><strong>lua_libp2p.kad_dht.record_validators</strong></li>
+  <li><a href="../modules/lua_libp2p.kad_dht.records.html">lua_libp2p.kad_dht.records</a></li>
+  <li><a href="../modules/lua_libp2p.kad_dht.reprovider.html">lua_libp2p.kad_dht.reprovider</a></li>
+  <li><a href="../modules/lua_libp2p.kad_dht.values.html">lua_libp2p.kad_dht.values</a></li>
+  <li><a href="../modules/lua_libp2p.kbucket.html">lua_libp2p.kbucket</a></li>
+  <li><a href="../modules/lua_libp2p.log.html">lua_libp2p.log</a></li>
+  <li><a href="../modules/lua_libp2p.multiaddr.html">lua_libp2p.multiaddr</a></li>
+  <li><a href="../modules/lua_libp2p.multiformats.html">lua_libp2p.multiformats</a></li>
+  <li><a href="../modules/lua_libp2p.multiformats.base32.html">lua_libp2p.multiformats.base32</a></li>
+  <li><a href="../modules/lua_libp2p.multiformats.base58btc.html">lua_libp2p.multiformats.base58btc</a></li>
+  <li><a href="../modules/lua_libp2p.multiformats.cid.html">lua_libp2p.multiformats.cid</a></li>
+  <li><a href="../modules/lua_libp2p.multiformats.multihash.html">lua_libp2p.multiformats.multihash</a></li>
+  <li><a href="../modules/lua_libp2p.multiformats.varint.html">lua_libp2p.multiformats.varint</a></li>
+  <li><a href="../modules/lua_libp2p.multistream_select.protocol.html">lua_libp2p.multistream_select.protocol</a></li>
+  <li><a href="../modules/lua_libp2p.muxer.html">lua_libp2p.muxer</a></li>
+  <li><a href="../modules/lua_libp2p.muxer.yamux.html">lua_libp2p.muxer.yamux</a></li>
+  <li><a href="../modules/lua_libp2p.nat_pmp.client.html">lua_libp2p.nat_pmp.client</a></li>
+  <li><a href="../modules/lua_libp2p.nat_pmp.service.html">lua_libp2p.nat_pmp.service</a></li>
+  <li><a href="../modules/lua_libp2p.network.html">lua_libp2p.network</a></li>
+  <li><a href="../modules/lua_libp2p.network.connection.html">lua_libp2p.network.connection</a></li>
+  <li><a href="../modules/lua_libp2p.network.upgrader.html">lua_libp2p.network.upgrader</a></li>
+  <li><a href="../modules/lua_libp2p.operation.html">lua_libp2p.operation</a></li>
+  <li><a href="../modules/lua_libp2p.pcp.client.html">lua_libp2p.pcp.client</a></li>
+  <li><a href="../modules/lua_libp2p.pcp.service.html">lua_libp2p.pcp.service</a></li>
+  <li><a href="../modules/lua_libp2p.peer_discovery_bootstrap.html">lua_libp2p.peer_discovery_bootstrap</a></li>
+  <li><a href="../modules/lua_libp2p.peerid.html">lua_libp2p.peerid</a></li>
+  <li><a href="../modules/lua_libp2p.peerstore.html">lua_libp2p.peerstore</a></li>
+  <li><a href="../modules/lua_libp2p.peerstore.codec.html">lua_libp2p.peerstore.codec</a></li>
+  <li><a href="../modules/lua_libp2p.peerstore.datastore.html">lua_libp2p.peerstore.datastore</a></li>
+  <li><a href="../modules/lua_libp2p.protocol.html">lua_libp2p.protocol</a></li>
+  <li><a href="../modules/lua_libp2p.protocol.autonat_v2.html">lua_libp2p.protocol.autonat_v2</a></li>
+  <li><a href="../modules/lua_libp2p.protocol.dummy.html">lua_libp2p.protocol.dummy</a></li>
+  <li><a href="../modules/lua_libp2p.protocol_dcutr.protocol.html">lua_libp2p.protocol_dcutr.protocol</a></li>
+  <li><a href="../modules/lua_libp2p.protocol_dcutr.service.html">lua_libp2p.protocol_dcutr.service</a></li>
+  <li><a href="../modules/lua_libp2p.protocol_identify.protocol.html">lua_libp2p.protocol_identify.protocol</a></li>
+  <li><a href="../modules/lua_libp2p.protocol_identify.service.html">lua_libp2p.protocol_identify.service</a></li>
+  <li><a href="../modules/lua_libp2p.protocol_perf.protocol.html">lua_libp2p.protocol_perf.protocol</a></li>
+  <li><a href="../modules/lua_libp2p.protocol_perf.service.html">lua_libp2p.protocol_perf.service</a></li>
+  <li><a href="../modules/lua_libp2p.protocol_ping.protocol.html">lua_libp2p.protocol_ping.protocol</a></li>
+  <li><a href="../modules/lua_libp2p.protocol_ping.service.html">lua_libp2p.protocol_ping.service</a></li>
+  <li><a href="../modules/lua_libp2p.record.html">lua_libp2p.record</a></li>
+  <li><a href="../modules/lua_libp2p.record.peer_record.html">lua_libp2p.record.peer_record</a></li>
+  <li><a href="../modules/lua_libp2p.record.signed_envelope.html">lua_libp2p.record.signed_envelope</a></li>
+  <li><a href="../modules/lua_libp2p.relay_discovery.html">lua_libp2p.relay_discovery</a></li>
+  <li><a href="../modules/lua_libp2p.resource_manager.html">lua_libp2p.resource_manager</a></li>
+  <li><a href="../modules/lua_libp2p.transport_circuit_relay_v2.autorelay.html">lua_libp2p.transport_circuit_relay_v2.autorelay</a></li>
+  <li><a href="../modules/lua_libp2p.transport_circuit_relay_v2.client.html">lua_libp2p.transport_circuit_relay_v2.client</a></li>
+  <li><a href="../modules/lua_libp2p.transport_circuit_relay_v2.protocol.html">lua_libp2p.transport_circuit_relay_v2.protocol</a></li>
+  <li><a href="../modules/lua_libp2p.transport_tcp.luv.html">lua_libp2p.transport_tcp.luv</a></li>
+  <li><a href="../modules/lua_libp2p.transport_tcp.luv_native.html">lua_libp2p.transport_tcp.luv_native</a></li>
+  <li><a href="../modules/lua_libp2p.transport_tcp.transport.html">lua_libp2p.transport_tcp.transport</a></li>
+  <li><a href="../modules/lua_libp2p.upnp.html">lua_libp2p.upnp</a></li>
+  <li><a href="../modules/lua_libp2p.upnp.igd.html">lua_libp2p.upnp.igd</a></li>
+  <li><a href="../modules/lua_libp2p.upnp.nat.html">lua_libp2p.upnp.nat</a></li>
+  <li><a href="../modules/lua_libp2p.upnp.ssdp.html">lua_libp2p.upnp.ssdp</a></li>
+</ul>
+
+</div>
+
+<div id="content">
+
+<h1>Module <code>lua_libp2p.kad_dht.record_validators</code></h1>
+<p>Built-in KAD-DHT value record validators/selectors.</p>
+<p>
+
+</p>
+
+
+<h2><a href="#Functions">Functions</a></h2>
+<table class="function_list">
+	<tr>
+	<td class="name" nowrap><a href="#select_pk">select_pk (_, existing, incoming)</a></td>
+	<td class="summary">Select between <code>/pk</code> records for the same key.</td>
+	</tr>
+	<tr>
+	<td class="name" nowrap><a href="#validate_pk">validate_pk (key, record)</a></td>
+	<td class="summary">Validate <code>/pk/&lt;peer-id&gt;</code> public key records.</td>
+	</tr>
+</table>
+
+<br/>
+<br/>
+
+
+    <h2 class="section-header "><a name="Functions"></a>Functions</h2>
+
+    <dl class="function">
+    <dt>
+    <a name = "select_pk"></a>
+    <strong>select_pk (_, existing, incoming)</strong>
+    </dt>
+    <dd>
+    Select between <code>/pk</code> records for the same key.
+ Public keys are immutable for a peer id; keep the existing value when it differs.
+
+
+    <h3>Parameters:</h3>
+    <ul>
+        <li><span class="parameter">_</span>
+
+
+
+        </li>
+        <li><span class="parameter">existing</span>
+
+
+
+        </li>
+        <li><span class="parameter">incoming</span>
+
+
+
+        </li>
+    </ul>
+
+
+
+
+
+</dd>
+    <dt>
+    <a name = "validate_pk"></a>
+    <strong>validate_pk (key, record)</strong>
+    </dt>
+    <dd>
+    Validate <code>/pk/&lt;peer-id&gt;</code> public key records.
+ The record value is protobuf-encoded libp2p PublicKey bytes.
+
+
+    <h3>Parameters:</h3>
+    <ul>
+        <li><span class="parameter">key</span>
+
+
+
+        </li>
+        <li><span class="parameter">record</span>
+
+
+
+        </li>
+    </ul>
+
+
+
+
+
+</dd>
+</dl>
+
+
+</div> <!-- id="content" -->
+</div> <!-- id="main" -->
+<div id="about">
+<i>generated by <a href="http://github.com/lunarmodules/LDoc">LDoc 1.5.0</a></i>
+<i style="float:right;">Last updated 2026-05-05 00:04:08 </i>
+</div> <!-- id="about" -->
+</div> <!-- id="container" -->
+</body>
+</html>

@@ -3,10 +3,13 @@ local common = require("examples.kad_dht_client_common")
 local function usage()
   io.stderr:write([[
 Usage:
-  lua examples/kad_dht_get_closest_peers.lua [--target <peer-id>] [--bootstrap <multiaddr>] [--count 20]
+  lua examples/kad_dht_get_closest_peers.lua [--target <peer-id>] [--bootstrap <multiaddr>] [--count 20] [--identity-key <path>] [--persist-peerstore]
+  lua examples/kad_dht_get_closest_peers.lua --persist-peerstore <path>
 
 If --target is omitted, the lookup targets this host's own peer id.
 Repeat --bootstrap to seed from additional concrete /ip4|/dns/.../tcp/.../p2p/... addrs.
+The local peer id is stable across runs by default via .lua-libp2p-kad-client.key.
+Use --persist-peerstore to keep discovered peer addresses/protocols in a SQLite-backed peerstore.
 ]])
 end
 

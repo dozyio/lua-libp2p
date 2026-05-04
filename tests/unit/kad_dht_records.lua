@@ -87,6 +87,7 @@ local function new_scripted_stream(message)
   local stream = {
     _in = frame,
     _out = "",
+    _reset = false,
   }
   function stream:read(n)
     if #self._in < n then
@@ -101,6 +102,10 @@ local function new_scripted_stream(message)
     return true
   end
   function stream:close_write()
+    return true
+  end
+  function stream:reset()
+    self._reset = true
     return true
   end
   return stream
@@ -201,6 +206,29 @@ local function run()
   end
   if get_response.type ~= kad_protocol.MESSAGE_TYPE.GET_VALUE or not get_response.record or get_response.record.value ~= "record-value" then
     return nil, "GET_VALUE should return local value record"
+  end
+
+  local invalid_get_stream = new_scripted_stream({
+    type = kad_protocol.MESSAGE_TYPE.GET_VALUE,
+  })
+  local invalid_handled, invalid_handle_err = dht:_handle_rpc(invalid_get_stream)
+  if invalid_handled ~= nil or not invalid_handle_err then
+    return nil, "invalid GET_VALUE should fail"
+  end
+  if invalid_get_stream._out ~= "" or invalid_get_stream._reset ~= true then
+    return nil, "invalid GET_VALUE should reset without writing a response"
+  end
+
+  local invalid_put_stream = new_scripted_stream({
+    type = kad_protocol.MESSAGE_TYPE.PUT_VALUE,
+    key = "record-key",
+  })
+  invalid_handled, invalid_handle_err = dht:_handle_rpc(invalid_put_stream)
+  if invalid_handled ~= nil or not invalid_handle_err then
+    return nil, "invalid PUT_VALUE should fail"
+  end
+  if invalid_put_stream._out ~= "" or invalid_put_stream._reset ~= true then
+    return nil, "invalid PUT_VALUE should reset without writing a response"
   end
 
   local rejecting_dht = assert(kad_dht.new(new_host(), {
@@ -446,6 +474,81 @@ local function run()
   local bad_selector_ok, bad_selector_err = policy_dht:set_record_selector("testns", "nope")
   if bad_selector_ok ~= nil or not bad_selector_err or bad_selector_err.kind ~= "input" then
     return nil, "set_record_selector should reject non-functions"
+  end
+
+  local function run_multi_record_selection(order, opts)
+    local selection_dht = assert(kad_dht.new(new_task_host(), {
+      mode = "client",
+      hash_function = fake_hash,
+      address_filter = "all",
+    }))
+    assert(selection_dht:set_record_validator("testns", function()
+      return true
+    end))
+    assert(selection_dht:set_record_selector("testns", function(_, existing, incoming)
+      return tonumber(incoming.value) > tonumber(existing.value) and "incoming" or "existing"
+    end))
+    local records_by_peer = {
+      ["peer-old"] = { key = "/testns/select", value = "1" },
+      ["peer-new"] = { key = "/testns/select", value = "2" },
+    }
+    local corrections = {}
+    function selection_dht:_get_value(target)
+      return { key = "/testns/select", record = records_by_peer[target], closer_peers = {} }
+    end
+    function selection_dht:_put_value(target, key, record)
+      corrections[#corrections + 1] = { target = target, key = key, record = record }
+      return { key = key, record = record, closer_peers = {} }
+    end
+    function selection_dht:_run_client_lookup(_, seed_peers, query_func)
+      local lookup = {
+        closest_peers = {},
+        errors = {},
+        termination = "closest_queried",
+        queried = 0,
+        responses = 0,
+      }
+      for _, peer in ipairs(seed_peers) do
+        lookup.queried = lookup.queried + 1
+        local response, err = query_func(peer)
+        if response then
+          lookup.responses = lookup.responses + 1
+        else
+          lookup.errors[#lookup.errors + 1] = err
+        end
+      end
+      return lookup
+    end
+    local find_opts = opts or {}
+    find_opts.use_cache = false
+    find_opts.peers = order
+    local selection_op = assert(selection_dht:find_value("/testns/select", find_opts))
+    local result = assert(selection_op:result({ timeout = 1 }))
+    return result, corrections
+  end
+  local newer_after_older, corrections = run_multi_record_selection({
+    { peer_id = "peer-old", addr = "peer-old" },
+    { peer_id = "peer-new", addr = "peer-new" },
+  })
+  if newer_after_older.record.value ~= "2" or newer_after_older.found_records ~= 2 then
+    return nil, "find_value should select the best remote record after seeing multiple records"
+  end
+  if #corrections ~= 1 or corrections[1].target ~= "peer-old" or corrections[1].record.value ~= "2" then
+    return nil, "find_value should correct peers that returned stale records"
+  end
+  local _, disabled_corrections = run_multi_record_selection({
+    { peer_id = "peer-old", addr = "peer-old" },
+    { peer_id = "peer-new", addr = "peer-new" },
+  }, { correct_stale_records = false })
+  if #disabled_corrections ~= 0 then
+    return nil, "correct_stale_records=false should disable stale record correction"
+  end
+  local older_after_newer = assert(run_multi_record_selection({
+    { peer_id = "peer-new", addr = "peer-new" },
+    { peer_id = "peer-old", addr = "peer-old" },
+  }))
+  if older_after_newer.record.value ~= "2" or older_after_newer.found_records ~= 2 then
+    return nil, "find_value should keep the best remote record regardless of response order"
   end
 
   local pk_identity = assert(keys.generate_keypair("ed25519"))

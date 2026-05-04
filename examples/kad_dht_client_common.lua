@@ -5,10 +5,13 @@ package.path = table.concat({
 }, ";")
 
 local host_mod = require("lua_libp2p.host")
+local ed25519 = require("lua_libp2p.crypto.ed25519")
+local sqlite_datastore = require("lua_libp2p.datastore.sqlite")
 local identify_service = require("lua_libp2p.protocol_identify.service")
 local ping_service = require("lua_libp2p.protocol_ping.service")
 local kad_dht_service = require("lua_libp2p.kad_dht")
 local peer_discovery_bootstrap = require("lua_libp2p.peer_discovery_bootstrap")
+local peerstore = require("lua_libp2p.peerstore")
 
 local M = {}
 
@@ -21,6 +24,8 @@ function M.parse_args(args)
     limit = 5,
     connect_timeout = 6,
     io_timeout = 10,
+    identity_key_path = ".lua-libp2p-kad-client.key",
+    peerstore_path = ".lua-libp2p-kad-peerstore.sqlite",
   }
 
   local i = 1
@@ -60,6 +65,20 @@ function M.parse_args(args)
     elseif name == "--io-timeout" then
       opts.io_timeout = tonumber(value)
       i = i + 2
+    elseif name == "--identity-key" then
+      if not value then
+        return nil, "--identity-key requires a file path"
+      end
+      opts.identity_key_path = value
+      i = i + 2
+    elseif name == "--persist-peerstore" then
+      opts.persist_peerstore = true
+      if value and value:sub(1, 2) ~= "--" then
+        opts.peerstore_path = value
+        i = i + 2
+      else
+        i = i + 1
+      end
     elseif name == "--private-addrs" then
       opts.address_filter = "all"
       i = i + 1
@@ -69,6 +88,22 @@ function M.parse_args(args)
   end
 
   return opts
+end
+
+local function load_or_create_identity(path)
+  local loaded = ed25519.load_private_key(path)
+  if loaded then
+    return loaded
+  end
+  local keypair, key_err = ed25519.generate_keypair()
+  if not keypair then
+    return nil, key_err
+  end
+  local saved, save_err = ed25519.save_private_key(path, keypair)
+  if not saved then
+    return nil, save_err
+  end
+  return keypair
 end
 
 function M.hex_to_bytes(hex)
@@ -161,8 +196,35 @@ function M.wait_for_routing_table(host, dht, opts)
 end
 
 function M.new_client(opts)
+  local identity, identity_err = load_or_create_identity(opts.identity_key_path)
+  if not identity then
+    return nil, identity_err
+  end
+
+  local ps
+  local ps_datastore
+  if opts.persist_peerstore then
+    local has_sqlite = pcall(require, "luasql.sqlite3")
+    if not has_sqlite then
+      return nil, "--persist-peerstore requires luasql-sqlite3; install deps with `make deps` or `luarocks install luasql-sqlite3`"
+    end
+    local datastore_err
+    ps_datastore, datastore_err = sqlite_datastore.new({ path = opts.peerstore_path })
+    if not ps_datastore then
+      return nil, datastore_err
+    end
+    local ps_err
+    ps, ps_err = peerstore.new({ datastore = ps_datastore })
+    if not ps then
+      ps_datastore:close()
+      return nil, ps_err
+    end
+  end
+
   local host, host_err = host_mod.new({
     runtime = "luv",
+    identity = identity,
+    peerstore = ps,
     peer_discovery = {
       bootstrap = {
         module = peer_discovery_bootstrap,
@@ -189,36 +251,59 @@ function M.new_client(opts)
     accept_timeout = 0.05,
   })
   if not host then
+    if ps_datastore then ps_datastore:close() end
     return nil, host_err
   end
 
   local started, start_err = host:start()
   if not started then
+    if ps_datastore then ps_datastore:close() end
     return nil, start_err
   end
 
   local dht = host.kad_dht
+
+  local bootstrapped, dht_bootstrap_err = dht:_bootstrap({
+    ignore_discovery_errors = true,
+    ignore_add_errors = true,
+  })
+  if not bootstrapped then
+    host:stop()
+    if ps_datastore then ps_datastore:close() end
+    return nil, dht_bootstrap_err
+  end
+  io.stdout:write("dht bootstrap: connected=" .. tostring(bootstrapped.connected) .. " added=" .. tostring(bootstrapped.added) .. " failed=" .. tostring(bootstrapped.failed) .. "\n")
 
   local seeded, bootstrap_err = M.wait_for_routing_table(host, dht, {
     timeout = opts.bootstrap_timeout or 30,
   })
   if not seeded then
     host:stop()
+    if ps_datastore then ps_datastore:close() end
     return nil, bootstrap_err
   end
 
   io.stdout:write("routing table seeded: peers=" .. tostring(#(dht.routing_table:all_peers())) .. "\n")
+  io.stdout:write("identity key: " .. tostring(opts.identity_key_path) .. "\n")
+  io.stdout:write("peer id: " .. tostring(host:peer_id().id) .. "\n")
+  if opts.persist_peerstore then
+    io.stdout:write("peerstore db: " .. tostring(opts.peerstore_path) .. "\n")
+  end
 
   return {
     host = host,
     dht = dht,
     opts = opts,
+    peerstore_datastore = ps_datastore,
   }
 end
 
 function M.stop(client)
   if client and client.host then
     client.host:stop()
+  end
+  if client and client.peerstore_datastore then
+    client.peerstore_datastore:close()
   end
 end
 

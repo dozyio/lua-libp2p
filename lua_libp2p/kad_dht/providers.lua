@@ -6,7 +6,9 @@ local error_mod = require("lua_libp2p.error")
 
 local M = {}
 
-M.DEFAULT_TTL_SECONDS = 24 * 60 * 60
+-- IPFS KAD-DHT provider records have a 48h validity window. Providers should
+-- republish before this expires; see reprovider defaults for the 22h interval.
+M.DEFAULT_TTL_SECONDS = 48 * 60 * 60
 
 local Store = {}
 Store.__index = Store
@@ -61,7 +63,6 @@ local function validate_peer_info(peer_info)
   end
   return {
     peer_id = peer_id,
-    id = peer_info.id,
     addrs = addrs,
   }
 end
@@ -100,9 +101,6 @@ local function validate_persisted_entry(entry, expected_key)
   if type(entry.peer_id) ~= "string" or entry.peer_id == "" then
     return nil
   end
-  if entry.id ~= nil and type(entry.id) ~= "string" then
-    return nil
-  end
   if type(entry.addrs) ~= "table" then
     return nil
   end
@@ -125,7 +123,6 @@ local function validate_persisted_entry(entry, expected_key)
   return {
     key = entry.key,
     peer_id = entry.peer_id,
-    id = entry.id,
     addrs = addrs,
     first_seen_at = entry.first_seen_at,
     updated_at = entry.updated_at,
@@ -154,7 +151,6 @@ function Store:add(key, peer_info, opts)
   local put_ok, put_err = self._datastore:put(store_key, {
     key = key,
     peer_id = normalized.peer_id,
-    id = normalized.id,
     addrs = normalized.addrs,
     first_seen_at = existing and existing.first_seen_at or now,
     updated_at = now,

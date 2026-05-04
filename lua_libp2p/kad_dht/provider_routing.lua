@@ -2,10 +2,33 @@
 -- @module lua_libp2p.kad_dht.provider_routing
 local error_mod = require("lua_libp2p.error")
 local multiaddr = require("lua_libp2p.multiaddr")
+local multihash = require("lua_libp2p.multiformats.multihash")
 local peerid = require("lua_libp2p.peerid")
 local protocol = require("lua_libp2p.kad_dht.protocol")
 
 local M = {}
+
+-- Provider keys are CID multihashes on the IPFS KAD-DHT wire protocol. The
+-- routing spec caps ADD_PROVIDER keys at 80 bytes to reject oversized records
+-- before they reach provider storage or routing-table lookups.
+M.MAX_PROVIDER_KEY_BYTES = 80
+
+function M.validate_provider_key(key, context)
+  if type(key) ~= "string" or key == "" then
+    return nil, error_mod.new("input", (context or "provider") .. " key must be non-empty multihash bytes")
+  end
+  if #key > M.MAX_PROVIDER_KEY_BYTES then
+    return nil, error_mod.new("input", (context or "provider") .. " key exceeds 80 byte limit", {
+      limit = M.MAX_PROVIDER_KEY_BYTES,
+      actual = #key,
+    })
+  end
+  local decoded, decode_err = multihash.decode(key)
+  if not decoded then
+    return nil, error_mod.new("input", (context or "provider") .. " key must be a valid multihash", { cause = decode_err })
+  end
+  return true
+end
 
 local function decode_peer_id_text(id_bytes)
   local parsed = peerid and peerid.parse and peerid.parse(id_bytes)
@@ -42,12 +65,7 @@ local function decode_kad_multiaddrs(addrs)
 end
 
 local function provider_record_to_wire(entry)
-  local id = entry.id or entry.peer_id
-  local id_bytes = id
-  if type(id) == "string" then
-    id_bytes = protocol.peer_bytes(id)
-  end
-  return { id = id_bytes, addrs = entry.addrs or {} }
+  return { id = protocol.peer_bytes(entry.peer_id), addrs = entry.addrs or {} }
 end
 
 function M.local_provider_info(dht, opts)
@@ -69,18 +87,13 @@ function M.local_provider_info(dht, opts)
     peer_id = dht.local_peer_id,
     purpose = "provide",
   })
-  local id_bytes, id_err = protocol.peer_bytes(dht.local_peer_id)
-  if not id_bytes then
-    return nil, id_err
-  end
-  return { peer_id = dht.local_peer_id, id = id_bytes, addrs = filtered }
+  return { peer_id = dht.local_peer_id, addrs = filtered }
 end
 
 function M.handle_add_provider(dht, req)
   local key = req.key
-  if type(key) ~= "string" or key == "" then
-    return nil, error_mod.new("input", "ADD_PROVIDER request missing key")
-  end
+  local valid_key, key_err = M.validate_provider_key(key, "ADD_PROVIDER")
+  if not valid_key then return nil, key_err end
   if dht.mode ~= "server" then
     return nil, error_mod.new("unsupported", "client-mode dht does not accept provider records")
   end
@@ -91,12 +104,12 @@ function M.handle_add_provider(dht, req)
       peer_id = peer_id_text,
       purpose = "provider_record",
     })
-    local ok, add_err = dht:add_provider(key, { peer_id = peer_id_text, id = provider_peer.id, addrs = addrs })
+    local ok, add_err = dht:add_provider(key, { peer_id = peer_id_text, addrs = addrs })
     if not ok then
       return nil, add_err
     end
     if dht.host and dht.host.peerstore and peer_id_text then
-      dht.host.peerstore:merge(peer_id_text, { addrs = addrs })
+      dht.host.peerstore:merge(peer_id_text, { addrs = addrs }, { ttl = dht.provider_addr_ttl_seconds })
     end
   end
 
@@ -109,9 +122,8 @@ end
 
 function M.handle_get_providers(dht, req)
   local key = req.key
-  if type(key) ~= "string" or key == "" then
-    return nil, error_mod.new("input", "GET_PROVIDERS request missing key")
-  end
+  local valid_key, key_err = M.validate_provider_key(key, "GET_PROVIDERS")
+  if not valid_key then return nil, key_err end
   local local_providers, providers_err = dht:get_local_providers(key, { limit = dht.k })
   if not local_providers then
     return nil, providers_err
@@ -128,9 +140,8 @@ function M.handle_get_providers(dht, req)
 end
 
 function M.add_provider(dht, peer_or_addr, key, provider_info, opts)
-  if type(key) ~= "string" or key == "" then
-    return nil, error_mod.new("input", "ADD_PROVIDER key must be non-empty bytes")
-  end
+  local valid_key, key_err = M.validate_provider_key(key, "ADD_PROVIDER")
+  if not valid_key then return nil, key_err end
   local rpc_opts = {}
   for k, v in pairs(opts or {}) do
     rpc_opts[k] = v
@@ -149,9 +160,8 @@ function M.add_provider(dht, peer_or_addr, key, provider_info, opts)
 end
 
 function M.get_providers(dht, peer_or_addr, key, opts)
-  if type(key) ~= "string" or key == "" then
-    return nil, error_mod.new("input", "GET_PROVIDERS key must be non-empty bytes")
-  end
+  local valid_key, key_err = M.validate_provider_key(key, "GET_PROVIDERS")
+  if not valid_key then return nil, key_err end
   local response, err = dht:_rpc(peer_or_addr, {
     type = protocol.MESSAGE_TYPE.GET_PROVIDERS,
     key = key,
@@ -214,6 +224,8 @@ end
 
 function M.find_providers(dht, key, opts)
   local options = opts or {}
+  local valid_key, key_err = M.validate_provider_key(key, "find_providers")
+  if not valid_key then return nil, key_err end
   local providers = {}
   local lookup, lookup_err = dht:_run_client_lookup(key, options.peers or seed_candidates_from_routing_table(dht, key, dht.k), function(peer, ctx)
     local query_options = options
@@ -240,9 +252,8 @@ end
 
 function M.provide(dht, key, opts)
   local options = opts or {}
-  if type(key) ~= "string" or key == "" then
-    return nil, error_mod.new("input", "provide key must be non-empty bytes")
-  end
+  local valid_key, key_err = M.validate_provider_key(key, "provide")
+  if not valid_key then return nil, key_err end
   local provider_info, provider_err = dht:_local_provider_info(options.provider or options)
   if not provider_info then
     return nil, provider_err

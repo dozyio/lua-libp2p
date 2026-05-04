@@ -2,16 +2,18 @@ local kad_dht = require("lua_libp2p.kad_dht")
 local error_mod = require("lua_libp2p.error")
 local kad_protocol = require("lua_libp2p.kad_dht.protocol")
 local memory_datastore = require("lua_libp2p.datastore.memory")
+local multihash = require("lua_libp2p.multiformats.multihash")
 local providers = require("lua_libp2p.kad_dht.providers")
 local sqlite = require("lua_libp2p.datastore.sqlite")
 local varint = require("lua_libp2p.multiformats.varint")
+local CONTENT_KEY = assert(multihash.sha2_256("cid-key"))
 
 local function fake_hash(value)
   local map = {
     local_peer = string.char(0) .. string.rep("\0", 31),
     provider_a = string.char(128) .. string.rep("\0", 31),
     provider_b = string.char(129) .. string.rep("\0", 31),
-    ["cid-key"] = string.char(128) .. string.rep("\0", 31),
+    [CONTENT_KEY] = string.char(128) .. string.rep("\0", 31),
   }
   return map[value] or (string.char(255) .. string.rep("\0", 31))
 end
@@ -32,8 +34,10 @@ local function new_host()
   function host:peer_id()
     return self._peer
   end
-  function host.peerstore:merge(peer_id, info)
+  function host.peerstore:merge(peer_id, info, opts)
     self._merged[peer_id] = info
+    self._merge_opts = self._merge_opts or {}
+    self._merge_opts[peer_id] = opts
     return true
   end
   function host.peerstore:get_addrs()
@@ -76,6 +80,7 @@ local function new_scripted_stream(message)
   local stream = {
     _in = frame,
     _out = "",
+    _reset = false,
   }
   function stream:read(n)
     if #self._in < n then
@@ -90,6 +95,10 @@ local function new_scripted_stream(message)
     return true
   end
   function stream:close_write()
+    return true
+  end
+  function stream:reset()
+    self._reset = true
     return true
   end
   return stream
@@ -117,14 +126,14 @@ local function run()
     end,
   })
 
-  local added, add_err = store:add("cid-key", {
+  local added, add_err = store:add(CONTENT_KEY, {
     peer_id = "provider_a",
     addrs = { "/ip4/8.8.8.8/tcp/4001" },
   })
   if not added then
     return nil, add_err
   end
-  local entries, entries_err = store:get("cid-key")
+  local entries, entries_err = store:get(CONTENT_KEY)
   if not entries then
     return nil, entries_err
   end
@@ -136,20 +145,20 @@ local function run()
   end
 
   now = 1011
-  entries = assert(store:get("cid-key"))
+  entries = assert(store:get(CONTENT_KEY))
   if #entries ~= 0 then
     return nil, "provider store should expire provider entries"
   end
 
   local raw_provider_store = memory_datastore.new()
-  local corrupt_provider_key = "kad_dht/providers/" .. hex_encode("cid-key") .. "/" .. hex_encode("bad-peer")
+  local corrupt_provider_key = "kad_dht/providers/" .. hex_encode(CONTENT_KEY) .. "/" .. hex_encode("bad-peer")
   assert(raw_provider_store:put(corrupt_provider_key, {
-    key = "cid-key",
+    key = CONTENT_KEY,
     peer_id = "bad-peer",
     addrs = { 123 },
   }))
   local corrupt_provider_store = providers.new({ datastore = raw_provider_store })
-  local corrupt_entries, corrupt_entries_err = corrupt_provider_store:get("cid-key")
+  local corrupt_entries, corrupt_entries_err = corrupt_provider_store:get(CONTENT_KEY)
   if not corrupt_entries then
     return nil, corrupt_entries_err
   end
@@ -167,7 +176,7 @@ local function run()
 
   local add_stream = new_scripted_stream({
     type = kad_protocol.MESSAGE_TYPE.ADD_PROVIDER,
-    key = "cid-key",
+    key = CONTENT_KEY,
     provider_peers = {
       { id = "provider_a", addrs = { "/ip4/8.8.8.8/tcp/4001" } },
     },
@@ -179,17 +188,54 @@ local function run()
   if add_stream._out ~= "" then
     return nil, "ADD_PROVIDER should not write a response on success"
   end
-  local local_providers = assert(dht:get_local_providers("cid-key"))
+  local local_providers = assert(dht:get_local_providers(CONTENT_KEY))
   if #local_providers ~= 1 or local_providers[1].peer_id ~= "provider_a" then
     return nil, "ADD_PROVIDER should store provider locally"
   end
   if not host.peerstore._merged.provider_a then
     return nil, "ADD_PROVIDER should merge provider addrs into peerstore"
   end
+  if not host.peerstore._merge_opts.provider_a or host.peerstore._merge_opts.provider_a.ttl ~= kad_dht.DEFAULT_PROVIDER_ADDR_TTL_SECONDS then
+    return nil, "ADD_PROVIDER should merge provider addrs with provider address ttl"
+  end
+
+  local custom_ttl_host = new_host()
+  local custom_ttl_dht = assert(kad_dht.new(custom_ttl_host, {
+    mode = "server",
+    hash_function = fake_hash,
+    address_filter = "all",
+    provider_addr_ttl_seconds = 123,
+  }))
+  local custom_ttl_stream = new_scripted_stream({
+    type = kad_protocol.MESSAGE_TYPE.ADD_PROVIDER,
+    key = CONTENT_KEY,
+    provider_peers = {
+      { id = "provider_a", addrs = { "/ip4/8.8.8.8/tcp/4001" } },
+    },
+  })
+  assert(custom_ttl_dht:_handle_rpc(custom_ttl_stream))
+  if not custom_ttl_host.peerstore._merge_opts.provider_a or custom_ttl_host.peerstore._merge_opts.provider_a.ttl ~= 123 then
+    return nil, "provider_addr_ttl_seconds override should control peerstore provider addr ttl"
+  end
+
+  local invalid_add_stream = new_scripted_stream({
+    type = kad_protocol.MESSAGE_TYPE.ADD_PROVIDER,
+    key = "not-a-multihash",
+    provider_peers = {
+      { id = "provider_a", addrs = { "/ip4/8.8.8.8/tcp/4001" } },
+    },
+  })
+  local invalid_handled, invalid_handle_err = dht:_handle_rpc(invalid_add_stream)
+  if invalid_handled ~= nil or not invalid_handle_err then
+    return nil, "invalid ADD_PROVIDER should fail"
+  end
+  if invalid_add_stream._out ~= "" or invalid_add_stream._reset ~= true then
+    return nil, "invalid ADD_PROVIDER should reset without writing a response"
+  end
 
   local get_stream = new_scripted_stream({
     type = kad_protocol.MESSAGE_TYPE.GET_PROVIDERS,
-    key = "cid-key",
+    key = CONTENT_KEY,
   })
   handled, handle_err = dht:_handle_rpc(get_stream)
   if not handled then
@@ -206,6 +252,18 @@ local function run()
     return nil, "GET_PROVIDERS should return local provider peers"
   end
 
+  local invalid_get_stream = new_scripted_stream({
+    type = kad_protocol.MESSAGE_TYPE.GET_PROVIDERS,
+    key = "not-a-multihash",
+  })
+  invalid_handled, invalid_handle_err = dht:_handle_rpc(invalid_get_stream)
+  if invalid_handled ~= nil or not invalid_handle_err then
+    return nil, "invalid GET_PROVIDERS should fail"
+  end
+  if invalid_get_stream._out ~= "" or invalid_get_stream._reset ~= true then
+    return nil, "invalid GET_PROVIDERS should reset without writing a response"
+  end
+
   local client_dht = assert(kad_dht.new(new_host(), {
     mode = "client",
     hash_function = fake_hash,
@@ -213,13 +271,30 @@ local function run()
   }))
   local rejected, rejected_err = client_dht:_handle_add_provider({
     type = kad_protocol.MESSAGE_TYPE.ADD_PROVIDER,
-    key = "cid-key",
+    key = CONTENT_KEY,
     provider_peers = {
       { id = "provider_b" },
     },
   })
   if rejected ~= nil or not rejected_err or rejected_err.kind ~= "unsupported" then
     return nil, "client-mode dht should reject provider writes"
+  end
+
+  local invalid_provider_key = "not-a-multihash"
+  local invalid_added, invalid_added_err = dht:add_provider(invalid_provider_key, {
+    peer_id = "provider_a",
+    addrs = { "/ip4/8.8.8.8/tcp/4001" },
+  })
+  if invalid_added ~= nil or not invalid_added_err or invalid_added_err.kind ~= "input" then
+    return nil, "provider APIs should reject keys that are not valid multihashes"
+  end
+  local oversized_provider_key = assert(multihash.identity(string.rep("x", 79)))
+  local oversized_result, oversized_err = dht:_handle_get_providers({
+    type = kad_protocol.MESSAGE_TYPE.GET_PROVIDERS,
+    key = oversized_provider_key,
+  })
+  if oversized_result ~= nil or not oversized_err or oversized_err.kind ~= "input" then
+    return nil, "provider RPCs should reject keys over 80 bytes"
   end
 
   local rpc_request
@@ -237,9 +312,8 @@ local function run()
       closer_peers = {},
     }
   end
-  local add_result, add_result_err = dht:_add_provider("peer-a", "cid-key", {
+  local add_result, add_result_err = dht:_add_provider("peer-a", CONTENT_KEY, {
     peer_id = "local_peer",
-    id = "local_peer",
     addrs = { "/ip4/8.8.4.4/tcp/4001" },
   })
   if not add_result then
@@ -247,7 +321,7 @@ local function run()
   end
   if not rpc_request
     or rpc_request.type ~= kad_protocol.MESSAGE_TYPE.ADD_PROVIDER
-    or rpc_request.key ~= "cid-key"
+    or rpc_request.key ~= CONTENT_KEY
     or #rpc_request.provider_peers ~= 1
     or rpc_request.provider_peers[1].id ~= "local_peer"
   then
@@ -273,9 +347,8 @@ local function run()
     end
     return stream
   end
-  local no_response_result, no_response_err = no_response_dht:_add_provider("peer-a", "cid-key", {
+  local no_response_result, no_response_err = no_response_dht:_add_provider("peer-a", CONTENT_KEY, {
     peer_id = "local_peer",
-    id = "local_peer",
     addrs = { "/ip4/8.8.4.4/tcp/4001" },
   })
   if not no_response_result then
@@ -301,9 +374,8 @@ local function run()
     end
     return stream
   end
-  local reset_result, reset_err = reset_dht:_add_provider("peer-a", "cid-key", {
+  local reset_result, reset_err = reset_dht:_add_provider("peer-a", CONTENT_KEY, {
     peer_id = "local_peer",
-    id = "local_peer",
     addrs = { "/ip4/8.8.4.4/tcp/4001" },
   })
   if reset_result ~= nil or not reset_err or reset_err.message ~= "yamux stream is reset" then
@@ -347,7 +419,7 @@ local function run()
     address_filter = "all",
   }))
   provide_dht._get_closest_peers = function(_, key, opts)
-    if key ~= "cid-key" or not opts.scheduler_task then
+    if key ~= CONTENT_KEY or not opts.scheduler_task then
       return nil, "provide should run closest-peer lookup as scheduler task"
     end
     return {
@@ -364,7 +436,7 @@ local function run()
     }
     return { key = key, closer_peers = {} }
   end
-  local op, op_err = provide_dht:provide("cid-key", { count = 2 })
+  local op, op_err = provide_dht:provide(CONTENT_KEY, { count = 2 })
   if not op then
     return nil, op_err
   end
@@ -375,10 +447,10 @@ local function run()
   if report.attempted ~= 2 or report.succeeded ~= 2 or report.failed ~= 0 or #announced ~= 2 then
     return nil, "provide should announce to closest peers and report successes"
   end
-  if announced[1].key ~= "cid-key" or announced[1].provider.peer_id ~= "local_peer" then
+  if announced[1].key ~= CONTENT_KEY or announced[1].provider.peer_id ~= "local_peer" then
     return nil, "provide should announce local provider info"
   end
-  local stored_local = assert(provide_dht:get_local_providers("cid-key"))
+  local stored_local = assert(provide_dht:get_local_providers(CONTENT_KEY))
   if #stored_local ~= 1 or stored_local[1].peer_id ~= "local_peer" then
     return nil, "provide should store local provider record"
   end
@@ -387,7 +459,7 @@ local function run()
   if not keys then
     return nil, keys_err
   end
-  if #keys ~= 1 or keys[1] ~= "cid-key" then
+  if #keys ~= 1 or keys[1] ~= CONTENT_KEY then
     return nil, "list_local_provider_keys should return keys provided by local peer"
   end
 
@@ -399,7 +471,7 @@ local function run()
     return nil, foreign_store_err
   end
   keys = assert(provide_dht:list_local_provider_keys())
-  if #keys ~= 1 or keys[1] ~= "cid-key" then
+  if #keys ~= 1 or keys[1] ~= CONTENT_KEY then
     return nil, "list_local_provider_keys should ignore remote provider records"
   end
 
@@ -426,10 +498,10 @@ local function run()
   if reprovide_report.attempted ~= 1 or reprovide_report.succeeded ~= 1 or reprovide_report.failed ~= 0 then
     return nil, "reprovide should report local provider re-announcements"
   end
-  if #reprovide_report.items ~= 1 or reprovide_report.items[1].key ~= "cid-key" or reprovide_report.items[1].ok ~= true then
+  if #reprovide_report.items ~= 1 or reprovide_report.items[1].key ~= CONTENT_KEY or reprovide_report.items[1].ok ~= true then
     return nil, "reprovide should include per-key item results"
   end
-  if #reprovided ~= 1 or reprovided[1].key ~= "cid-key" then
+  if #reprovided ~= 1 or reprovided[1].key ~= CONTENT_KEY then
     return nil, "reprovide should only re-announce local provider keys"
   end
 
@@ -442,6 +514,48 @@ local function run()
   }))
   if reprovide_report.attempted ~= 1 or #reprovided ~= 1 or reprovided[1].key ~= "explicit-key" then
     return nil, "reprovide should honor explicit key list"
+  end
+
+  local invalid_parallel, invalid_parallel_err = provide_dht:_reprovide({ keys = { "x" }, max_parallel = 0 })
+  if invalid_parallel ~= nil or not invalid_parallel_err or invalid_parallel_err.kind ~= "input" then
+    return nil, "reprovider_max_parallel should reject values below one"
+  end
+
+  local parallel_host = new_host()
+  parallel_host.spawned = {}
+  function parallel_host:spawn_task(name, fn)
+    local result, err = fn()
+    local task = {
+      name = name,
+      status = result and "completed" or "failed",
+      result = result,
+      error = err,
+    }
+    self.spawned[#self.spawned + 1] = task
+    return task
+  end
+  local parallel_dht = assert(kad_dht.new(parallel_host, {
+    mode = "client",
+    hash_function = fake_hash,
+    address_filter = "all",
+  }))
+  local parallel_provided = {}
+  function parallel_dht:_provide(key)
+    parallel_provided[#parallel_provided + 1] = key
+    return { key = key, attempted = 1, succeeded = 1, failed = 0 }
+  end
+  local parallel_ctx = {
+    await_any_task = function()
+      return true
+    end,
+  }
+  local parallel_report = assert(parallel_dht:_reprovide({
+    keys = { "a", "b", "c" },
+    max_parallel = 2,
+    ctx = parallel_ctx,
+  }))
+  if parallel_report.attempted ~= 3 or parallel_report.succeeded ~= 3 or #parallel_host.spawned ~= 3 or #parallel_provided ~= 3 then
+    return nil, "reprovider_max_parallel should schedule item tasks when a task context is available"
   end
 
   local event_host = new_lifecycle_host()
@@ -486,6 +600,7 @@ local function run()
       return 0.5
     end,
     reprovider_batch_size = 7,
+    reprovider_max_parallel = 4,
     reprovider_timeout = 3,
   }))
   local started, start_err = lifecycle_dht:start()
@@ -499,7 +614,7 @@ local function run()
   local reprovide_calls = 0
   lifecycle_dht._reprovide = function(_, opts)
     reprovide_calls = reprovide_calls + 1
-    if opts.batch_size ~= 7 or opts.timeout ~= 3 then
+    if opts.batch_size ~= 7 or opts.timeout ~= 3 or opts.max_parallel ~= 4 then
       return nil, "reprovider task should pass configured options"
     end
     lifecycle_dht._running = false
@@ -527,6 +642,7 @@ local function run()
   end
   if #lifecycle_host.events ~= 2
     or lifecycle_host.events[1].name ~= "kad_dht:reprovide:start"
+    or lifecycle_host.events[1].payload.max_parallel ~= 4
     or lifecycle_host.events[2].name ~= "kad_dht:reprovide:complete"
   then
     return nil, "reprovider task should emit lifecycle events"
@@ -553,7 +669,7 @@ local function run()
       datastore = sqlite_store,
       provider_ttl_seconds = false,
     }))
-    local persisted, persisted_err = persisted_dht:add_provider("cid-key", {
+    local persisted, persisted_err = persisted_dht:add_provider(CONTENT_KEY, {
       peer_id = "provider_a",
       addrs = { "/ip4/8.8.8.8/tcp/4001" },
     })
@@ -576,7 +692,7 @@ local function run()
       datastore = reopened_store,
       provider_ttl_seconds = false,
     }))
-    local persisted_providers, persisted_providers_err = reopened_dht:get_local_providers("cid-key")
+    local persisted_providers, persisted_providers_err = reopened_dht:get_local_providers(CONTENT_KEY)
     if not persisted_providers then
       reopened_store:close()
       os.remove(path)
@@ -611,7 +727,7 @@ local function run()
         return expired_now
       end,
     }))
-    local expiring, expiring_err = expiring_dht:add_provider("cid-key", {
+    local expiring, expiring_err = expiring_dht:add_provider(CONTENT_KEY, {
       peer_id = "provider_a",
       addrs = { "/ip4/8.8.8.8/tcp/4001" },
     })
@@ -638,7 +754,7 @@ local function run()
         return expired_now
       end,
     }))
-    local expired_providers, expired_providers_err = expired_reopened_dht:get_local_providers("cid-key")
+    local expired_providers, expired_providers_err = expired_reopened_dht:get_local_providers(CONTENT_KEY)
     if not expired_providers then
       expired_reopened_store:close()
       os.remove(expired_path)

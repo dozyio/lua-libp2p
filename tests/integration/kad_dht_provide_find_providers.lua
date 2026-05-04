@@ -1,4 +1,5 @@
 local host_mod = require("lua_libp2p.host")
+local multihash = require("lua_libp2p.multiformats.multihash")
 local identify_service = require("lua_libp2p.protocol_identify.service")
 local kad_dht_service = require("lua_libp2p.kad_dht")
 local ping_service = require("lua_libp2p.protocol_ping.service")
@@ -71,7 +72,7 @@ local function run()
   end
 
   local server_peer = server:peer_id().id
-  local content_key = "integration-provider-key"
+  local content_key = assert(multihash.sha2_256("integration-provider-key"))
   local server_target = {
     peer_id = server_peer,
     addrs = { server_addr_or_err },

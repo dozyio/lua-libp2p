@@ -273,14 +273,24 @@ The DHT defaults are tuned for the public DHT:
 - `k = 20`
 - `alpha = 10`
 - `disjoint_paths = 10`
+- `max_concurrent_queries = 32`
 - `max_message_size = lua_libp2p.network.MESSAGE_SIZE_MAX` (`4 MiB`)
 - `address_filter = "public"`
+- provider records expire after `48h`
+- provider addresses learned through provider records expire after `24h`
+- background reprovide interval is `22h` when `reprovider_enabled = true`
 
 Address filtering is configurable:
 
 ```lua
 local dht = assert(kad_dht.new(host, {
   address_filter = "public", -- "public", "private", or "all"
+  max_concurrent_queries = 32,
+  datastore = persistent_store, -- optional shared datastore for providers/records
+  provider_datastore = provider_store, -- optional provider-only datastore
+  record_datastore = record_store, -- optional value-record-only datastore
+  peer_diversity_max_peers_per_ip_group = 3,
+  peer_diversity_max_peers_per_ip_group_per_bucket = 2,
 }))
 
 local custom = assert(kad_dht.new(host, {
@@ -292,3 +302,5 @@ local custom = assert(kad_dht.new(host, {
 ```
 
 The address-scope filter is separate from transport dialability filtering. For now, the public crawler stores valid peer addresses but only dials currently supported TCP addresses.
+
+The built-in IP-group diversity limiter is opt-in for the basic DHT, matching regular go-libp2p DHT behavior. IPv4 groups use `/16`, legacy Class A allocations use `/8`, and IPv6 currently falls back to `/32` grouping.

@@ -123,6 +123,34 @@ function M.select_record(dht, key, incoming)
   return nil, error_mod.new("protocol", "kad-dht record selector returned unsupported choice", { choice = choice_or_err })
 end
 
+function M.select_best_record(dht, key, existing, incoming)
+  if not existing then
+    return incoming
+  end
+
+  local namespace = M.record_namespace(key)
+  local selector = namespace and dht.record_selectors[namespace] or nil
+  selector = selector or dht.record_selector
+  if selector == nil then
+    return existing
+  end
+  if type(selector) ~= "function" then
+    return nil, error_mod.new("input", "kad-dht record selector must be a function")
+  end
+
+  local ok, choice_or_err = pcall(selector, key, existing, incoming, dht)
+  if not ok then
+    return nil, error_mod.new("protocol", "kad-dht record selector failed", { cause = choice_or_err })
+  end
+  if choice_or_err == "incoming" or choice_or_err == true or choice_or_err == 2 then
+    return incoming
+  end
+  if choice_or_err == "existing" or choice_or_err == false or choice_or_err == 1 then
+    return existing
+  end
+  return nil, error_mod.new("protocol", "kad-dht record selector returned unsupported choice", { choice = choice_or_err })
+end
+
 function M.synthesize_pk_record(dht, key)
   local pk_peer_id, key_err = record_validators.pk_peer_id_text(key)
   if not pk_peer_id then
@@ -231,6 +259,10 @@ function M.get_value(dht, peer_or_addr, key, opts)
     return nil, err
   end
   if response.record then
+    local valid, validate_err = M.validate_record(dht, response.key or key, response.record)
+    if not valid then
+      return nil, validate_err
+    end
     local merged, merge_err = M.merge_pk_record(dht, response.key or key, response.record)
     if not merged then
       return nil, merge_err
@@ -333,7 +365,10 @@ function M.find_value(dht, key, opts)
     }
   end
 
-  local found
+  local best_record
+  local best_key = key
+  local found_count = 0
+  local seen_records = {}
   local lookup, lookup_err = dht:_run_client_lookup(key, options.peers or seed_candidates_from_routing_table(dht, key, dht.k), function(peer, ctx)
     local query_options = options
     if ctx then
@@ -348,17 +383,36 @@ function M.find_value(dht, key, opts)
       return nil, err
     end
     if result.record and result.record.value ~= nil then
-      found = result
-      return { closer_peers = result.closer_peers, stop = true }
+      local candidate_key = result.key or key
+      local selected, select_err = M.select_best_record(dht, candidate_key, best_record, result.record)
+      if not selected then
+        return nil, select_err
+      end
+      best_record = selected
+      best_key = candidate_key
+      found_count = found_count + 1
+      seen_records[#seen_records + 1] = { peer = peer, key = candidate_key, record = result.record }
     end
     return { closer_peers = result.closer_peers }
   end, options)
   if not lookup then
     return nil, lookup_err
   end
-  if found then
-    found.lookup = lookup
-    return found
+  if best_record then
+    if options.correct_stale_records ~= false then
+      for _, item in ipairs(seen_records) do
+        if item.key == best_key and item.record.value ~= best_record.value then
+          dht:_put_value(item.peer.addr or (item.peer.addrs and item.peer.addrs[1]) or { peer_id = item.peer.peer_id, addrs = item.peer.addrs }, best_key, best_record, options)
+        end
+      end
+    end
+    return {
+      key = best_key,
+      record = best_record,
+      closer_peers = lookup.closest_peers,
+      lookup = lookup,
+      found_records = found_count,
+    }
   end
   return { record = nil, closer_peers = lookup.closest_peers, lookup = lookup, errors = lookup.errors }
 end
