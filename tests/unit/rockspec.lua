@@ -44,6 +44,7 @@ local function run()
     "lua_libp2p.peerstore.codec",
     "lua_libp2p.peerstore.datastore",
     "lua_libp2p.relay_discovery",
+    "lua_libp2p.resource_manager",
     "lua_libp2p.transport_circuit_relay_v2.protocol",
     "lua_libp2p.protocol_identify.protocol",
     "lua_libp2p.protocol_ping.protocol",

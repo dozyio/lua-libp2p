@@ -46,6 +46,13 @@ local function parse_args(args)
     list_mappings_max = 64,
     runtime = "auto",
     drain_seconds = 3,
+    discovery_timeout = 90,
+    seed_wait_seconds = 2,
+    walk_timeout = 12,
+    dht_alpha = 3,
+    dht_paths = 2,
+    dht_count = 20,
+    stop_on_first_reachable = true,
     bootstrappers = {},
     discover_autonat = false,
     max_autonat_servers = 3,
@@ -99,6 +106,24 @@ local function parse_args(args)
       i = i + 2
     elseif name == "--drain-seconds" then
       opts.drain_seconds = tonumber(value) or opts.drain_seconds
+      i = i + 2
+    elseif name == "--discovery-timeout" then
+      opts.discovery_timeout = tonumber(value) or opts.discovery_timeout
+      i = i + 2
+    elseif name == "--seed-wait-seconds" then
+      opts.seed_wait_seconds = tonumber(value) or opts.seed_wait_seconds
+      i = i + 2
+    elseif name == "--walk-timeout" then
+      opts.walk_timeout = tonumber(value) or opts.walk_timeout
+      i = i + 2
+    elseif name == "--dht-alpha" then
+      opts.dht_alpha = tonumber(value) or opts.dht_alpha
+      i = i + 2
+    elseif name == "--dht-paths" then
+      opts.dht_paths = tonumber(value) or opts.dht_paths
+      i = i + 2
+    elseif name == "--dht-count" then
+      opts.dht_count = tonumber(value) or opts.dht_count
       i = i + 2
     elseif name == "--auto-confirm" then
       opts.auto_confirm = true
@@ -230,110 +255,58 @@ local function print_mappings(host)
   end
 end
 
+local function metadata_status(host, addr)
+  local metadata = host and host.address_manager and host.address_manager:get_reachability(addr) or nil
+  if not metadata then
+    return "missing"
+  end
+  return tostring(metadata.status or "unknown")
+    .. ",verified=" .. tostring(metadata.verified == true)
+    .. ",source=" .. tostring(metadata.source)
+end
+
+local function print_autonat_summary(stats)
+  print("AutoNAT summary: checked="
+    .. tostring(stats and stats.checked or 0)
+    .. " responses=" .. tostring(stats and stats.responses or 0)
+    .. " refused=" .. tostring(stats and stats.refused or 0)
+    .. " reachable=" .. tostring(stats and stats.reachable or 0))
+end
+
 local function autonat_check_mappings_async(host, server, ctx)
-  local responses = 0
+  local mappings_ready, mappings_err = wait_for_mappings(host, 10, ctx)
+  if mappings_ready == nil then
+    return nil, mappings_err
+  end
+  local mappings = host.address_manager:get_public_address_mappings()
+  if #mappings == 0 then
+    return nil, "AutoNAT check skipped: no UPnP public mappings are active yet"
+  end
   local task = assert(host.autonat:start_check(server, {
-    addrs = host.address_manager:get_public_address_mappings(),
+    addrs = mappings,
     type = "ip-mapping",
+    timeout = 8,
+    stream_opts = { ctx = ctx },
   }))
-  local result, task_err = host:wait_task(task, { ctx = ctx })
+  local result, task_err = host:wait_task(task, { ctx = ctx, poll_interval = 0.05 })
   if not result then
     return nil, task_err
   end
-  if task.result then
-    responses = 1
-    print("AutoNAT: checking public mappings via " .. tostring(type(server) == "table" and server.peer_id or server))
-    print("  reachable=" .. tostring(task.result.reachable)
-      .. " response_status=" .. tostring(task.result.response_status)
-      .. " dial_status=" .. tostring(task.result.dial_status)
-      .. " dial_back_verified=" .. tostring(task.result.dial_back_verified))
+  print("AutoNAT: checking public mappings via " .. tostring(type(server) == "table" and server.peer_id or server))
+  print("  reachable=" .. tostring(result.reachable)
+    .. " response_status=" .. tostring(result.response_status)
+    .. " dial_status=" .. tostring(result.dial_status)
+    .. " dial_back_verified=" .. tostring(result.dial_back_verified))
+  if result.addr then
+    print("  checked_addr=" .. tostring(result.addr) .. " status=" .. metadata_status(host, result.addr))
   end
-  return responses
-end
-
-local function discover_autonat_servers(host, limit, ctx)
-  if not host.kad_dht then
-    print("AutoNAT discovery: kad_dht service is required")
-    return {}
-  end
-
-  print("AutoNAT discovery: waiting for DHT peers")
-  host:sleep(1, { ctx = ctx })
-  local seed_deadline = os.time() + 30
-  while #host.kad_dht.routing_table:all_peers() == 0 and os.time() < seed_deadline do
-    host:sleep(0.25, { ctx = ctx })
-  end
-  host:sleep(1, { ctx = ctx })
-  print("  routing_table_peers=" .. tostring(#host.kad_dht.routing_table:all_peers()))
-
-  print("AutoNAT discovery: random walk")
-  local walk_op = assert(host.kad_dht:random_walk({
-    count = 20,
-    alpha = 10,
-    disjoint_paths = 10,
-  }))
-  local walk_report = walk_op:result({ ctx = ctx })
-  host:sleep(1, { ctx = ctx })
-  if walk_report then
-    print("  walk queried=" .. tostring(walk_report.queried or 0)
-      .. " responses=" .. tostring(walk_report.responses or 0)
-      .. " added=" .. tostring(walk_report.added or 0))
-  end
-
-  local proto = require("lua_libp2p.protocol.autonat_v2").DIAL_REQUEST_ID
-  local out = {}
-  for _, peer in ipairs(host.peerstore:all()) do
-    if host.peerstore:supports_protocol(peer.peer_id, proto) and #host.peerstore:get_addrs(peer.peer_id) > 0 then
-      out[#out + 1] = {
-        peer_id = peer.peer_id,
-        addrs = host.peerstore:get_addrs(peer.peer_id),
-      }
-      print("  found AutoNAT candidate: " .. peer.peer_id)
-      if #out >= limit then
-        break
-      end
-    end
-  end
-  if #out == 0 then
-    print("AutoNAT discovery: no AutoNAT v2 servers found in peerstore")
-  end
-  return out
-end
-
-local function check_discovered_autonat_servers(host, opts, ctx)
-  local checked = 0
-  local real_responses = 0
-  while checked < opts.max_autonat_servers and real_responses < opts.target_autonat_responses do
-    local discover_task = assert(host:spawn_task("example.discover_autonat_servers", function(task_ctx)
-      return discover_autonat_servers(host, opts.max_autonat_servers, task_ctx)
-    end, { service = "example" }))
-    local servers = host:wait_task(discover_task, { ctx = ctx }) or {}
-    if #servers == 0 then
-      break
-    end
-    for _, server in ipairs(servers) do
-      if checked >= opts.max_autonat_servers or real_responses >= opts.target_autonat_responses then
-        break
-      end
-      checked = checked + 1
-      local responses = autonat_check_mappings_async(host, server, ctx) or 0
-      real_responses = real_responses + responses
-      if responses == 0 then
-        print("  no AutoNAT DialResponse from " .. tostring(server.peer_id))
-      end
-    end
-    if real_responses < opts.target_autonat_responses then
-      print("AutoNAT discovery: target responses not met; continuing random walk")
-      if host.kad_dht then
-        local extra = assert(host.kad_dht:random_walk({ count = 20, alpha = 10, disjoint_paths = 10 }))
-        extra:result({ ctx = ctx, timeout = 60 })
-      else
-        break
-      end
-    end
-  end
-  host:sleep(opts.drain_seconds, { ctx = ctx })
-  print("AutoNAT discovery: checked=" .. tostring(checked) .. " real_responses=" .. tostring(real_responses))
+  print_autonat_summary({
+    checked = 1,
+    responses = result.response_status == "E_DIAL_REFUSED" and 0 or 1,
+    refused = result.response_status == "E_DIAL_REFUSED" and 1 or 0,
+    reachable = result.reachable and 1 or 0,
+  })
+  return result
 end
 
 local opts, err = parse_args(arg)
@@ -402,8 +375,70 @@ h:on("autonat:address:reachable", function(payload)
   return true
 end)
 
+h:on("autonat:address:checked", function(payload)
+  print("autonat checked mapping: "
+    .. tostring(payload and payload.addr)
+    .. " reachable=" .. tostring(payload and payload.reachable)
+    .. " response_status=" .. tostring(payload and payload.response_status)
+    .. " dial_status=" .. tostring(payload and payload.dial_status)
+    .. " verified=" .. tostring(payload and payload.dial_back_verified)
+    .. " metadata=" .. metadata_status(h, payload and payload.addr))
+  return true
+end)
+
 h:on("autonat:address:unreachable", function(payload)
   print("autonat unreachable: " .. tostring(payload.addr))
+  return true
+end)
+
+h:on("autonat:request:failed", function(payload)
+  print("autonat request failed: server="
+    .. tostring(payload and payload.server_peer_id)
+    .. " response_status=" .. tostring(payload and payload.response_status)
+    .. " dial_status=" .. tostring(payload and payload.dial_status))
+  return true
+end)
+
+h:on("autonat:discovery:check_failed", function(payload)
+  print("autonat discovery check failed: peer="
+    .. tostring(payload and payload.peer_id)
+    .. " cause=" .. tostring(payload and payload.error))
+  return true
+end)
+
+h:on("autonat:discovery:candidates", function(payload)
+  print("autonat discovery: peerstore_peers="
+    .. tostring(payload and payload.peerstore_peers or 0)
+    .. " autonat_proto_candidates="
+    .. tostring(payload and payload.protocol_candidates or 0))
+  return true
+end)
+
+h:on("autonat:discovery:walk", function(payload)
+  local report = payload and payload.report or {}
+  print("autonat discovery: random_walk queried="
+    .. tostring(report.queried or 0)
+    .. " responses=" .. tostring(report.responses or 0)
+    .. " added=" .. tostring(report.added or 0)
+    .. " discovered=" .. tostring(report.discovered or 0))
+  if payload and payload.routing_table_peers then
+    print("autonat discovery: post-walk peers=" .. tostring(payload.routing_table_peers))
+  end
+  return true
+end)
+
+h:on("autonat:discovery:progress", function(payload)
+  print("autonat discovery: checked="
+    .. tostring(payload and payload.checked or 0)
+    .. " responses=" .. tostring(payload and payload.responses or 0)
+    .. " refused=" .. tostring(payload and payload.refused or 0)
+    .. " reachable=" .. tostring(payload and payload.reachable or 0))
+  return true
+end)
+
+h:on("autonat:monitor:verified", function(payload)
+  print("autonat monitor verified: round=" .. tostring(payload and payload.round or 0))
+  print_autonat_summary(payload and payload.stats or {})
   return true
 end)
 
@@ -420,15 +455,57 @@ if opts.list_mappings then
 end
 
 if opts.autonat_server then
-  autonat_check_mappings_async(h, opts.autonat_server)
-  print_mappings(h)
+  h:spawn_task("example.autonat_direct", function(ctx)
+    local _, check_err = autonat_check_mappings_async(h, opts.autonat_server, ctx)
+    if check_err then
+      print("autonat check failed: " .. tostring(check_err))
+    end
+    print_mappings(h)
+    return true
+  end, { service = "example" })
 end
 
 if opts.discover_autonat then
-  check_discovered_autonat_servers(h, opts)
-  print_mappings(h)
-  if opts.list_mappings then
-    print_upnp_mapping_table(h, opts.list_mappings_max)
+  local monitor_task, monitor_err = h.autonat:start_monitor({
+    poll_interval = 0.05,
+    discovery_timeout = opts.discovery_timeout,
+    seed_wait_seconds = opts.seed_wait_seconds,
+    walk_timeout = opts.walk_timeout,
+    dht_alpha = opts.dht_alpha,
+    dht_paths = opts.dht_paths,
+    dht_count = opts.dht_count,
+    max_autonat_servers = opts.max_autonat_servers,
+    target_autonat_responses = opts.target_autonat_responses,
+    stop_on_first_reachable = opts.stop_on_first_reachable,
+    drain_seconds = opts.drain_seconds,
+    check_type = "ip-mapping",
+    retry_interval_seconds = 5,
+    healthy_interval_seconds = 30,
+    min_success_rounds = 2,
+    checked_peer_cooldown_seconds = 30,
+    required_addr_proto = opts.listen_addr:find("/ip6/", 1, true) and "ip6" or "ip4",
+    check_opts_builder = function()
+      local mappings = h.address_manager:get_public_address_mappings()
+      if #mappings == 0 then
+        print("  AutoNAT: no UPnP public mappings active yet; candidate check will be skipped")
+        return {
+          addrs = {},
+          type = "ip-mapping",
+          timeout = 8,
+        }
+      end
+      for _, addr in ipairs(mappings) do
+        print("  checking mapping: " .. tostring(addr) .. " status=" .. metadata_status(h, addr))
+      end
+      return {
+        addrs = mappings,
+        type = "ip-mapping",
+        timeout = 8,
+      }
+    end,
+  })
+  if not monitor_task then
+    print("autonat monitor failed to start: " .. tostring(monitor_err))
   end
 end
 
