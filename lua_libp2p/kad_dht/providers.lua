@@ -87,6 +87,52 @@ local function expired(entry, now)
   return type(entry.expires_at) == "number" and entry.expires_at <= now
 end
 
+local function validate_persisted_entry(entry, expected_key)
+  if type(entry) ~= "table" then
+    return nil
+  end
+  if expected_key ~= nil and entry.key ~= expected_key then
+    return nil
+  end
+  if type(entry.key) ~= "string" or entry.key == "" then
+    return nil
+  end
+  if type(entry.peer_id) ~= "string" or entry.peer_id == "" then
+    return nil
+  end
+  if entry.id ~= nil and type(entry.id) ~= "string" then
+    return nil
+  end
+  if type(entry.addrs) ~= "table" then
+    return nil
+  end
+  local addrs = {}
+  for _, addr in ipairs(entry.addrs) do
+    if type(addr) ~= "string" then
+      return nil
+    end
+    addrs[#addrs + 1] = addr
+  end
+  if entry.first_seen_at ~= nil and type(entry.first_seen_at) ~= "number" then
+    return nil
+  end
+  if entry.updated_at ~= nil and type(entry.updated_at) ~= "number" then
+    return nil
+  end
+  if entry.expires_at ~= nil and type(entry.expires_at) ~= "number" then
+    return nil
+  end
+  return {
+    key = entry.key,
+    peer_id = entry.peer_id,
+    id = entry.id,
+    addrs = addrs,
+    first_seen_at = entry.first_seen_at,
+    updated_at = entry.updated_at,
+    expires_at = entry.expires_at,
+  }
+end
+
 function Store:add(key, peer_info, opts)
   local ok, key_err = validate_key(key)
   if not ok then
@@ -149,22 +195,13 @@ function Store:get(key, opts)
     if not entry then
       goto continue
     end
-    if expired(entry, now) then
+    local normalized = validate_persisted_entry(entry, key)
+    if not normalized then
+      self._datastore:delete(store_key)
+    elseif expired(normalized, now) then
       self._datastore:delete(store_key)
     else
-      local addrs = {}
-      for _, addr in ipairs(entry.addrs or {}) do
-        addrs[#addrs + 1] = addr
-      end
-      out[#out + 1] = {
-        key = entry.key,
-        peer_id = entry.peer_id,
-        id = entry.id,
-        addrs = addrs,
-        first_seen_at = entry.first_seen_at,
-        updated_at = entry.updated_at,
-        expires_at = entry.expires_at,
-      }
+      out[#out + 1] = normalized
       if limit and #out >= limit then
         break
       end
@@ -174,6 +211,53 @@ function Store:get(key, opts)
   table.sort(out, function(a, b)
     return a.peer_id < b.peer_id
   end)
+  return out
+end
+
+function Store:list_keys(opts)
+  local options = opts or {}
+  local limit = options.limit
+  if limit ~= nil and (type(limit) ~= "number" or limit < 1) then
+    return nil, error_mod.new("input", "provider key limit must be a positive number")
+  end
+
+  local now = now_seconds(self)
+  local keys, list_err = self._datastore:list("kad_dht/providers/")
+  if not keys then
+    return nil, list_err
+  end
+  local seen = {}
+  local out = {}
+  for _, store_key in ipairs(keys) do
+    local entry, get_err = self._datastore:get(store_key)
+    if get_err then
+      return nil, get_err
+    end
+    if not entry then
+      goto continue
+    end
+    local normalized = validate_persisted_entry(entry)
+    if not normalized then
+      self._datastore:delete(store_key)
+      goto continue
+    end
+    if expired(normalized, now) then
+      self._datastore:delete(store_key)
+      goto continue
+    end
+    if options.peer_id ~= nil and normalized.peer_id ~= options.peer_id then
+      goto continue
+    end
+    if not seen[normalized.key] then
+      seen[normalized.key] = true
+      out[#out + 1] = normalized.key
+      if limit and #out >= limit then
+        break
+      end
+    end
+    ::continue::
+  end
+  table.sort(out)
   return out
 end
 
@@ -189,7 +273,11 @@ function Store:cleanup()
     if get_err then
       return nil, get_err
     end
-    if entry and expired(entry, now) then
+    local normalized = validate_persisted_entry(entry)
+    if entry and not normalized then
+      self._datastore:delete(store_key)
+      removed = removed + 1
+    elseif normalized and expired(normalized, now) then
       self._datastore:delete(store_key)
       removed = removed + 1
     end

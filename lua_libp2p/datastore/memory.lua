@@ -90,6 +90,10 @@ function Store:list(prefix)
   return keys
 end
 
+function Store:close()
+  return true
+end
+
 function M.new(initial)
   local store = setmetatable({
     _entries = {},

@@ -138,8 +138,8 @@ local function run()
     return nil, "unexpected dial call count"
   end
 
-  local peer_a = dht:find_peer("peer-a")
-  local peer_c = dht:find_peer("peer-c")
+  local peer_a = dht:get_local_peer("peer-a")
+  local peer_c = dht:get_local_peer("peer-c")
   if not peer_a or not peer_c then
     return nil, "bootstrap should populate routing table"
   end
@@ -181,11 +181,11 @@ local function run()
     return nil, "expected random walk to add discovered peers"
   end
 
-  local peer_d = dht:find_peer("peer-d")
+  local peer_d = dht:get_local_peer("peer-d")
   if not peer_d then
     return nil, "random walk should add discovered peer-d"
   end
-  local peer_e = dht:find_peer("peer-e")
+  local peer_e = dht:get_local_peer("peer-e")
   if not peer_e then
     return nil, "random walk should query discovered peer-d and add peer-e"
   end
