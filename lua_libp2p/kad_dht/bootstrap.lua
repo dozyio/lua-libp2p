@@ -47,21 +47,6 @@ function M.resolve_bootstrap_addrs(addrs, opts)
   return out
 end
 
-local function is_dialable_tcp_addr(addr)
-  local parsed = multiaddr.parse(addr)
-  if not parsed or type(parsed.components) ~= "table" or #parsed.components < 2 then return false end
-  local host_part = parsed.components[1]
-  local tcp_part = parsed.components[2]
-  if host_part.protocol ~= "ip4" and host_part.protocol ~= "dns" and host_part.protocol ~= "dns4" and host_part.protocol ~= "dns6" then
-    return false
-  end
-  if tcp_part.protocol ~= "tcp" then return false end
-  for i = 3, #parsed.components do
-    if parsed.components[i].protocol ~= "p2p" then return false end
-  end
-  return true
-end
-
 local function extract_peer_id_from_multiaddr(addr)
   local parsed = multiaddr.parse(addr)
   if not parsed then return nil end
@@ -133,7 +118,11 @@ function M.bootstrap(dht, opts)
     local peer_id = candidate.peer_id
     local addrs = dht:_filter_addrs(candidate.addrs or {}, { peer_id = peer_id, purpose = "bootstrap" })
     for _, addr in ipairs(addrs) do
-      if not is_dialable_tcp_addr(addr) then
+      local dialable, dialable_err = dht:_is_dialable_addr(addr)
+      if dialable == nil and dialable_err then
+        return nil, dialable_err
+      end
+      if not dialable then
         result.skipped = result.skipped + 1
         goto continue_addrs
       end

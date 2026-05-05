@@ -4,6 +4,7 @@ local dnsaddr = require("lua_libp2p.dnsaddr")
 local error_mod = require("lua_libp2p.error")
 local multiaddr = require("lua_libp2p.multiaddr")
 local bootstrap = require("lua_libp2p.bootstrap")
+local table_utils = require("lua_libp2p.util.tables")
 
 local M = {}
 
@@ -24,13 +25,7 @@ local function parse_peer_id(addr)
   return nil
 end
 
-local function copy_list(values)
-  local out = {}
-  for i, value in ipairs(values or {}) do
-    out[i] = value
-  end
-  return out
-end
+local copy_list = table_utils.copy_list
 
 local function is_dialable_tcp_addr(addr)
   local parsed = multiaddr.parse(addr)
@@ -65,6 +60,7 @@ function BootstrapSource:discover(opts)
   local resolver = options.dnsaddr_resolver or self.dnsaddr_resolver
   local dialable_only = not not (options.dialable_only or self.dialable_only)
   local ignore_resolve_errors = not not (options.ignore_resolve_errors or self.ignore_resolve_errors)
+  local addr_filter = options.addr_filter
 
   local out = {}
 
@@ -78,7 +74,15 @@ function BootstrapSource:discover(opts)
     end
 
     for _, candidate in ipairs(resolved) do
-      if not dialable_only or is_dialable_tcp_addr(candidate) then
+      local dialable = true
+      if dialable_only then
+        if type(addr_filter) == "function" then
+          dialable = addr_filter(candidate) ~= false
+        else
+          dialable = is_dialable_tcp_addr(candidate)
+        end
+      end
+      if dialable then
         out[#out + 1] = {
           peer_id = parse_peer_id(candidate),
           addrs = { candidate },

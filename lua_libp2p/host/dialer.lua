@@ -49,6 +49,29 @@ local function resolve_target(target)
   return nil
 end
 
+local function prefer_dialable_addrs(host, addrs)
+  if type(host.is_dialable_addr) ~= "function" then
+    return addrs
+  end
+  local preferred = {}
+  local fallback = {}
+  for _, addr in ipairs(addrs or {}) do
+    local ok, dialable = pcall(host.is_dialable_addr, host, addr)
+    if ok and dialable then
+      preferred[#preferred + 1] = addr
+    else
+      fallback[#fallback + 1] = addr
+    end
+  end
+  if #preferred == 0 then
+    return addrs
+  end
+  for _, addr in ipairs(fallback) do
+    preferred[#preferred + 1] = addr
+  end
+  return preferred
+end
+
 function M.install(Host)
   --- Dial relay destination over explicit relay multiaddr.
   -- `opts.timeout`, `opts.io_timeout`, and `opts.ctx` control connect/IO timing.
@@ -178,6 +201,7 @@ function M.install(Host)
       else
         candidate_addrs = addrs
       end
+      candidate_addrs = prefer_dialable_addrs(self, candidate_addrs)
     end
     if #candidate_addrs == 0 then
       log.debug("host dial failed", {

@@ -17,6 +17,26 @@ end
 local function run()
   local dial_calls = 0
   local host = {}
+  host.listen_addrs = { "/ip4/0.0.0.0/tcp/4001", "/ip6/::/tcp/4001" }
+
+  function host:_dialable_ip_families()
+    return true, true
+  end
+
+  function host:is_dialable_addr(addr)
+    return addr:sub(1, 5) == "/ip4/" or addr:sub(1, 5) == "/ip6/" or addr:sub(1, 5) == "/dns/" or addr:sub(1, 6) == "/dns4/"
+      or addr:sub(1, 6) == "/dns6/"
+  end
+
+  function host:filter_dialable_addrs(addrs)
+    local out = {}
+    for _, addr in ipairs(addrs or {}) do
+      if self:is_dialable_addr(addr) then
+        out[#out + 1] = addr
+      end
+    end
+    return out
+  end
 
   function host:dial(target)
     dial_calls = dial_calls + 1

@@ -339,6 +339,41 @@ local function run()
     return nil, "connection manager should apply per-address dial timeout"
   end
 
+  local family_pref_host = assert(host.new({
+    runtime = "luv",
+    identity = keypair,
+    listen_addrs = { "/ip4/0.0.0.0/tcp/4001" },
+    blocking = false,
+  }))
+  local family_dialed = {}
+  family_pref_host._tcp_transport = {
+    dial = function(endpoint)
+      family_dialed[#family_dialed + 1] = endpoint.host .. ":" .. tostring(endpoint.port)
+      if #family_dialed == 1 then
+        return nil, require("lua_libp2p.error").new("io", "forced first dial failure")
+      end
+      return { close = function() return true end }
+    end,
+  }
+  local original_family_upgrade = upgrader.upgrade_outbound
+  upgrader.upgrade_outbound = function()
+    return { close = function() return true end }, { remote_peer_id = multi_peer_id }
+  end
+  local family_conn, _, family_err = family_pref_host:dial({
+    peer_id = multi_peer_id,
+    addrs = {
+      "/ip6/2001:db8::1/tcp/4001/p2p/" .. multi_peer_id,
+      "/ip4/8.8.8.8/tcp/4001/p2p/" .. multi_peer_id,
+    },
+  }, { address_dial_timeout = 2, dial_timeout = 5 })
+  upgrader.upgrade_outbound = original_family_upgrade
+  if not family_conn then
+    return nil, family_err
+  end
+  if #family_dialed ~= 2 or family_dialed[1] ~= "8.8.8.8:4001" or family_dialed[2] ~= "2001:db8::1:4001" then
+    return nil, "dial_direct should prefer family-compatible addresses before fallback candidates"
+  end
+
   local ipv6_ranked = multi_dial_host.connection_manager:rank_addrs({
     "/ip6/2001:db8::1/tcp/4001/p2p/" .. multi_peer_id,
   })
