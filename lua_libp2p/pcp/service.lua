@@ -280,23 +280,24 @@ function Service:start()
     return true
   end
 
-  if self.initial_map_delay_seconds and self.initial_map_delay_seconds > 0
-    and self.host and type(self.host.spawn_task) == "function"
-  then
-    local delay = self.initial_map_delay_seconds
-    local task, task_err = self.host:spawn_task("pcp.initial_map_delay", function(ctx)
+  if self.host and type(self.host.spawn_task) == "function" then
+    local delay = tonumber(self.initial_map_delay_seconds) or 0
+    local task, task_err = self.host:spawn_task("pcp.initial_map", function(ctx)
       log.debug("pcp initial mapping delayed", {
         delay_seconds = delay,
       })
-      local ok, sleep_err = ctx:sleep(delay)
-      if ok == nil and sleep_err then
-        return nil, sleep_err
+      if delay > 0 then
+        local ok, sleep_err = ctx:sleep(delay)
+        if ok == nil and sleep_err then
+          return nil, sleep_err
+        end
       end
       return run_initial_map()
     end, { service = "pcp" })
     if not task then
       return nil, task_err
     end
+    self._initial_map_task = task
     return true
   end
 
@@ -307,6 +308,10 @@ end
 -- @treturn true
 function Service:stop()
   self.started = false
+  if self._initial_map_task and self.host and type(self.host.cancel_task) == "function" then
+    self.host:cancel_task(self._initial_map_task.id)
+  end
+  self._initial_map_task = nil
   log.debug("pcp service stopped", {
     mappings = (function()
       local n = 0
@@ -357,6 +362,7 @@ function M.new(host, opts)
     fail_on_start_error = options.fail_on_start_error == true,
     map_on_self_peer_update = options.map_on_self_peer_update ~= false,
     initial_map_delay_seconds = tonumber(options.initial_map_delay_seconds) or 0,
+    _initial_map_task = nil,
     mappings = {},
     started = false,
   }, Service)

@@ -31,6 +31,14 @@ local function run()
     _emit_self_peer_update_if_changed = function(self)
       return self:emit("self_peer_update", {})
     end,
+    _tasks = {},
+    spawn_task = function(self, name, fn)
+      self._tasks[#self._tasks + 1] = { name = name, fn = fn }
+      return { id = #self._tasks, name = name }
+    end,
+    cancel_task = function()
+      return true
+    end,
   }
   local client = {
     calls = 0,
@@ -52,6 +60,20 @@ local function run()
   local ok, err = svc:start()
   if not ok then
     return nil, err
+  end
+  if client.calls ~= 0 then
+    return nil, "pcp start should not block on initial mapping"
+  end
+  if #host._tasks ~= 1 or host._tasks[1].name ~= "pcp.initial_map" then
+    return nil, "pcp start should schedule async initial mapping task"
+  end
+  local task_ok, task_err = host._tasks[1].fn({
+    sleep = function()
+      return true
+    end,
+  })
+  if not task_ok then
+    return nil, task_err
   end
   if client.calls ~= 1 then
     return nil, "pcp mapping should not re-enter from its own self-peer update"
