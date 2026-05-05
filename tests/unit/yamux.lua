@@ -85,6 +85,9 @@ local function run()
   if not s2_err or s2_err.kind ~= "backlog" then
     return nil, "expected backlog error kind on open_stream"
   end
+  if s2_err.context.stream_id ~= 3 then
+    return nil, "yamux open_stream backlog error should include stream_id"
+  end
 
   local inbound_writer = new_scripted_conn("")
   assert(yamux.write_frame(inbound_writer, {
@@ -170,10 +173,33 @@ local function run()
   if not nonyield_read_err or nonyield_read_err.kind ~= "busy" then
     return nil, "yamux non-yieldable reads should require waiter context"
   end
+  if nonyield_read_err.context.stream_id ~= stream.id then
+    return nil, "yamux stream read errors should include stream_id"
+  end
   stream.send_window = 0
   local _, nonyield_write_err = stream:write("x")
   if not nonyield_write_err or nonyield_write_err.kind ~= "busy" then
     return nil, "yamux non-yieldable writes should require waiter context"
+  end
+  if nonyield_write_err.context.stream_id ~= stream.id then
+    return nil, "yamux stream write errors should include stream_id"
+  end
+
+  local bad_frame_writer = new_scripted_conn("")
+  assert(yamux.write_frame(bad_frame_writer, {
+    type = 99,
+    flags = yamux.FLAG.SYN,
+    stream_id = 7,
+    length = 0,
+  }))
+  local bad_frame_session = yamux.new_session(new_scripted_conn(bad_frame_writer:writes()), { is_client = false })
+  local _, bad_frame_err = bad_frame_session:process_one()
+  if not bad_frame_err or bad_frame_err.kind ~= "protocol" or bad_frame_err.context.stream_id ~= 7 then
+    return nil, "yamux frame protocol errors should include stream_id"
+  end
+  local _, cached_pump_err = bad_frame_session:process_one()
+  if not cached_pump_err or cached_pump_err.context.stream_id ~= 7 then
+    return nil, "yamux cached pump errors should preserve stream_id"
   end
 
   local notify_writer = new_scripted_conn("")

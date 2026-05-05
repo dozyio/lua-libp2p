@@ -4,6 +4,7 @@ local bootstrap_defaults = require("lua_libp2p.bootstrap")
 local discovery = require("lua_libp2p.discovery")
 local discovery_bootstrap = require("lua_libp2p.peer_discovery_bootstrap")
 local error_mod = require("lua_libp2p.error")
+local log = require("lua_libp2p.log").subsystem("kad_dht")
 local multiaddr = require("lua_libp2p.multiaddr")
 
 local M = {}
@@ -121,6 +122,10 @@ function M.bootstrap(dht, opts)
     dialable_only = true,
   })
   if not candidates then return nil, discover_err end
+  log.debug("kad dht bootstrap started", {
+    candidates = #candidates,
+    require_protocol = options.require_protocol ~= false,
+  })
 
   local result = { attempted = 0, connected = 0, added = 0, skipped = 0, failed = 0, peers = {}, errors = {} }
   local seen = {}
@@ -136,6 +141,10 @@ function M.bootstrap(dht, opts)
       if seen[key] then goto continue_addrs end
       seen[key] = true
       result.attempted = result.attempted + 1
+      log.debug("kad dht bootstrap dial attempt", {
+        peer_id = peer_id,
+        addr = addr,
+      })
 
       local conn, state, dial_err = dht.host:dial({ peer_id = peer_id, addr = addr }, options.dial_opts)
       if conn then
@@ -148,6 +157,11 @@ function M.bootstrap(dht, opts)
           if require_protocol then
             local supported, supported_err = dht:_supports_kad_protocol(discovered_peer or addr, options.protocol_check_opts)
             if not supported then
+              log.debug("kad dht bootstrap protocol check failed", {
+                peer_id = discovered_peer,
+                addr = addr,
+                cause = tostring(supported_err),
+              })
               result.failed = result.failed + 1
               result.errors[#result.errors + 1] = error_mod.wrap("protocol", "peer does not support kad-dht protocol", supported_err, {
                 peer_id = discovered_peer,
@@ -163,21 +177,41 @@ function M.bootstrap(dht, opts)
           local added, add_err = dht:add_peer(discovered_peer, { allow_replace = options.allow_replace })
           if added then
             result.added = result.added + 1
+            log.debug("kad dht bootstrap peer added", {
+              peer_id = discovered_peer,
+              addr = addr,
+            })
           elseif add_err and error_mod.is_error(add_err) and add_err.kind == "capacity" then
             result.skipped = result.skipped + 1
+            log.debug("kad dht bootstrap peer skipped", {
+              peer_id = discovered_peer,
+              addr = addr,
+              reason = "capacity",
+            })
           elseif add_err and not options.ignore_add_errors then
             result.failed = result.failed + 1
             result.errors[#result.errors + 1] = add_err
+            log.debug("kad dht bootstrap peer add failed", {
+              peer_id = discovered_peer,
+              addr = addr,
+              cause = tostring(add_err),
+            })
           end
           result.peers[#result.peers + 1] = discovered_peer
         end
       else
         result.failed = result.failed + 1
         result.errors[#result.errors + 1] = dial_err
+        log.debug("kad dht bootstrap dial failed", {
+          peer_id = peer_id,
+          addr = addr,
+          cause = tostring(dial_err),
+        })
         if options.fail_fast then return nil, dial_err end
       end
 
       if type(options.max_success) == "number" and options.max_success > 0 and result.connected >= options.max_success then
+        log.debug("kad dht bootstrap completed", result)
         return result
       end
       if yield then
@@ -187,6 +221,7 @@ function M.bootstrap(dht, opts)
       ::continue_addrs::
     end
   end
+  log.debug("kad dht bootstrap completed", result)
   return result
 end
 

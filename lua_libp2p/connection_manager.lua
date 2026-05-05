@@ -9,6 +9,8 @@ local DEFAULT_MAX_PARALLEL_DIALS = 100
 local DEFAULT_MAX_DIAL_QUEUE_LENGTH = 500
 local DEFAULT_MAX_PEER_ADDRS_TO_DIAL = 3
 local DEFAULT_ADDRESS_DIAL_TIMEOUT = 6
+local DEFAULT_HIGH_WATER = 96
+local DEFAULT_LOW_WATER = 64
 
 local ConnectionManager = {}
 ConnectionManager.__index = ConnectionManager
@@ -75,8 +77,8 @@ function M.new(host, opts)
     max_inbound_connections = options.max_inbound_connections,
     max_outbound_connections = options.max_outbound_connections,
     max_connections_per_peer = options.max_connections_per_peer,
-    low_water = options.low_water,
-    high_water = options.high_water or options.max_connections,
+    low_water = options.low_water == nil and DEFAULT_LOW_WATER or options.low_water,
+    high_water = options.high_water or options.max_connections or DEFAULT_HIGH_WATER,
     active_dials = 0,
     queue = {},
     pending_by_key = {},

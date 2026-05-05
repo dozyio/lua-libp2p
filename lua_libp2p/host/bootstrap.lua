@@ -2,7 +2,7 @@
 -- @module lua_libp2p.host.bootstrap
 local discovery = require("lua_libp2p.discovery")
 local error_mod = require("lua_libp2p.error")
-local log = require("lua_libp2p.log")
+local log = require("lua_libp2p.log").subsystem("host")
 
 local M = {}
 
@@ -162,7 +162,6 @@ function M.install(Host)
     end
     log.info("bootstrap discovery completed", {
       discovered = #peers,
-      subsystem = "host",
     })
     for _, peer in ipairs(peers) do
       if type(peer) == "table" and type(peer.peer_id) == "string" and peer.peer_id ~= "" then
@@ -177,7 +176,6 @@ function M.install(Host)
           if self:_find_connection(peer.peer_id) then
             log.debug("bootstrap dial skipped existing connection", {
               peer_id = peer.peer_id,
-              subsystem = "host",
             })
             return true
           end
@@ -185,7 +183,6 @@ function M.install(Host)
             peer_id = peer.peer_id,
             addr_count = #(peer.addrs or {}),
             addr = (peer.addrs and peer.addrs[1]) or nil,
-            subsystem = "host",
           })
           local ok, dial_conn, _, dial_err = pcall(function()
             return self:dial({
@@ -200,14 +197,12 @@ function M.install(Host)
           if ok and dial_conn then
             log.info("bootstrap dial succeeded", {
               peer_id = peer.peer_id,
-              subsystem = "host",
             })
           else
             local cause = ok and dial_err or dial_conn
             log.warn("bootstrap dial failed", {
               peer_id = peer.peer_id,
               cause = tostring(cause),
-              subsystem = "host",
             })
           end
           -- Bootstrap dials are opportunistic; identify events seed interested services.

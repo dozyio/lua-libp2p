@@ -1,6 +1,7 @@
 --- Host protocol handler registry and limited-connection policy.
 -- @module lua_libp2p.host.protocols
 local error_mod = require("lua_libp2p.error")
+local log = require("lua_libp2p.log").subsystem("host")
 local multistream = require("lua_libp2p.multistream_select.protocol")
 
 local M = {}
@@ -44,6 +45,10 @@ function M.install(Host)
     local options = opts or {}
     self._handlers[protocol_id] = handler
     self._handler_options[protocol_id] = options
+    log.debug("host protocol handler registered", {
+      protocol = protocol_id,
+      run_on_limited_connection = options.run_on_limited_connection == true,
+    })
     if self._running then
       return self:_emit_self_peer_update_if_changed()
     end
@@ -63,6 +68,9 @@ function M.install(Host)
     end
     self._handlers[protocol_id] = nil
     self._handler_options[protocol_id] = nil
+    log.debug("host protocol handler removed", {
+      protocol = protocol_id,
+    })
     if self._running then
       local ok, err = self:_emit_self_peer_update_if_changed()
       if not ok then

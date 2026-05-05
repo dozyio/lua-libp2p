@@ -1,6 +1,7 @@
 --- Shared KAD-DHT iterative query engine.
 -- @module lua_libp2p.kad_dht.query
 local error_mod = require("lua_libp2p.error")
+local log = require("lua_libp2p.log").subsystem("kad_dht")
 local multiaddr = require("lua_libp2p.multiaddr")
 local protocol = require("lua_libp2p.kad_dht.protocol")
 
@@ -39,6 +40,29 @@ local function dialable_tcp_addrs(addrs)
   local out = {}
   for _, addr in ipairs(addrs or {}) do
     if is_dialable_tcp_addr(addr) then out[#out + 1] = addr end
+  end
+  return out
+end
+
+local function add_error_fields(out, prefix, err, depth)
+  local remaining = depth or 3
+  out[prefix] = tostring(err)
+  if remaining <= 0 or not error_mod.is_error(err) then
+    return out
+  end
+  out[prefix .. "_kind"] = err.kind
+  if type(err.context) == "table" then
+    for k, v in pairs(err.context) do
+      local key = prefix .. "_" .. tostring(k)
+      if k == "cause" then
+        out[key] = tostring(v)
+        if error_mod.is_error(v) then
+          add_error_fields(out, key, v, remaining - 1)
+        end
+      elseif type(v) ~= "table" and type(v) ~= "function" and type(v) ~= "thread" then
+        out[key] = v
+      end
+    end
   end
   return out
 end
@@ -148,6 +172,15 @@ function M.run_client_lookup(dht, key, seed_peers, query_func, opts)
   local stop = false
   local active = 0
   local yield = type(options.yield) == "function" and options.yield or nil
+  log.debug("kad dht lookup started", {
+    key_size = type(key) == "string" and #key or nil,
+    seed_peers = #(seed_peers or {}),
+    queued_peers = #queue,
+    alpha = alpha,
+    disjoint_paths = result.disjoint_paths,
+    effective_concurrency = max_inflight,
+    scheduler_task = options.scheduler_task == true,
+  })
 
   local function complete(peer, ok, response_or_err)
     active = active - 1
@@ -158,6 +191,11 @@ function M.run_client_lookup(dht, key, seed_peers, query_func, opts)
       dht:_record_kad_peer(peer.peer_id, peer.addrs)
       local response = response_or_err or {}
       if response.stop then stop = true end
+      log.debug("kad dht peer query succeeded", {
+        peer_id = peer.peer_id,
+        closer_peers = #(response.closer_peers or {}),
+        stop = response.stop == true,
+      })
       for _, closer in ipairs(response.closer_peers or {}) do
         result.closest_peers[#result.closest_peers + 1] = closer
         enqueue(closer)
@@ -166,6 +204,9 @@ function M.run_client_lookup(dht, key, seed_peers, query_func, opts)
       peer.state = "unreachable"
       result.failed = result.failed + 1
       if response_or_err then result.errors[#result.errors + 1] = response_or_err end
+      log.debug("kad dht peer query failed", add_error_fields({
+        peer_id = peer.peer_id,
+      }, "cause", response_or_err))
     end
   end
 
@@ -262,6 +303,15 @@ function M.run_client_lookup(dht, key, seed_peers, query_func, opts)
       end
     end
     M.sort_candidates(dht, target_hash, result.closest_peers)
+    log.debug("kad dht lookup completed", {
+      termination = result.termination,
+      queried = result.queried,
+      responses = result.responses,
+      failed = result.failed,
+      cancelled = result.cancelled,
+      active_peak = result.active_peak,
+      closest_peers = #result.closest_peers,
+    })
     return result
   elseif options.scheduler_task == true then
     while not stop do
@@ -295,6 +345,15 @@ function M.run_client_lookup(dht, key, seed_peers, query_func, opts)
       if done then result.termination = reason; break end
     end
     M.sort_candidates(dht, target_hash, result.closest_peers)
+    log.debug("kad dht lookup completed", {
+      termination = result.termination,
+      queried = result.queried,
+      responses = result.responses,
+      failed = result.failed,
+      cancelled = result.cancelled,
+      active_peak = result.active_peak,
+      closest_peers = #result.closest_peers,
+    })
     return result
   end
 
@@ -335,6 +394,15 @@ function M.run_client_lookup(dht, key, seed_peers, query_func, opts)
   while not step_lookup() do
     if #workers == 0 and #queue == 0 then break end
   end
+  log.debug("kad dht lookup completed", {
+    termination = result.termination,
+    queried = result.queried,
+    responses = result.responses,
+    failed = result.failed,
+    cancelled = result.cancelled,
+    active_peak = result.active_peak,
+    closest_peers = #result.closest_peers,
+  })
   return result
 end
 

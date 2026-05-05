@@ -19,7 +19,7 @@ local record_validators = require("lua_libp2p.kad_dht.record_validators")
 local reprovider = require("lua_libp2p.kad_dht.reprovider")
 local values = require("lua_libp2p.kad_dht.values")
 local protocol = require("lua_libp2p.kad_dht.protocol")
-local log = require("lua_libp2p.log")
+local log = require("lua_libp2p.log").subsystem("kad_dht")
 
 local M = {}
 M.provides = { "peer_routing", "content_routing", "value_routing", "kad_dht" }
@@ -426,13 +426,11 @@ function DHT:add_peer(peer_id, opts)
     self._peer_health[peer_id].last_connected_at = self._peer_health[peer_id].last_connected_at or now
     log.debug("kad dht peer added", {
       peer_id = peer_id,
-      subsystem = "kad_dht",
     })
   elseif err then
     log.debug("kad dht peer rejected", {
       peer_id = tostring(peer_id),
       cause = tostring(err),
-      subsystem = "kad_dht",
     })
   end
   return added, err
@@ -912,12 +910,35 @@ local function reset_stream(stream)
   return true
 end
 
+local function message_type_name(message_type)
+  if message_type == protocol.MESSAGE_TYPE.FIND_NODE then
+    return "FIND_NODE"
+  elseif message_type == protocol.MESSAGE_TYPE.GET_VALUE then
+    return "GET_VALUE"
+  elseif message_type == protocol.MESSAGE_TYPE.PUT_VALUE then
+    return "PUT_VALUE"
+  elseif message_type == protocol.MESSAGE_TYPE.ADD_PROVIDER then
+    return "ADD_PROVIDER"
+  elseif message_type == protocol.MESSAGE_TYPE.GET_PROVIDERS then
+    return "GET_PROVIDERS"
+  elseif message_type == protocol.MESSAGE_TYPE.PING then
+    return "PING"
+  end
+  return tostring(message_type)
+end
+
 function DHT:_handle_rpc(stream, ctx)
   local req, req_err = protocol.read(stream, { max_message_size = self.max_message_size })
   if not req then
     reset_stream(stream)
     return nil, req_err
   end
+
+  log.debug("kad dht inbound rpc received", {
+    peer_id = ctx and (ctx.peer_id or (ctx.state and ctx.state.remote_peer_id)) or nil,
+    message_type = message_type_name(req.type),
+    key_size = type(req.key) == "string" and #req.key or 0,
+  })
 
   local response, response_err
   if req.type == protocol.MESSAGE_TYPE.FIND_NODE then
@@ -932,11 +953,20 @@ function DHT:_handle_rpc(stream, ctx)
     response, response_err = self:_handle_get_providers(req)
   else
     reset_stream(stream)
+    log.debug("kad dht inbound rpc unsupported", {
+      peer_id = ctx and (ctx.peer_id or (ctx.state and ctx.state.remote_peer_id)) or nil,
+      message_type = message_type_name(req.type),
+    })
     return nil, error_mod.new("unsupported", "kad-dht message type is not supported", { type = req.type })
   end
   if not response then
     if response_err then
       reset_stream(stream)
+      log.debug("kad dht inbound rpc failed", {
+        peer_id = ctx and (ctx.peer_id or (ctx.state and ctx.state.remote_peer_id)) or nil,
+        message_type = message_type_name(req.type),
+        cause = tostring(response_err),
+      })
       return nil, response_err
     end
     if type(stream.close_write) == "function" then
@@ -945,11 +975,21 @@ function DHT:_handle_rpc(stream, ctx)
         return nil, close_err
       end
     end
+    log.debug("kad dht inbound rpc completed", {
+      peer_id = ctx and (ctx.peer_id or (ctx.state and ctx.state.remote_peer_id)) or nil,
+      message_type = message_type_name(req.type),
+      response = "none",
+    })
     return true
   end
 
   local wrote, write_err = protocol.write(stream, response, { max_message_size = self.max_message_size })
   if not wrote then
+    log.debug("kad dht inbound rpc write failed", {
+      peer_id = ctx and (ctx.peer_id or (ctx.state and ctx.state.remote_peer_id)) or nil,
+      message_type = message_type_name(req.type),
+      cause = tostring(write_err),
+    })
     return nil, write_err
   end
 
@@ -959,6 +999,15 @@ function DHT:_handle_rpc(stream, ctx)
       return nil, close_err
     end
   end
+
+  log.debug("kad dht inbound rpc completed", {
+    peer_id = ctx and (ctx.peer_id or (ctx.state and ctx.state.remote_peer_id)) or nil,
+    message_type = message_type_name(req.type),
+    response_type = message_type_name(response.type),
+    closer_peers = type(response.closer_peers) == "table" and #response.closer_peers or 0,
+    provider_peers = type(response.provider_peers) == "table" and #response.provider_peers or 0,
+    has_record = response.record ~= nil,
+  })
 
   return true
 end

@@ -3,7 +3,7 @@
 local socket = require("socket")
 
 local error_mod = require("lua_libp2p.error")
-local log = require("lua_libp2p.log")
+local log = require("lua_libp2p.log").subsystem("pcp")
 
 local M = {}
 
@@ -214,6 +214,14 @@ function Client:_exchange(op, payload, lifetime, opts)
     local ok, send_err = udp:sendto(request, options.gateway or self.gateway, self.port)
     if not ok then
       udp:close()
+      log.debug("pcp request failed", {
+        gateway = options.gateway or self.gateway,
+        gateway_port = self.port,
+        opcode = op,
+        stage = "send",
+        attempt = try + 1,
+        cause = tostring(send_err),
+      })
       return nil, error_mod.new("io", "pcp send failed", { cause = send_err })
     end
     udp:settimeout(timeout)
@@ -242,6 +250,14 @@ function Client:_exchange(op, payload, lifetime, opts)
         return nil, error_mod.new("protocol", "pcp unexpected opcode", { opcode = rop, expected = 128 + op })
       end
       if result ~= 0 then
+        log.debug("pcp request failed", {
+          gateway = options.gateway or self.gateway,
+          gateway_port = self.port,
+          opcode = op,
+          stage = "response",
+          result = result,
+          epoch = epoch,
+        })
         return nil, error_mod.new("protocol", "pcp non-success result", { result = result, epoch = epoch })
       end
       log.debug("pcp request success", {
@@ -266,6 +282,12 @@ function Client:_exchange(op, payload, lifetime, opts)
   end
 
   udp:close()
+  log.debug("pcp request timed out", {
+    gateway = options.gateway or self.gateway,
+    gateway_port = self.port,
+    opcode = op,
+    attempts = retries + 1,
+  })
   return nil, error_mod.new("timeout", "pcp request timed out", { gateway = options.gateway or self.gateway, opcode = op })
 end
 
@@ -310,6 +332,14 @@ function Client:map_port(protocol, internal_port, suggested_external_port, lifet
     .. u16be(eport)
     .. ext_ip_bytes
 
+  log.debug("pcp map request started", {
+    gateway = opts and opts.gateway or self.gateway,
+    protocol = protocol,
+    internal_port = iport,
+    suggested_external_port = eport,
+    lifetime = ttl,
+    suggested_external_ip = suggested_external_ip,
+  })
   local resp, err = self:_exchange(M.OP.MAP, payload, ttl, opts)
   if not resp then
     return nil, err
@@ -325,7 +355,7 @@ function Client:map_port(protocol, internal_port, suggested_external_port, lifet
   local assigned_external_port = be16(data, 43)
   local addr = data:sub(45, 60)
 
-  return {
+  local mapping = {
     protocol = protocol,
     internal_port = iport,
     external_port = assigned_external_port,
@@ -333,6 +363,16 @@ function Client:map_port(protocol, internal_port, suggested_external_port, lifet
     epoch = resp.epoch,
     external_ip = bytes16_to_ip(addr),
   }
+  log.debug("pcp map request completed", {
+    gateway = opts and opts.gateway or self.gateway,
+    protocol = mapping.protocol,
+    internal_port = mapping.internal_port,
+    external_port = mapping.external_port,
+    external_ip = mapping.external_ip,
+    lifetime = mapping.lifetime,
+    epoch = mapping.epoch,
+  })
+  return mapping
 end
 
 function Client:unmap_port(protocol, internal_port, suggested_external_port)

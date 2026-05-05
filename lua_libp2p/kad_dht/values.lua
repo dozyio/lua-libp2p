@@ -1,6 +1,7 @@
 --- KAD-DHT value record workflows.
 -- @module lua_libp2p.kad_dht.values
 local error_mod = require("lua_libp2p.error")
+local log = require("lua_libp2p.log").subsystem("kad_dht")
 local multiaddr = require("lua_libp2p.multiaddr")
 local protocol = require("lua_libp2p.kad_dht.protocol")
 local record_validators = require("lua_libp2p.kad_dht.record_validators")
@@ -342,12 +343,20 @@ end
 
 function M.find_value(dht, key, opts)
   local options = opts or {}
+  log.debug("kad dht find value started", {
+    key_size = type(key) == "string" and #key or nil,
+    use_cache = options.use_cache ~= false,
+    use_network = options.use_network ~= false,
+  })
   if options.use_cache ~= false then
     local local_record, local_record_err = M.local_value_record(dht, key)
     if local_record_err then
       return nil, local_record_err
     end
     if local_record and local_record.value ~= nil then
+      log.debug("kad dht find value cache hit", {
+        key_size = #key,
+      })
       return {
         key = key,
         record = local_record,
@@ -357,6 +366,9 @@ function M.find_value(dht, key, opts)
     end
   end
   if options.use_network == false then
+    log.debug("kad dht find value network disabled", {
+      key_size = #key,
+    })
     return {
       key = key,
       record = nil,
@@ -391,6 +403,11 @@ function M.find_value(dht, key, opts)
       best_record = selected
       best_key = candidate_key
       found_count = found_count + 1
+      log.debug("kad dht value record found", {
+        key_size = #candidate_key,
+        via_peer_id = peer.peer_id,
+        found_records = found_count,
+      })
       seen_records[#seen_records + 1] = { peer = peer, key = candidate_key, record = result.record }
     end
     return { closer_peers = result.closer_peers }
@@ -402,10 +419,20 @@ function M.find_value(dht, key, opts)
     if options.correct_stale_records ~= false then
       for _, item in ipairs(seen_records) do
         if item.key == best_key and item.record.value ~= best_record.value then
+          log.debug("kad dht correcting stale value record", {
+            key_size = #best_key,
+            peer_id = item.peer.peer_id,
+          })
           dht:_put_value(item.peer.addr or (item.peer.addrs and item.peer.addrs[1]) or { peer_id = item.peer.peer_id, addrs = item.peer.addrs }, best_key, best_record, options)
         end
       end
     end
+    log.debug("kad dht find value completed", {
+      key_size = #best_key,
+      found_records = found_count,
+      queried = lookup.queried,
+      termination = lookup.termination,
+    })
     return {
       key = best_key,
       record = best_record,
@@ -414,6 +441,12 @@ function M.find_value(dht, key, opts)
       found_records = found_count,
     }
   end
+  log.debug("kad dht find value completed", {
+    key_size = type(key) == "string" and #key or nil,
+    found_records = 0,
+    queried = lookup.queried,
+    termination = lookup.termination,
+  })
   return { record = nil, closer_peers = lookup.closest_peers, lookup = lookup, errors = lookup.errors }
 end
 
@@ -452,6 +485,10 @@ function M.put_value_workflow(dht, key, value_or_record, opts)
     return nil, store_err
   end
   record = dht:get_local_record(key) or record
+  log.debug("kad dht put value local record stored", {
+    key_size = #key,
+    value_size = type(record.value) == "string" and #record.value or nil,
+  })
 
   local peers = options.peers
   local lookup
@@ -477,6 +514,11 @@ function M.put_value_workflow(dht, key, value_or_record, opts)
 
   local report = { key = key, record = record, lookup = lookup, attempted = 0, succeeded = 0, failed = 0, peers = {}, errors = {} }
   local limit = options.count or dht.k
+  log.debug("kad dht put value announcing", {
+    key_size = #key,
+    peers = #(peers or {}),
+    limit = limit,
+  })
   for _, peer in ipairs(peers or {}) do
     if limit and report.attempted >= limit then
       break
@@ -487,14 +529,29 @@ function M.put_value_workflow(dht, key, value_or_record, opts)
     if result then
       report.succeeded = report.succeeded + 1
       report.peers[#report.peers + 1] = peer.peer_id or target
+      log.debug("kad dht put value peer succeeded", {
+        key_size = #key,
+        peer_id = peer.peer_id or target,
+      })
     else
       report.failed = report.failed + 1
       report.errors[#report.errors + 1] = err
+      log.debug("kad dht put value peer failed", {
+        key_size = #key,
+        peer_id = peer.peer_id or target,
+        cause = tostring(err),
+      })
       if options.fail_fast then
         return nil, err
       end
     end
   end
+  log.debug("kad dht put value completed", {
+    key_size = #key,
+    attempted = report.attempted,
+    succeeded = report.succeeded,
+    failed = report.failed,
+  })
   return report
 end
 

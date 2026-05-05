@@ -2,6 +2,7 @@
 -- @module lua_libp2p.transport_tcp.transport
 local socket = require("socket")
 local error_mod = require("lua_libp2p.error")
+local log = require("lua_libp2p.log").subsystem("tcp")
 local multiaddr = require("lua_libp2p.multiaddr")
 
 local M = {}
@@ -83,10 +84,14 @@ local function wrap_socket_error(kind, message, cause, context)
   return error_mod.new(kind, message, merged)
 end
 
-function Connection:new(sock)
+function Connection:new(sock, opts)
+  local options = opts or {}
   return setmetatable({
     _socket = sock,
     _closed = false,
+    _direction = options.direction,
+    _peer_host = options.peer_host,
+    _peer_port = options.peer_port,
   }, self)
 end
 
@@ -123,6 +128,13 @@ function Connection:write(payload)
   end
   if err == "closed" then
     self._closed = true
+    log.debug("tcp connection disconnected", {
+      direction = self._direction,
+      peer_host = self._peer_host,
+      peer_port = self._peer_port,
+      operation = "write",
+      cause = tostring(err),
+    })
     return nil, wrap_socket_error("closed", "connection closed during write", err, { partial = partial or 0 })
   end
   return nil, wrap_socket_error("io", "write failed", err, { partial = partial or 0 })
@@ -146,6 +158,13 @@ function Connection:read(length)
   end
   if err == "closed" then
     self._closed = true
+    log.debug("tcp connection disconnected", {
+      direction = self._direction,
+      peer_host = self._peer_host,
+      peer_port = self._peer_port,
+      operation = "read",
+      cause = tostring(err),
+    })
     return nil, wrap_socket_error("closed", "connection closed during read", err, { partial = partial or "" })
   end
   return nil, wrap_socket_error("io", "read failed", err, { partial = partial or "" })
@@ -174,8 +193,19 @@ function Connection:close()
   local ok, err = self._socket:close()
   self._closed = true
   if ok == nil and err then
+    log.debug("tcp connection close failed", {
+      direction = self._direction,
+      peer_host = self._peer_host,
+      peer_port = self._peer_port,
+      cause = tostring(err),
+    })
     return nil, wrap_socket_error("io", "close failed", err)
   end
+  log.debug("tcp connection closed", {
+    direction = self._direction,
+    peer_host = self._peer_host,
+    peer_port = self._peer_port,
+  })
   return true
 end
 
@@ -189,6 +219,8 @@ function Listener:new(server, opts)
   return setmetatable({
     _server = server,
     _closed = false,
+    _listen_host = opts.listen_host,
+    _listen_port = opts.listen_port,
     _io_timeout = opts.io_timeout,
     _default_accept_timeout = opts.accept_timeout,
   }, self)
@@ -214,11 +246,27 @@ function Listener:accept(timeout)
     if err == "timeout" then
       return nil, wrap_socket_error("timeout", "accept timed out", err)
     end
+    log.debug("tcp accept failed", {
+      listen_host = self._listen_host,
+      listen_port = self._listen_port,
+      cause = tostring(err),
+    })
     return nil, wrap_socket_error("io", "accept failed", err)
   end
 
   client:settimeout(self._io_timeout)
-  return Connection:new(client)
+  local peer_host, peer_port = client:getpeername()
+  log.debug("tcp connection accepted", {
+    listen_host = self._listen_host,
+    listen_port = self._listen_port,
+    peer_host = peer_host,
+    peer_port = peer_port,
+  })
+  return Connection:new(client, {
+    direction = "inbound",
+    peer_host = peer_host,
+    peer_port = peer_port,
+  })
 end
 
 function Listener:socket()
@@ -243,8 +291,17 @@ function Listener:close()
   local ok, err = self._server:close()
   self._closed = true
   if ok == nil and err then
+    log.debug("tcp listener close failed", {
+      listen_host = self._listen_host,
+      listen_port = self._listen_port,
+      cause = tostring(err),
+    })
     return nil, wrap_socket_error("io", "listener close failed", err)
   end
+  log.debug("tcp listener closed", {
+    listen_host = self._listen_host,
+    listen_port = self._listen_port,
+  })
   return true
 end
 
@@ -283,12 +340,29 @@ function M.listen(opts)
     return nil, error_mod.new("input", "invalid listen port", { port = port })
   end
 
+  log.debug("tcp listen begin", {
+    host = normalized_host,
+    port = port,
+  })
   local server, err = socket.bind(normalized_host, port)
   if not server then
+    log.debug("tcp listen failed", {
+      host = normalized_host,
+      port = port,
+      cause = tostring(err),
+    })
     return nil, wrap_socket_error("io", "failed binding tcp listener", err)
   end
 
+  local listen_host, listen_port = server:getsockname()
+  log.debug("tcp listen active", {
+    host = listen_host or normalized_host,
+    port = listen_port or port,
+  })
+
   return Listener:new(server, {
+    listen_host = listen_host or normalized_host,
+    listen_port = listen_port or port,
     io_timeout = options.io_timeout,
     accept_timeout = options.accept_timeout,
   })
@@ -333,8 +407,17 @@ function M.dial(address, opts)
     return nil, error_mod.new("input", "invalid dial port", { port = port })
   end
 
+  log.debug("tcp dial begin", {
+    host = dial_host,
+    port = port,
+  })
   local conn, tcp_err = socket.tcp()
   if not conn then
+    log.debug("tcp dial failed", {
+      host = dial_host,
+      port = port,
+      cause = tostring(tcp_err),
+    })
     return nil, wrap_socket_error("io", "failed creating tcp socket", tcp_err)
   end
 
@@ -349,6 +432,11 @@ function M.dial(address, opts)
   local ok, err = conn:connect(dial_host, port)
   if not ok then
     conn:close()
+    log.debug("tcp dial failed", {
+      host = dial_host,
+      port = port,
+      cause = tostring(err),
+    })
     if err == "timeout" then
       return nil, wrap_socket_error("timeout", "tcp connect timed out", err)
     end
@@ -361,7 +449,18 @@ function M.dial(address, opts)
   end
   conn:settimeout(io_timeout)
 
-  return Connection:new(conn)
+  local peer_host, peer_port = conn:getpeername()
+  log.debug("tcp dial succeeded", {
+    host = dial_host,
+    port = port,
+    peer_host = peer_host,
+    peer_port = peer_port,
+  })
+  return Connection:new(conn, {
+    direction = "outbound",
+    peer_host = peer_host or dial_host,
+    peer_port = peer_port or port,
+  })
 end
 
 return M

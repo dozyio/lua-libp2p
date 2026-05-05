@@ -3,6 +3,7 @@
 local error_mod = require("lua_libp2p.error")
 local keys = require("lua_libp2p.crypto.keys")
 local key_pb = require("lua_libp2p.crypto.key_pb")
+local log = require("lua_libp2p.log").subsystem("noise")
 local peerid = require("lua_libp2p.peerid")
 local varint = require("lua_libp2p.multiformats.varint")
 
@@ -640,6 +641,25 @@ local function payload_for_side(identity_keypair, static_public, extensions)
   return M.encode_handshake_payload(payload)
 end
 
+local function extension_summary(extensions)
+  if type(extensions) ~= "table" then
+    return nil
+  end
+  return {
+    stream_muxers = #(extensions.stream_muxers or {}),
+    webtransport_certhashes = #(extensions.webtransport_certhashes or {}),
+  }
+end
+
+local function handshake_failed(direction, stage, err, fields)
+  local context = fields or {}
+  context.direction = direction
+  context.stage = stage
+  context.cause = tostring(err)
+  log.debug("noise handshake failed", context)
+  return nil, nil, err
+end
+
 --- Perform outbound Noise XX handshake.
 -- `opts.identity_keypair` (required) is used for identity payload signatures.
 -- `opts.static_keypair` overrides static Noise keypair.
@@ -651,6 +671,11 @@ function M.handshake_xx_outbound(raw_conn, opts)
   if not identity then
     return nil, nil, error_mod.new("input", "noise outbound handshake requires identity_keypair")
   end
+  log.debug("noise handshake started", {
+    direction = "outbound",
+    expected_remote_peer_id = options.expected_remote_peer_id,
+    extensions = extension_summary(options.extensions),
+  })
 
   local hs = HandshakeState:new({
     initiator = true,
@@ -663,16 +688,23 @@ function M.handshake_xx_outbound(raw_conn, opts)
   hs:encrypt_and_hash("")
   local ok, err = M.write_message(raw_conn, hs.e.public_key)
   if not ok then
-    return nil, nil, err
+    return handshake_failed("outbound", "write_msg1", err, {
+      expected_remote_peer_id = options.expected_remote_peer_id,
+    })
   end
 
   -- msg2: <- e, ee, s, es, payload
   local msg2, msg2_err = M.read_message(raw_conn)
   if not msg2 then
-    return nil, nil, msg2_err
+    return handshake_failed("outbound", "read_msg2", msg2_err, {
+      expected_remote_peer_id = options.expected_remote_peer_id,
+    })
   end
   if #msg2 < 32 + 48 + 16 then
-    return nil, nil, error_mod.new("decode", "noise msg2 too short")
+    return handshake_failed("outbound", "decode_msg2", error_mod.new("decode", "noise msg2 too short"), {
+      expected_remote_peer_id = options.expected_remote_peer_id,
+      message_size = #msg2,
+    })
   end
   hs.re = { public_key = msg2:sub(1, 32) }
   hs:mix_hash(hs.re.public_key)
@@ -681,7 +713,9 @@ function M.handshake_xx_outbound(raw_conn, opts)
   local enc_rs = msg2:sub(33, 80)
   local rs_pub, rs_err = hs:decrypt_and_hash(enc_rs)
   if not rs_pub then
-    return nil, nil, error_mod.wrap("verify", "noise msg2 static key decrypt failed", rs_err)
+    return handshake_failed("outbound", "decrypt_msg2_static_key", error_mod.wrap("verify", "noise msg2 static key decrypt failed", rs_err), {
+      expected_remote_peer_id = options.expected_remote_peer_id,
+    })
   end
   hs.rs = { public_key = rs_pub }
 
@@ -690,32 +724,52 @@ function M.handshake_xx_outbound(raw_conn, opts)
   local enc_payload2 = msg2:sub(81)
   local payload2_bytes, payload2_err = hs:decrypt_and_hash(enc_payload2)
   if not payload2_bytes then
-    return nil, nil, error_mod.wrap("verify", "noise msg2 payload decrypt failed", payload2_err)
+    return handshake_failed("outbound", "decrypt_msg2_payload", error_mod.wrap("verify", "noise msg2 payload decrypt failed", payload2_err), {
+      expected_remote_peer_id = options.expected_remote_peer_id,
+    })
   end
   local payload2, decode_err = M.decode_handshake_payload(payload2_bytes)
   if not payload2 then
-    return nil, nil, decode_err
+    return handshake_failed("outbound", "decode_msg2_payload", decode_err, {
+      expected_remote_peer_id = options.expected_remote_peer_id,
+    })
   end
   local verified2, verify2_err = M.verify_handshake_payload(payload2, hs.rs.public_key, options.expected_remote_peer_id)
   if not verified2 then
-    return nil, nil, verify2_err
+    return handshake_failed("outbound", "verify_msg2_payload", verify2_err, {
+      expected_remote_peer_id = options.expected_remote_peer_id,
+    })
   end
+  log.debug("noise remote identity verified", {
+    direction = "outbound",
+    peer_id = verified2.peer_id and verified2.peer_id.id or nil,
+    extensions = extension_summary(verified2.extensions),
+  })
 
   -- msg3: -> s, se, payload
   local msg3_payload_plain, msg3_payload_plain_err = payload_for_side(identity, hs.s.public_key, options.extensions)
   if not msg3_payload_plain then
-    return nil, nil, msg3_payload_plain_err
+    return handshake_failed("outbound", "encode_msg3_payload", msg3_payload_plain_err, {
+      peer_id = verified2.peer_id and verified2.peer_id.id or nil,
+    })
   end
   local enc_s = hs:encrypt_and_hash(hs.s.public_key)
   hs:mix_key(dh(hs.s.private_key, hs.re.public_key))
   local enc_payload3 = hs:encrypt_and_hash(msg3_payload_plain)
   ok, err = M.write_message(raw_conn, enc_s .. enc_payload3)
   if not ok then
-    return nil, nil, err
+    return handshake_failed("outbound", "write_msg3", err, {
+      peer_id = verified2.peer_id and verified2.peer_id.id or nil,
+    })
   end
 
   local send_key, recv_key = hs:split()
   local secure = SecureConn:new(raw_conn, send_key, recv_key)
+  log.debug("noise handshake completed", {
+    direction = "outbound",
+    peer_id = verified2.peer_id and verified2.peer_id.id or nil,
+    extensions = extension_summary(verified2.extensions),
+  })
   return secure, {
     remote_peer = verified2.peer_id,
     remote_extensions = verified2.extensions,
@@ -730,6 +784,11 @@ function M.handshake_xx_inbound(raw_conn, opts)
   if not identity then
     return nil, nil, error_mod.new("input", "noise inbound handshake requires identity_keypair")
   end
+  log.debug("noise handshake started", {
+    direction = "inbound",
+    expected_remote_peer_id = options.expected_remote_peer_id,
+    extensions = extension_summary(options.extensions),
+  })
 
   local hs = HandshakeState:new({
     initiator = false,
@@ -739,10 +798,15 @@ function M.handshake_xx_inbound(raw_conn, opts)
   -- msg1: <- e
   local msg1, msg1_err = M.read_message(raw_conn)
   if not msg1 then
-    return nil, nil, msg1_err
+    return handshake_failed("inbound", "read_msg1", msg1_err, {
+      expected_remote_peer_id = options.expected_remote_peer_id,
+    })
   end
   if #msg1 ~= 32 then
-    return nil, nil, error_mod.new("decode", "noise msg1 must be 32 bytes")
+    return handshake_failed("inbound", "decode_msg1", error_mod.new("decode", "noise msg1 must be 32 bytes"), {
+      expected_remote_peer_id = options.expected_remote_peer_id,
+      message_size = #msg1,
+    })
   end
   hs.re = { public_key = msg1 }
   hs:mix_hash(hs.re.public_key)
@@ -757,26 +821,37 @@ function M.handshake_xx_inbound(raw_conn, opts)
 
   local msg2_payload_plain, msg2_payload_plain_err = payload_for_side(identity, hs.s.public_key, options.extensions)
   if not msg2_payload_plain then
-    return nil, nil, msg2_payload_plain_err
+    return handshake_failed("inbound", "encode_msg2_payload", msg2_payload_plain_err, {
+      expected_remote_peer_id = options.expected_remote_peer_id,
+    })
   end
   local enc_payload2 = hs:encrypt_and_hash(msg2_payload_plain)
   local ok, err = M.write_message(raw_conn, hs.e.public_key .. enc_s .. enc_payload2)
   if not ok then
-    return nil, nil, err
+    return handshake_failed("inbound", "write_msg2", err, {
+      expected_remote_peer_id = options.expected_remote_peer_id,
+    })
   end
 
   -- msg3: <- s, se, payload
   local msg3, msg3_err = M.read_message(raw_conn)
   if not msg3 then
-    return nil, nil, msg3_err
+    return handshake_failed("inbound", "read_msg3", msg3_err, {
+      expected_remote_peer_id = options.expected_remote_peer_id,
+    })
   end
   if #msg3 < 48 + 16 then
-    return nil, nil, error_mod.new("decode", "noise msg3 too short")
+    return handshake_failed("inbound", "decode_msg3", error_mod.new("decode", "noise msg3 too short"), {
+      expected_remote_peer_id = options.expected_remote_peer_id,
+      message_size = #msg3,
+    })
   end
   local enc_rs = msg3:sub(1, 48)
   local rs_pub, rs_err = hs:decrypt_and_hash(enc_rs)
   if not rs_pub then
-    return nil, nil, error_mod.wrap("verify", "noise msg3 static key decrypt failed", rs_err)
+    return handshake_failed("inbound", "decrypt_msg3_static_key", error_mod.wrap("verify", "noise msg3 static key decrypt failed", rs_err), {
+      expected_remote_peer_id = options.expected_remote_peer_id,
+    })
   end
   hs.rs = { public_key = rs_pub }
   hs:mix_key(dh(hs.e.private_key, hs.rs.public_key))
@@ -784,19 +859,35 @@ function M.handshake_xx_inbound(raw_conn, opts)
   local enc_payload3 = msg3:sub(49)
   local payload3_bytes, payload3_err = hs:decrypt_and_hash(enc_payload3)
   if not payload3_bytes then
-    return nil, nil, error_mod.wrap("verify", "noise msg3 payload decrypt failed", payload3_err)
+    return handshake_failed("inbound", "decrypt_msg3_payload", error_mod.wrap("verify", "noise msg3 payload decrypt failed", payload3_err), {
+      expected_remote_peer_id = options.expected_remote_peer_id,
+    })
   end
   local payload3, decode_err = M.decode_handshake_payload(payload3_bytes)
   if not payload3 then
-    return nil, nil, decode_err
+    return handshake_failed("inbound", "decode_msg3_payload", decode_err, {
+      expected_remote_peer_id = options.expected_remote_peer_id,
+    })
   end
   local verified3, verify3_err = M.verify_handshake_payload(payload3, hs.rs.public_key, options.expected_remote_peer_id)
   if not verified3 then
-    return nil, nil, verify3_err
+    return handshake_failed("inbound", "verify_msg3_payload", verify3_err, {
+      expected_remote_peer_id = options.expected_remote_peer_id,
+    })
   end
+  log.debug("noise remote identity verified", {
+    direction = "inbound",
+    peer_id = verified3.peer_id and verified3.peer_id.id or nil,
+    extensions = extension_summary(verified3.extensions),
+  })
 
   local send_key, recv_key = hs:split()
   local secure = SecureConn:new(raw_conn, send_key, recv_key)
+  log.debug("noise handshake completed", {
+    direction = "inbound",
+    peer_id = verified3.peer_id and verified3.peer_id.id or nil,
+    extensions = extension_summary(verified3.extensions),
+  })
   return secure, {
     remote_peer = verified3.peer_id,
     remote_extensions = verified3.extensions,

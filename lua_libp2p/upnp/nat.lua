@@ -2,7 +2,7 @@
 -- @module lua_libp2p.upnp.nat
 local error_mod = require("lua_libp2p.error")
 local igd = require("lua_libp2p.upnp.igd")
-local log = require("lua_libp2p.log")
+local log = require("lua_libp2p.log").subsystem("upnp")
 local multiaddr = require("lua_libp2p.multiaddr")
 
 local M = {}
@@ -75,12 +75,16 @@ function Service:_client()
     return self.client
   end
   local client, err
+  log.debug("upnp nat client discovery started")
   if type(self.discover_client) == "function" then
     client, err = self.discover_client(self.options)
   else
     client, err = igd.discover(self.options)
   end
   if not client then
+    log.debug("upnp nat client discovery failed", {
+      cause = tostring(err),
+    })
     return nil, err
   end
   if self.debug_soap ~= nil then
@@ -126,6 +130,9 @@ function Service:_eligible_addrs()
     end
     ::continue_addr::
   end
+  log.debug("upnp nat eligible addresses selected", {
+    candidates = #addrs,
+  })
   return addrs
 end
 
@@ -133,6 +140,10 @@ end
 -- @treturn table|nil mappings
 -- @treturn[opt] table err
 function Service:map_ip_addresses()
+  log.debug("upnp nat mapping refresh started", {
+    ttl = self.ttl,
+    replace_existing = self.replace_existing,
+  })
   local client, client_err = self:_client()
   if not client then
     self.last_error = client_err
@@ -142,12 +153,19 @@ function Service:map_ip_addresses()
   local external_ip, ip_err = client:get_external_ip()
   if not external_ip then
     self.last_error = ip_err
+    log.debug("upnp nat external ip failed", {
+      cause = tostring(ip_err),
+    })
     emit_event(self.host, "upnp_nat:mapping:failed", { error = ip_err, error_message = tostring(ip_err) })
     return nil, ip_err
   end
   if multiaddr.is_private_addr("/ip4/" .. external_ip .. "/tcp/1") then
     local err = error_mod.new("state", "UPnP external address is private; likely double NAT", { external_ip = external_ip })
     self.last_error = err
+    log.debug("upnp nat mapping refresh failed", {
+      reason = "private_external_ip",
+      external_ip = external_ip,
+    })
     emit_event(self.host, "upnp_nat:mapping:failed", { external_ip = external_ip, error = err, error_message = tostring(err) })
     return nil, err
   end
@@ -156,6 +174,10 @@ function Service:map_ip_addresses()
   if #candidates == 0 then
     local err = error_mod.new("state", "no eligible private transport addresses for UPnP mapping")
     self.last_error = err
+    log.debug("upnp nat mapping refresh skipped", {
+      reason = "no_eligible_addresses",
+      external_ip = external_ip,
+    })
     emit_event(self.host, "upnp_nat:mapping:failed", { error = err, error_message = tostring(err) })
     return {}, nil
   end
@@ -163,6 +185,12 @@ function Service:map_ip_addresses()
   local mapped = {}
   for _, addr in ipairs(candidates) do
     local requested_external_port = self.external_port or addr.port
+    log.debug("upnp nat mapping attempt", {
+      internal_client = addr.ip,
+      internal_port = addr.port,
+      requested_external_port = requested_external_port,
+      protocol = addr.protocol,
+    })
     if self.replace_existing and type(client.delete_port_mapping) == "function" then
       pcall(function()
         client:delete_port_mapping(addr.protocol, requested_external_port)
@@ -193,6 +221,13 @@ function Service:map_ip_addresses()
           external_port = ext_port,
         })
         self.last_error = mismatch_err
+        log.debug("upnp nat mapping verification failed", {
+          internal_client = addr.ip,
+          internal_port = addr.port,
+          external_port = ext_port,
+          actual_internal_client = actual.internal_client,
+          actual_internal_port = actual.internal_port,
+        })
         emit_event(self.host, "upnp_nat:mapping:failed", {
           internal_addr = addr.addr,
           external_port = ext_port,
@@ -241,12 +276,25 @@ function Service:map_ip_addresses()
       self.last_error = nil
       self.mappings[mapping_key] = info
       mapped[#mapped + 1] = info
+      log.debug("upnp nat mapping active", {
+        internal_client = addr.ip,
+        internal_port = addr.port,
+        external_addr = ext_addr,
+        external_port = ext_port,
+        protocol = addr.protocol,
+      })
       emit_event(self.host, "upnp_nat:mapping:active", info)
       if self.host and type(self.host._emit_self_peer_update_if_changed) == "function" then
         self.host:_emit_self_peer_update_if_changed()
       end
     else
       self.last_error = map_err
+      log.debug("upnp nat mapping failed", {
+        internal_client = addr.ip,
+        internal_port = addr.port,
+        protocol = addr.protocol,
+        cause = tostring(map_err),
+      })
       emit_event(self.host, "upnp_nat:mapping:failed", {
         internal_addr = addr.addr,
         error = map_err,
@@ -255,6 +303,11 @@ function Service:map_ip_addresses()
     end
     ::continue_addr::
   end
+  log.debug("upnp nat mapping refresh completed", {
+    mapped = #mapped,
+    candidates = #candidates,
+    external_ip = external_ip,
+  })
   return mapped
 end
 
@@ -266,6 +319,10 @@ function Service:start()
     return true
   end
   self.started = true
+  log.debug("upnp nat service started", {
+    ttl = self.ttl,
+    replace_existing = self.replace_existing,
+  })
   if self.host and type(self.host.on) == "function" then
     self._event_handler = function()
       return self:map_ip_addresses()
@@ -283,6 +340,13 @@ end
 -- @treturn true
 function Service:stop()
   self.started = false
+  log.debug("upnp nat service stopped", {
+    mappings = (function()
+      local n = 0
+      for _ in pairs(self.mappings) do n = n + 1 end
+      return n
+    end)(),
+  })
   if self.host and self._event_handler and type(self.host.off) == "function" then
     self.host:off("self_peer_update", self._event_handler)
   end

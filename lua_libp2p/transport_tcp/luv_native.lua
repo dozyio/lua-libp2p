@@ -1,6 +1,7 @@
 --- Native luv TCP transport implementation.
 -- @module lua_libp2p.transport_tcp.luv_native
 local error_mod = require("lua_libp2p.error")
+local log = require("lua_libp2p.log").subsystem("tcp")
 local multiaddr = require("lua_libp2p.multiaddr")
 
 local ok_luv, uv = pcall(require, "luv")
@@ -126,6 +127,23 @@ local function classify_uv_error(err, io_message)
   return error_mod.new("io", io_message or "native luv io failed", { cause = err })
 end
 
+local function is_closed_error(err)
+  if type(err) == "table" and err.kind == "closed" then
+    return true
+  end
+  local upper = string.upper(tostring(err or ""))
+  return upper == "CLOSED"
+    or upper == "ECONNRESET"
+    or upper == "EPIPE"
+    or upper == "ENOTCONN"
+    or upper == "EOF"
+    or string.find(upper, "ECONNRESET", 1, true) ~= nil
+    or string.find(upper, "EPIPE", 1, true) ~= nil
+    or string.find(upper, "ENOTCONN", 1, true) ~= nil
+    or string.find(upper, "CLOSED", 1, true) ~= nil
+    or string.find(upper, "EOF", 1, true) ~= nil
+end
+
 local function run_once_or_loop_running()
   if type(coroutine.isyieldable) == "function" and coroutine.isyieldable() then
     return nil, "loop_running"
@@ -213,6 +231,7 @@ function NativeConnection:new(raw, opts)
     _peer_port = options.peer_port,
     _local_host = options.local_host,
     _local_port = options.local_port,
+    _direction = options.direction,
     _io_timeout = options.io_timeout,
     _ctx = options.ctx,
   }, self)
@@ -233,6 +252,17 @@ function NativeConnection:_ensure_read_pump()
       return
     end
     if err then
+      if is_closed_error(err) then
+        log.debug("tcp connection disconnected", {
+          direction = self._direction,
+          local_host = self._local_host,
+          local_port = self._local_port,
+          peer_host = self._peer_host,
+          peer_port = self._peer_port,
+          operation = "read",
+          cause = tostring(err),
+        })
+      end
       self._read_error = err
       for _, cb in pairs(self._watch_callbacks) do
         cb()
@@ -244,6 +274,15 @@ function NativeConnection:_ensure_read_pump()
       return
     end
     if chunk == nil then
+      log.debug("tcp connection disconnected", {
+        direction = self._direction,
+        local_host = self._local_host,
+        local_port = self._local_port,
+        peer_host = self._peer_host,
+        peer_port = self._peer_port,
+        operation = "read",
+        cause = "eof",
+      })
       self._read_error = "closed"
       for _, cb in pairs(self._watch_callbacks) do
         cb()
@@ -377,10 +416,20 @@ function NativeConnection:write(payload)
     return nil, error_mod.new("closed", "write on closed connection")
   end
   if self._write_error ~= nil then
-    local mapped_cached = classify_uv_error(self._write_error, "native luv write failed")
+    local cached_write_error = self._write_error
+    local mapped_cached = classify_uv_error(cached_write_error, "native luv write failed")
     self._write_error = nil
     if mapped_cached.kind == "closed" then
       self._closed = true
+      log.debug("tcp connection disconnected", {
+        direction = self._direction,
+        local_host = self._local_host,
+        local_port = self._local_port,
+        peer_host = self._peer_host,
+        peer_port = self._peer_port,
+        operation = "write",
+        cause = tostring(cached_write_error),
+      })
     end
     return nil, mapped_cached
   end
@@ -400,6 +449,15 @@ function NativeConnection:write(payload)
       local mapped_immediate = classify_uv_error(immediate_err, "native luv try_write failed")
       if mapped_immediate.kind == "closed" then
         self._closed = true
+        log.debug("tcp connection disconnected", {
+          direction = self._direction,
+          local_host = self._local_host,
+          local_port = self._local_port,
+          peer_host = self._peer_host,
+          peer_port = self._peer_port,
+          operation = "write",
+          cause = tostring(immediate_err),
+        })
         return nil, mapped_immediate
       end
     end
@@ -453,6 +511,15 @@ function NativeConnection:write(payload)
     local mapped = classify_uv_error(write_err, "native luv write failed")
     if mapped.kind == "closed" then
       self._closed = true
+      log.debug("tcp connection disconnected", {
+        direction = self._direction,
+        local_host = self._local_host,
+        local_port = self._local_port,
+        peer_host = self._peer_host,
+        peer_port = self._peer_port,
+        operation = "write",
+        cause = tostring(write_err),
+      })
     end
     return nil, mapped
   end
@@ -483,6 +550,15 @@ function NativeConnection:read(length)
     self._read_error = nil
     if read_err == "closed" then
       self._closed = true
+      log.debug("tcp connection disconnected", {
+        direction = self._direction,
+        local_host = self._local_host,
+        local_port = self._local_port,
+        peer_host = self._peer_host,
+        peer_port = self._peer_port,
+        operation = "read",
+        cause = "closed",
+      })
       return nil, error_mod.new("closed", "connection closed during read")
     end
     local mapped = classify_uv_error(read_err, "native luv read failed")
@@ -542,11 +618,29 @@ function NativeConnection:read(length)
     end
     if read_err == "closed" then
       self._closed = true
+      log.debug("tcp connection disconnected", {
+        direction = self._direction,
+        local_host = self._local_host,
+        local_port = self._local_port,
+        peer_host = self._peer_host,
+        peer_port = self._peer_port,
+        operation = "read",
+        cause = "closed",
+      })
       return nil, error_mod.new("closed", "connection closed during read")
     end
     local mapped = classify_uv_error(read_err, "native luv read failed")
     if mapped.kind == "closed" then
       self._closed = true
+      log.debug("tcp connection disconnected", {
+        direction = self._direction,
+        local_host = self._local_host,
+        local_port = self._local_port,
+        peer_host = self._peer_host,
+        peer_port = self._peer_port,
+        operation = "read",
+        cause = tostring(read_err),
+      })
     end
     return nil, mapped
   end
@@ -572,6 +666,13 @@ function NativeConnection:close()
     return true
   end
   self._closed = true
+  log.debug("tcp connection closed", {
+    direction = self._direction,
+    local_host = self._local_host,
+    local_port = self._local_port,
+    peer_host = self._peer_host,
+    peer_port = self._peer_port,
+  })
   self:_close_active_timers()
   pcall(function()
     self._raw:read_stop()
@@ -681,6 +782,10 @@ function NativeListener:close()
     return true
   end
   self._closed = true
+  log.debug("tcp listener closed", {
+    listen_host = self._listen_host,
+    listen_port = self._listen_port,
+  })
   pcall(function()
     self._server:close()
   end)
@@ -732,9 +837,18 @@ function M.listen(target, opts)
     return nil, error_mod.new("input", "invalid tcp listen host", { host = host })
   end
 
+  log.debug("tcp listen begin", {
+    host = normalized_host,
+    port = port,
+  })
   local server = uv.new_tcp()
   local ok, bind_err = server:bind(normalized_host, port)
   if not ok then
+    log.debug("tcp listen failed", {
+      host = normalized_host,
+      port = port,
+      cause = tostring(bind_err),
+    })
     return nil, error_mod.new("io", "failed binding native luv listener", { cause = bind_err })
   end
 
@@ -753,22 +867,38 @@ function M.listen(target, opts)
 
   server:listen(128, function(err)
     if err then
+      log.debug("tcp accept callback failed", {
+        listen_host = listener._listen_host,
+        listen_port = listener._listen_port,
+        cause = tostring(err),
+      })
       return
     end
     local client = uv.new_tcp()
     local accepted = server:accept(client)
     if not accepted then
+      log.debug("tcp accept failed", {
+        listen_host = listener._listen_host,
+        listen_port = listener._listen_port,
+      })
       client:close()
       return
     end
     configure_tcp_socket(client, listener._tcp_options)
     local local_name = client:getsockname() or {}
     local peer_name = client:getpeername() or {}
+    log.debug("tcp connection accepted", {
+      listen_host = listener._listen_host,
+      listen_port = listener._listen_port,
+      peer_host = peer_name.ip,
+      peer_port = peer_name.port,
+    })
     listener._pending[#listener._pending + 1] = NativeConnection:new(client, {
       local_host = local_name.ip or normalized_host,
       local_port = local_name.port or port,
       peer_host = peer_name.ip or "127.0.0.1",
       peer_port = peer_name.port or 0,
+      direction = "inbound",
       io_timeout = listener._io_timeout,
     })
     for _, cb in pairs(listener._watch_callbacks) do
@@ -776,6 +906,10 @@ function M.listen(target, opts)
     end
   end)
 
+  log.debug("tcp listen active", {
+    host = listener._listen_host,
+    port = listener._listen_port,
+  })
   return listener
 end
 
@@ -824,6 +958,10 @@ function M.dial(target, opts)
     return nil, error_mod.new("input", "invalid dial port", { port = port })
   end
 
+  log.debug("tcp dial begin", {
+    host = dial_host,
+    port = port,
+  })
   local conn = uv.new_tcp()
   local done = false
   local dial_err = nil
@@ -855,6 +993,11 @@ function M.dial(target, opts)
   end)
   if not connect_ok then
     conn:close()
+    log.debug("tcp dial failed", {
+      host = dial_host,
+      port = port,
+      cause = tostring(connect_err),
+    })
     return nil, classify_uv_error(connect_err, "native luv tcp connect failed")
   end
 
@@ -892,6 +1035,11 @@ function M.dial(target, opts)
 
   if dial_err then
     conn:close()
+    log.debug("tcp dial failed", {
+      host = dial_host,
+      port = port,
+      cause = tostring(dial_err),
+    })
     if type(dial_err) == "table" and dial_err.kind then
       return nil, dial_err
     end
@@ -901,11 +1049,20 @@ function M.dial(target, opts)
   configure_tcp_socket(conn, options)
   local local_name = conn:getsockname() or {}
   local peer_name = conn:getpeername() or {}
+  log.debug("tcp dial succeeded", {
+    host = dial_host,
+    port = port,
+    local_host = local_name.ip,
+    local_port = local_name.port,
+    peer_host = peer_name.ip,
+    peer_port = peer_name.port,
+  })
   return NativeConnection:new(conn, {
     local_host = local_name.ip or "127.0.0.1",
     local_port = local_name.port or 0,
     peer_host = peer_name.ip or dial_host,
     peer_port = peer_name.port or port,
+    direction = "outbound",
     io_timeout = options.io_timeout,
     ctx = options.ctx,
   })

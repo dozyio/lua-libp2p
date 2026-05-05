@@ -1,6 +1,7 @@
 --- Perf protocol service.
 -- @module lua_libp2p.protocol_perf.service
 local perf = require("lua_libp2p.protocol_perf.protocol")
+local log = require("lua_libp2p.log").subsystem("perf")
 
 local M = {}
 M.provides = { "perf" }
@@ -17,11 +18,34 @@ function M.new(host, opts)
   local svc = {}
 
   function svc:start()
-    return host:handle(perf.ID, function(stream)
-      return perf.handle(stream, {
+    return host:handle(perf.ID, function(stream, ctx)
+      local fields = {
+        peer_id = ctx and ctx.state and ctx.state.remote_peer_id or nil,
+        connection_id = ctx and ctx.state and ctx.state.connection_id or nil,
+        direction = ctx and ctx.state and ctx.state.direction or nil,
+      }
+      log.debug("perf handler opened", fields)
+      local result, err = perf.handle(stream, {
         write_block_size = options.write_block_size,
         yield_every_bytes = options.yield_every_bytes,
       })
+      if not result then
+        log.debug("perf handler failed", {
+          peer_id = fields.peer_id,
+          connection_id = fields.connection_id,
+          direction = fields.direction,
+          cause = tostring(err),
+        })
+        return nil, err
+      end
+      log.debug("perf handler completed", {
+        peer_id = fields.peer_id,
+        connection_id = fields.connection_id,
+        direction = fields.direction,
+        uploaded_bytes = result.uploaded_bytes,
+        download_bytes = result.download_bytes,
+      })
+      return result
     end)
   end
 

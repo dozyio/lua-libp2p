@@ -3,7 +3,7 @@
 local error_mod = require("lua_libp2p.error")
 local identify = require("lua_libp2p.protocol_identify.protocol")
 local key_pb = require("lua_libp2p.crypto.key_pb")
-local log = require("lua_libp2p.log")
+local log = require("lua_libp2p.log").subsystem("identify")
 local multiaddr = require("lua_libp2p.multiaddr")
 
 local M = {}
@@ -137,7 +137,6 @@ function M.install(Host)
     local stream, selected, conn, state_or_err = self:new_stream(peer_id, attempted_protocols, opts)
     if not stream then
       log.debug("identify request stream open failed", {
-        subsystem = "identify",
         peer_id = peer_id,
         cause = tostring(state_or_err),
         attempted_protocols = join_list(attempted_protocols),
@@ -159,7 +158,6 @@ function M.install(Host)
     end
     if not msg then
       log.debug("identify request read failed", {
-        subsystem = "identify",
         peer_id = peer_id,
         cause = tostring(read_err),
         protocol = selected,
@@ -226,7 +224,6 @@ function M.install(Host)
     end
     self._identify_inflight[peer_id] = true
     log.debug("identify on connect scheduled", {
-      subsystem = "identify",
       peer_id = peer_id,
       inflight = map_count(self._identify_inflight),
     })
@@ -234,7 +231,6 @@ function M.install(Host)
     self:_spawn_handler_task(function(_, ctx)
       local pid = ctx and ctx.peer_id
       log.debug("identify on connect running", {
-        subsystem = "identify",
         peer_id = pid,
         inflight = map_count(self._identify_inflight),
       })
@@ -251,7 +247,6 @@ function M.install(Host)
       if not result then
         local known_protocols = self.peerstore and self.peerstore:get_protocols(pid) or {}
         log.warn("identify on connect failed", {
-          subsystem = "identify",
           peer_id = pid,
           cause = tostring(identify_err),
           attempted_protocols = identify.ID,
@@ -271,7 +266,6 @@ function M.install(Host)
       end
 
       log.debug("identify on connect completed", {
-        subsystem = "identify",
         peer_id = pid,
         inflight = map_count(self._identify_inflight),
       })

@@ -89,6 +89,25 @@ Networking note:
 - The connection abstraction is stream-session based, not yamux-specific. TCP+Noise+Yamux is the current default stack, but future transports with native stream multiplexing, such as QUIC, can provide their own session implementation.
 - A stream session is expected to provide `open_stream()`, `accept_stream_now()`, optional `process_one()`, optional `has_waiters()`, and optional `close()`.
 
+## Logging
+
+Logs are structured text lines written to stderr. By default, all subsystems emit `info` and above.
+
+Use `LIBP2P_LOG_LEVEL` to set the global level:
+
+```sh
+LIBP2P_LOG_LEVEL=debug lua examples/kad_dht_get_closest_peers.lua
+```
+
+Use `LIBP2P_LOG` to enable subsystem-specific logging:
+
+```sh
+LIBP2P_LOG=kad_dht,host lua examples/kad_dht_get_closest_peers.lua
+LIBP2P_LOG='kad_dht=debug,host=info,*=warn' lua examples/kad_dht_get_closest_peers.lua
+```
+
+Subsystem names currently include `host`, `identify`, `kad_dht`, and `yamux`; service logs may add their own subsystem fields.
+
 ## AutoRelay, Bootstrap, And Addresses
 
 Host behavior is configured in `host.new(...)`; `start()` takes no options. Bootstrap discovery is configured at the host level and is shared by services such as the Kademlia DHT and AutoRelay.

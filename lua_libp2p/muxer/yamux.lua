@@ -1,7 +1,7 @@
 --- Yamux stream multiplexer implementation.
 -- @module lua_libp2p.muxer.yamux
 local error_mod = require("lua_libp2p.error")
-local log = require("lua_libp2p.log")
+local log = require("lua_libp2p.log").subsystem("yamux")
 
 local M = {}
 
@@ -32,6 +32,19 @@ M.GO_AWAY = {
 
 local function has_flag(flags, flag)
   return (flags & flag) == flag
+end
+
+local function stream_error(stream_id, kind, message, fields)
+  local context = fields or {}
+  context.stream_id = stream_id
+  return error_mod.new(kind, message, context)
+end
+
+local function error_stream_id(err)
+  if error_mod.is_error(err) and err.context then
+    return err.context.stream_id
+  end
+  return nil
 end
 
 local function read_exact(conn, n)
@@ -116,7 +129,7 @@ end
 function M.write_frame(conn, frame)
   local payload = frame.payload or ""
   if type(payload) ~= "string" then
-    return nil, error_mod.new("input", "yamux payload must be bytes")
+    return nil, stream_error(frame.stream_id, "input", "yamux payload must be bytes")
   end
 
   local header, header_err = M.encode_header({
@@ -247,10 +260,10 @@ end
 
 function Stream:read(length)
   if self.reset then
-    return nil, error_mod.new("closed", "yamux stream is reset")
+    return nil, stream_error(self.id, "closed", "yamux stream is reset")
   end
   if type(length) ~= "number" or length <= 0 then
-    return nil, error_mod.new("input", "yamux stream read length must be positive")
+    return nil, stream_error(self.id, "input", "yamux stream read length must be positive")
   end
 
   while #self.recv_buf < length do
@@ -263,7 +276,7 @@ function Stream:read(length)
           self.recv_buf = ""
           return out
         end
-        return nil, error_mod.new("closed", "yamux stream closed during read")
+        return nil, stream_error(self.id, "closed", "yamux stream closed during read")
       end
       if self.session._pump_error then
         return nil, self.session._pump_error
@@ -272,7 +285,7 @@ function Stream:read(length)
         self:_mark_read_waiter()
         coroutine.yield({ type = "read", connection = self, stream_id = self.id })
       else
-        return nil, error_mod.new("busy", "yamux stream read requires scheduler waiter context")
+        return nil, stream_error(self.id, "busy", "yamux stream read requires scheduler waiter context")
       end
     end
   end
@@ -284,13 +297,13 @@ end
 
 function Stream:write(payload)
   if self.reset then
-    return nil, error_mod.new("closed", "yamux stream is reset")
+    return nil, stream_error(self.id, "closed", "yamux stream is reset")
   end
   if self.local_closed then
-    return nil, error_mod.new("closed", "yamux stream is closed for writing")
+    return nil, stream_error(self.id, "closed", "yamux stream is closed for writing")
   end
   if type(payload) ~= "string" then
-    return nil, error_mod.new("input", "yamux stream payload must be bytes")
+    return nil, stream_error(self.id, "input", "yamux stream payload must be bytes")
   end
 
   local offset = 1
@@ -303,7 +316,7 @@ function Stream:write(payload)
         self:_mark_write_waiter()
         coroutine.yield({ type = "write", connection = self, stream_id = self.id })
       else
-        return nil, error_mod.new("busy", "yamux stream write requires scheduler waiter context")
+        return nil, stream_error(self.id, "busy", "yamux stream write requires scheduler waiter context")
       end
     end
 
@@ -345,6 +358,9 @@ function Stream:close_write()
     return nil, err
   end
   self.local_closed = true
+  log.debug("yamux stream closed for writing", {
+    stream_id = self.id,
+  })
   return true
 end
 
@@ -362,6 +378,9 @@ function Stream:reset_now()
   self.local_closed = true
   self.remote_closed = true
   self.reset = true
+  log.debug("yamux stream reset sent", {
+    stream_id = self.id,
+  })
   return true
 end
 
@@ -399,7 +418,7 @@ function Session:new(conn, opts)
   elseif type(conn) == "table" then
     scheduler_driven = type(conn.watch_luv_readable) == "function" or type(conn.watch_luv_write) == "function"
   end
-  return setmetatable({
+  local session = setmetatable({
     conn = conn,
     is_client = is_client,
     initial_stream_window = options.initial_stream_window or M.INITIAL_STREAM_WINDOW,
@@ -417,6 +436,14 @@ function Session:new(conn, opts)
     _stream_write_waiters = {},
     _scheduler_driven = scheduler_driven,
   }, self)
+  log.debug("yamux session created", {
+    role = is_client and "client" or "server",
+    scheduler_driven = scheduler_driven,
+    initial_stream_window = session.initial_stream_window,
+    max_ack_backlog = session.max_ack_backlog,
+    max_accept_backlog = session.max_accept_backlog,
+  })
+  return session
 end
 
 function Session:has_waiters()
@@ -464,16 +491,20 @@ function Session:_stream_for_inbound(stream_id, has_syn)
     return stream
   end
   if not has_syn then
-    return nil, error_mod.new("protocol", "yamux frame for unknown stream without SYN", { stream_id = stream_id })
+    return nil, stream_error(stream_id, "protocol", "yamux frame for unknown stream without SYN")
   end
   if self:_is_local_stream_id(stream_id) then
-    return nil, error_mod.new("protocol", "yamux inbound stream id has wrong parity", { stream_id = stream_id })
+    return nil, stream_error(stream_id, "protocol", "yamux inbound stream id has wrong parity")
   end
 
   stream = Stream:new(self, stream_id)
   stream.acked = true
 
   if #self.pending_accept >= self.max_accept_backlog then
+    log.debug("yamux inbound stream rejected", {
+      stream_id = stream_id,
+      cause = "accept backlog exceeded",
+    })
     local ok, err = M.write_frame(self.conn, {
       type = M.TYPE.WINDOW_UPDATE,
       flags = M.FLAG.RST,
@@ -484,11 +515,15 @@ function Session:_stream_for_inbound(stream_id, has_syn)
     if not ok then
       return nil, err
     end
-    return nil, error_mod.new("backlog", "yamux accept backlog exceeded")
+    return nil, stream_error(stream_id, "backlog", "yamux accept backlog exceeded")
   end
 
   self.streams[stream_id] = stream
   self.pending_accept[#self.pending_accept + 1] = stream
+  log.debug("yamux inbound stream opened", {
+    stream_id = stream_id,
+    pending_accept = #self.pending_accept,
+  })
 
   local ok, err = M.write_frame(self.conn, {
     type = M.TYPE.WINDOW_UPDATE,
@@ -510,7 +545,7 @@ function Session:open_stream()
     inflight_count = inflight_count + 1
   end
   if inflight_count >= self.max_ack_backlog then
-    return nil, error_mod.new("backlog", "yamux ack backlog exceeded")
+    return nil, stream_error(self.next_stream_id, "backlog", "yamux ack backlog exceeded")
   end
 
   local stream_id = self.next_stream_id
@@ -519,6 +554,10 @@ function Session:open_stream()
   local stream = Stream:new(self, stream_id)
   self.streams[stream_id] = stream
   self.inflight[stream_id] = true
+  log.debug("yamux outbound stream opening", {
+    stream_id = stream_id,
+    inflight = inflight_count + 1,
+  })
 
   local ok, err = M.write_frame(self.conn, {
     type = M.TYPE.WINDOW_UPDATE,
@@ -530,6 +569,10 @@ function Session:open_stream()
   if not ok then
     self.streams[stream_id] = nil
     self.inflight[stream_id] = nil
+    log.debug("yamux outbound stream open failed", {
+      stream_id = stream_id,
+      cause = tostring(err),
+    })
     return nil, err
   end
 
@@ -540,7 +583,12 @@ function Session:accept_stream_now()
   if #self.pending_accept == 0 then
     return nil
   end
-  return table.remove(self.pending_accept, 1)
+  local stream = table.remove(self.pending_accept, 1)
+  log.debug("yamux inbound stream accepted", {
+    stream_id = stream.id,
+    pending_accept = #self.pending_accept,
+  })
+  return stream
 end
 
 function Session:_process_one_unlocked()
@@ -566,6 +614,9 @@ function Session:_process_one_unlocked()
 
   if frame.type == M.TYPE.GO_AWAY then
     self.go_away = true
+    log.debug("yamux go away received", {
+      code = frame.length,
+    })
     return frame
   end
 
@@ -578,6 +629,11 @@ function Session:_process_one_unlocked()
   end
 
   if has_flag(frame.flags, M.FLAG.ACK) then
+    if self.inflight[frame.stream_id] then
+      log.debug("yamux outbound stream opened", {
+        stream_id = frame.stream_id,
+      })
+    end
     stream.acked = true
     self.inflight[frame.stream_id] = nil
   end
@@ -586,11 +642,17 @@ function Session:_process_one_unlocked()
     stream.local_closed = true
     stream.remote_closed = true
     self.inflight[frame.stream_id] = nil
+    log.debug("yamux stream reset received", {
+      stream_id = frame.stream_id,
+    })
     stream:_notify_readable()
     stream:_notify_writable()
   end
   if has_flag(frame.flags, M.FLAG.FIN) then
     stream.remote_closed = true
+    log.debug("yamux stream remote closed", {
+      stream_id = frame.stream_id,
+    })
     stream:_notify_readable()
   end
 
@@ -599,7 +661,7 @@ function Session:_process_one_unlocked()
     stream:_notify_writable()
   elseif frame.type == M.TYPE.DATA then
     if #frame.payload ~= frame.length then
-      return nil, error_mod.new("protocol", "yamux data frame length mismatch")
+      return nil, stream_error(frame.stream_id, "protocol", "yamux data frame length mismatch")
     end
     if frame.length > 0 then
       stream.recvq[#stream.recvq + 1] = frame.payload
@@ -618,7 +680,7 @@ function Session:_process_one_unlocked()
       stream.recv_window = stream.recv_window + frame.length
     end
   else
-    return nil, error_mod.new("protocol", "yamux unknown frame type", { type = frame.type })
+    return nil, stream_error(frame.stream_id, "protocol", "yamux unknown frame type", { type = frame.type })
   end
 
   return frame
@@ -647,16 +709,24 @@ function Session:process_one()
   self._processing = false
 
   if not result[1] then
-    self._pump_error = error_mod.new("protocol", "yamux read pump panicked", { cause = result[2] })
+    self._pump_error = error_mod.new("protocol", "yamux read pump panicked", {
+      cause = result[2],
+      stream_id = error_stream_id(result[2]),
+    })
+    log.debug("yamux pump error set", {
+      cause = tostring(result[2]),
+      kind = "protocol",
+      stream_id = error_stream_id(result[2]),
+    })
     self:_wake_all_stream_waiters()
     return nil, self._pump_error
   end
   if result[2] == nil and result[3] and not (error_mod.is_error(result[3]) and result[3].kind == "timeout") then
     self._pump_error = result[3]
     log.debug("yamux pump error set", {
-      subsystem = "yamux",
       cause = tostring(result[3]),
       kind = error_mod.is_error(result[3]) and result[3].kind or nil,
+      stream_id = error_stream_id(result[3]),
     })
     self:_wake_all_stream_waiters()
   end
@@ -688,7 +758,6 @@ function Session:close()
   if not self._pump_error then
     self._pump_error = error_mod.new("closed", "yamux session closed")
     log.debug("yamux session close set pump error", {
-      subsystem = "yamux",
       cause = tostring(self._pump_error),
     })
   end

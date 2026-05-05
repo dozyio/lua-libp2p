@@ -1,7 +1,7 @@
 --- NAT-PMP mapping service.
 -- @module lua_libp2p.nat_pmp.service
 local error_mod = require("lua_libp2p.error")
-local log = require("lua_libp2p.log")
+local log = require("lua_libp2p.log").subsystem("nat_pmp")
 local multiaddr = require("lua_libp2p.multiaddr")
 local nat_pmp_client = require("lua_libp2p.nat_pmp.client")
 
@@ -91,6 +91,9 @@ function Service:_eligible_addrs()
     end
     ::continue_addr::
   end
+  log.debug("nat-pmp eligible addresses selected", {
+    candidates = #addrs,
+  })
   return addrs
 end
 
@@ -114,6 +117,10 @@ end
 -- @treturn table|nil mappings
 -- @treturn[opt] table err
 function Service:map_ip_addresses()
+  log.debug("nat-pmp mapping refresh started", {
+    gateway = self.gateway,
+    ttl = self.ttl,
+  })
   local client, client_err = self:_client()
   if not client then
     self.last_error = client_err
@@ -124,6 +131,10 @@ function Service:map_ip_addresses()
   local external_ip, ip_meta_or_err = client:get_external_address()
   if not external_ip then
     self.last_error = ip_meta_or_err
+    log.debug("nat-pmp external address failed", {
+      gateway = self.gateway,
+      cause = tostring(ip_meta_or_err),
+    })
     emit_event(self.host, "nat_pmp:mapping:failed", { error = ip_meta_or_err, error_message = tostring(ip_meta_or_err) })
     return nil, ip_meta_or_err
   end
@@ -132,6 +143,9 @@ function Service:map_ip_addresses()
   if #candidates == 0 then
     local err = error_mod.new("state", "no eligible private tcp transport addresses for NAT-PMP mapping")
     self.last_error = err
+    log.debug("nat-pmp mapping refresh skipped", {
+      reason = "no_eligible_addresses",
+    })
     emit_event(self.host, "nat_pmp:mapping:failed", { error = err, error_message = tostring(err) })
     return {}, nil
   end
@@ -139,6 +153,13 @@ function Service:map_ip_addresses()
   local mapped = {}
   for _, addr in ipairs(candidates) do
     local requested_external_port = self.external_port or addr.port
+    log.debug("nat-pmp mapping attempt", {
+      gateway = self.gateway,
+      internal_client = addr.ip,
+      internal_port = addr.port,
+      requested_external_port = requested_external_port,
+      protocol = "tcp",
+    })
     local mapping, map_err = client:map_port("tcp", addr.port, requested_external_port, self.ttl)
     if mapping then
       local ext_port = mapping.external_port or requested_external_port
@@ -161,12 +182,25 @@ function Service:map_ip_addresses()
       self.last_error = nil
       self.mappings["tcp:" .. tostring(addr.port)] = info
       mapped[#mapped + 1] = info
+      log.debug("nat-pmp mapping active", {
+        gateway = self.gateway,
+        internal_client = addr.ip,
+        internal_port = addr.port,
+        external_addr = ext_addr,
+        external_port = ext_port,
+      })
       emit_event(self.host, "nat_pmp:mapping:active", info)
       if self.host and type(self.host._emit_self_peer_update_if_changed) == "function" then
         self.host:_emit_self_peer_update_if_changed()
       end
     else
       self.last_error = map_err
+      log.debug("nat-pmp mapping failed", {
+        gateway = self.gateway,
+        internal_client = addr.ip,
+        internal_port = addr.port,
+        cause = tostring(map_err),
+      })
       emit_event(self.host, "nat_pmp:mapping:failed", {
         internal_addr = addr.addr,
         error = map_err,
@@ -175,6 +209,10 @@ function Service:map_ip_addresses()
     end
   end
 
+  log.debug("nat-pmp mapping refresh completed", {
+    mapped = #mapped,
+    candidates = #candidates,
+  })
   return mapped
 end
 
@@ -186,6 +224,10 @@ function Service:start()
     return true
   end
   self.started = true
+  log.debug("nat-pmp service started", {
+    gateway = self.gateway,
+    ttl = self.ttl,
+  })
   if self.host and type(self.host.on) == "function" then
     self._event_handler = function()
       return self:map_ip_addresses()
@@ -203,6 +245,13 @@ end
 -- @treturn true
 function Service:stop()
   self.started = false
+  log.debug("nat-pmp service stopped", {
+    mappings = (function()
+      local n = 0
+      for _ in pairs(self.mappings) do n = n + 1 end
+      return n
+    end)(),
+  })
   if self.host and self._event_handler and type(self.host.off) == "function" then
     self.host:off("self_peer_update", self._event_handler)
   end

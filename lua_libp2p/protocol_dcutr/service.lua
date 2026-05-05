@@ -2,6 +2,7 @@
 -- Coordinates unilateral and CONNECT/SYNC-based direct connection upgrades.
 -- @module lua_libp2p.protocol_dcutr.service
 local error_mod = require("lua_libp2p.error")
+local log = require("lua_libp2p.log").subsystem("dcutr")
 local multiaddr = require("lua_libp2p.multiaddr")
 local dcutr = require("lua_libp2p.protocol_dcutr.protocol")
 
@@ -300,6 +301,11 @@ function M.new(host, opts)
       return true
     end
     local candidates = remote_candidates(peer_id, pending.state)
+    log.debug("dcutr pending start check", {
+      peer_id = peer_id,
+      remote_candidate_addrs = #candidates,
+      tried_unilateral = pending.tried_unilateral == true,
+    })
     if options.try_unilateral_upgrade ~= false and #candidates > 0 and not pending.tried_unilateral then
       pending.tried_unilateral = true
       local unilateral = svc:_try_unilateral_upgrade(peer_id, pending.state, {
@@ -323,6 +329,11 @@ function M.new(host, opts)
     if host.peerstore and type(host.peerstore.supports_protocol) == "function" then
       supports = host.peerstore:supports_protocol(peer_id, dcutr.ID)
       if not supports then
+        log.debug("dcutr pending start skipped", {
+          peer_id = peer_id,
+          reason = "remote_does_not_support_dcutr",
+          remote_candidate_addrs = #candidates,
+        })
         emit_event(host, "dcutr:attempt:precheck", {
           peer_id = peer_id,
           remote_candidate_addrs = #candidates,
@@ -342,6 +353,11 @@ function M.new(host, opts)
       local_observed_addrs = #obs_precheck,
     })
     if #obs_precheck == 0 then
+      log.debug("dcutr pending start skipped", {
+        peer_id = peer_id,
+        reason = "no_local_observed_addrs",
+        remote_candidate_addrs = #candidates,
+      })
       return true
     end
 
@@ -355,6 +371,10 @@ function M.new(host, opts)
       retry_delay_seconds = options.retry_delay_seconds,
     })
     if not task then
+      log.debug("dcutr auto start failed", {
+        peer_id = peer_id,
+        cause = tostring(task_err),
+      })
       emit_event(host, "dcutr:attempt:failed", {
         peer_id = peer_id,
         error = task_err,
@@ -433,6 +453,11 @@ function M.new(host, opts)
     if entry.conn and type(entry.conn.close) == "function" then
       entry.conn:close()
     end
+    log.debug("dcutr relay connection closing", {
+      connection_id = connection_id,
+      peer_id = expected_peer_id or entry_state.remote_peer_id,
+      reason = reason,
+    })
     if type(host._unregister_connection) == "function" then
       return host:_unregister_connection(nil, entry, error_mod.new("closed", reason or "dcutr relay closed"))
     end
@@ -448,6 +473,12 @@ function M.new(host, opts)
       return true
     end
     local grace_seconds = options.relay_grace_seconds or 5
+    log.debug("dcutr relay close scheduled", {
+      connection_id = connection_id,
+      peer_id = expected_peer_id,
+      reason = reason,
+      grace_seconds = grace_seconds,
+    })
     if grace_seconds <= 0 then
       svc:_close_relay_connection(connection_id, reason, expected_peer_id)
       return true
@@ -479,13 +510,26 @@ function M.new(host, opts)
     end
     dial_options.require_unlimited_connection = true
     dial_options.force = true
+    log.debug("dcutr direct dial batch started", {
+      peer_id = target_peer_id,
+      candidate_addrs = #(addrs or {}),
+    })
     for _, addr in ipairs(addrs or {}) do
       local dial_target = {
         peer_id = target_peer_id,
         addrs = { addr },
       }
+      log.debug("dcutr direct dial attempt", {
+        peer_id = target_peer_id,
+        addr = addr,
+      })
       local conn, state, dial_err = host:dial(dial_target, dial_options)
       if conn and not (state and state.relay and state.relay.limit_kind == "limited") then
+        log.debug("dcutr direct dial succeeded", {
+          peer_id = target_peer_id,
+          addr = addr,
+          connection_id = state and state.connection_id or nil,
+        })
         emit_event(host, "dcutr:attempt:success", {
           peer_id = target_peer_id,
           addr = addr,
@@ -493,6 +537,11 @@ function M.new(host, opts)
         })
         return { connection = conn, state = state, addr = addr }
       end
+      log.debug("dcutr direct dial failed", {
+        peer_id = target_peer_id,
+        addr = addr,
+        cause = tostring(dial_err or "limited connection"),
+      })
       errors[#errors + 1] = dial_err or error_mod.new("state", "direct dial returned limited connection", {
         peer_id = target_peer_id,
         addr = addr,
@@ -528,6 +577,10 @@ function M.new(host, opts)
       end
     end
     if #candidates == 0 then
+      log.debug("dcutr unilateral upgrade skipped", {
+        peer_id = peer_id,
+        reason = M.FAILURE_REASON.NO_CANDIDATES,
+      })
       emit_event(host, "dcutr:unilateral:failed", {
         peer_id = peer_id,
         reason = M.FAILURE_REASON.NO_CANDIDATES,
@@ -536,11 +589,19 @@ function M.new(host, opts)
     end
     local result = svc:_attempt_direct_dials(peer_id, candidates, dial_opts)
     if result then
+      log.debug("dcutr unilateral upgrade succeeded", {
+        peer_id = peer_id,
+        addr = result.addr,
+      })
       emit_event(host, "dcutr:unilateral:success", {
         peer_id = peer_id,
         addr = result.addr,
       })
     else
+      log.debug("dcutr unilateral upgrade failed", {
+        peer_id = peer_id,
+        reason = M.FAILURE_REASON.DIRECT_DIAL_FAILED,
+      })
       emit_event(host, "dcutr:unilateral:failed", {
         peer_id = peer_id,
         reason = M.FAILURE_REASON.DIRECT_DIAL_FAILED,
@@ -551,11 +612,19 @@ function M.new(host, opts)
 
   function svc:_handle_upgrade_stream(stream, ctx)
     local remote_peer_id = ctx and ctx.connection and ctx.connection.remote_peer_id or nil
+    log.debug("dcutr inbound stream opened", {
+      peer_id = remote_peer_id,
+      connection_id = ctx and ctx.state and ctx.state.connection_id or nil,
+    })
     local inbound_connect, connect_err = dcutr.read_message(stream)
     if not inbound_connect then
       return nil, connect_err
     end
     if inbound_connect.type ~= dcutr.TYPE.CONNECT then
+      log.debug("dcutr inbound stream failed", {
+        peer_id = remote_peer_id,
+        reason = "unexpected_connect_message",
+      })
       return nil, error_mod.new("protocol", "expected dcutr CONNECT")
     end
     local local_obs = default_obs_addrs(host, {
@@ -563,8 +632,17 @@ function M.new(host, opts)
       max_obs_addrs = svc._max_obs_addrs,
     })
     if #local_obs == 0 then
+      log.debug("dcutr inbound response failed", {
+        peer_id = remote_peer_id,
+        reason = M.FAILURE_REASON.NO_OBS_ADDRS,
+      })
       return nil, error_mod.new("state", "no non-relay observed addresses for dcutr CONNECT response")
     end
+    log.debug("dcutr connect send", {
+      peer_id = remote_peer_id,
+      direction = "inbound_response",
+      obs_addr_count = #local_obs,
+    })
     emit_event(host, "dcutr:connect:send", {
       peer_id = remote_peer_id,
       direction = "inbound_response",
@@ -583,6 +661,10 @@ function M.new(host, opts)
       return nil, sync_err
     end
     if sync_msg.type ~= dcutr.TYPE.SYNC then
+      log.debug("dcutr inbound sync failed", {
+        peer_id = remote_peer_id,
+        reason = "unexpected_sync_message",
+      })
       return nil, error_mod.new("protocol", "expected dcutr SYNC")
     end
     emit_event(host, "dcutr:attempt:sync", { peer_id = remote_peer_id })
@@ -595,6 +677,11 @@ function M.new(host, opts)
       ctx = ctx,
     })
     if not result then
+      log.debug("dcutr inbound direct dials failed", {
+        peer_id = remote_peer_id,
+        candidate_addrs = #remote_addrs,
+        errors = #(dial_errs or {}),
+      })
       return nil, error_mod.new("io", "dcutr direct dial attempts failed", {
         peer_id = remote_peer_id,
         errors = dial_errs,
@@ -602,6 +689,10 @@ function M.new(host, opts)
     end
     svc:_schedule_relay_close(ctx and ctx.state, "inbound_upgrade_success", ctx, remote_peer_id)
     svc:_mark_direct_preferred(remote_peer_id)
+    log.debug("dcutr inbound migration completed", {
+      peer_id = remote_peer_id,
+      addr = result.addr,
+    })
     emit_event(host, "dcutr:migrated", {
       peer_id = remote_peer_id,
       addr = result.addr,
@@ -611,6 +702,9 @@ function M.new(host, opts)
   end
 
   function svc:start()
+    log.debug("dcutr service starting", {
+      auto_on_relay_connection = options.auto_on_relay_connection ~= false,
+    })
     local ok, err = host:handle(dcutr.ID, function(stream, ctx)
       return svc:_handle_upgrade_stream(stream, ctx)
     end, { run_on_limited_connection = true })
@@ -647,6 +741,12 @@ function M.new(host, opts)
           connection = payload and payload.connection,
           state = state,
         }
+        log.debug("dcutr auto candidate queued", {
+          peer_id = peer_id,
+          direction = state.direction,
+          relay_limit_kind = relay_state and relay_state.limit_kind or nil,
+          remote_candidate_addrs = remote_candidate_addrs,
+        })
         emit_event(host, "dcutr:attempt:precheck", {
           peer_id = peer_id,
           direction = state.direction,
@@ -690,6 +790,10 @@ function M.new(host, opts)
   function svc:start_hole_punch(target, call_opts)
     local request_opts = call_opts or {}
     local function run_attempt(run_opts, attempt)
+      log.debug("dcutr outbound attempt started", {
+        attempt = attempt,
+        target = type(target) == "table" and (target.peer_id or target.addr or target.multiaddr) or target,
+      })
       local stream, selected, state_or_err
       if run_opts.connection and type(run_opts.connection.new_stream) == "function" then
         stream, selected, state_or_err = run_opts.connection:new_stream({ dcutr.ID })
@@ -706,6 +810,11 @@ function M.new(host, opts)
         stream, selected, state_or_err = opened[1], opened[2], opened[4]
       end
       if not stream then
+        log.debug("dcutr outbound stream failed", {
+          attempt = attempt,
+          reason = M.FAILURE_REASON.STREAM_OPEN_FAILED,
+          cause = tostring(state_or_err),
+        })
         emit_event(host, "dcutr:attempt:failed", {
           peer_id = (run_opts.state and run_opts.state.remote_peer_id) or nil,
           attempt = attempt,
@@ -715,6 +824,12 @@ function M.new(host, opts)
         return nil, state_or_err
       end
       local remote_peer_id = state_or_err and state_or_err.remote_peer_id or nil
+      log.debug("dcutr outbound stream opened", {
+        peer_id = remote_peer_id,
+        connection_id = state_or_err and state_or_err.connection_id or nil,
+        protocol = selected,
+        attempt = attempt,
+      })
       emit_event(host, "dcutr:attempt:started", {
         peer_id = remote_peer_id,
         protocol = selected,
@@ -726,6 +841,11 @@ function M.new(host, opts)
         max_obs_addrs = svc._max_obs_addrs,
       })
       if #outbound_obs == 0 then
+        log.debug("dcutr outbound attempt failed", {
+          peer_id = remote_peer_id,
+          attempt = attempt,
+          reason = M.FAILURE_REASON.NO_OBS_ADDRS,
+        })
         emit_event(host, "dcutr:attempt:failed", {
           peer_id = remote_peer_id,
           protocol = selected,
@@ -738,6 +858,12 @@ function M.new(host, opts)
         peer_id = remote_peer_id,
         direction = "outbound_request",
         obs_addrs = outbound_obs,
+        obs_addr_count = #outbound_obs,
+      })
+      log.debug("dcutr connect send", {
+        peer_id = remote_peer_id,
+        direction = "outbound_request",
+        attempt = attempt,
         obs_addr_count = #outbound_obs,
       })
       local ok, write_err = dcutr.write_message(stream, {
@@ -756,6 +882,11 @@ function M.new(host, opts)
       end
       local connect_resp, connect_err = dcutr.read_message(stream)
       if not connect_resp then
+        log.debug("dcutr connect read failed", {
+          peer_id = remote_peer_id,
+          attempt = attempt,
+          cause = tostring(connect_err),
+        })
         emit_event(host, "dcutr:attempt:failed", {
           peer_id = remote_peer_id,
           protocol = selected,
@@ -766,6 +897,11 @@ function M.new(host, opts)
         return nil, connect_err
       end
       if connect_resp.type ~= dcutr.TYPE.CONNECT then
+        log.debug("dcutr connect response unexpected", {
+          peer_id = remote_peer_id,
+          attempt = attempt,
+          response_type = connect_resp.type,
+        })
         emit_event(host, "dcutr:attempt:failed", {
           peer_id = remote_peer_id,
           protocol = selected,
@@ -775,6 +911,12 @@ function M.new(host, opts)
         return nil, error_mod.new("protocol", "expected dcutr CONNECT response")
       end
       local rtt = math.max(0, os.clock() - connect_sent_at)
+      log.debug("dcutr connect response received", {
+        peer_id = remote_peer_id,
+        attempt = attempt,
+        rtt = rtt,
+        obs_addr_count = #(connect_resp.obs_addrs or {}),
+      })
       local sync_ok, sync_err = dcutr.write_message(stream, { type = dcutr.TYPE.SYNC })
       if not sync_ok then
         emit_event(host, "dcutr:attempt:failed", {
@@ -794,6 +936,11 @@ function M.new(host, opts)
         preferred_ip_proto = preferred_ip_proto_from_state(state_or_err),
         max_candidates = run_opts.max_candidate_addrs or options.max_candidate_addrs,
       })
+      log.debug("dcutr remote candidates selected", {
+        peer_id = remote_peer_id,
+        attempt = attempt,
+        candidate_addrs = #remote_addrs,
+      })
       local dial_result, dial_errs = svc:_attempt_direct_dials(remote_peer_id, remote_addrs, {
         timeout = run_opts.dial_timeout or 4,
         ctx = run_opts.ctx,
@@ -802,6 +949,12 @@ function M.new(host, opts)
         pcall(function() stream:close() end)
       end
       if not dial_result then
+        log.debug("dcutr outbound direct dials failed", {
+          peer_id = remote_peer_id,
+          attempt = attempt,
+          candidate_addrs = #remote_addrs,
+          errors = #(dial_errs or {}),
+        })
         emit_event(host, "dcutr:attempt:failed", {
           peer_id = remote_peer_id,
           protocol = selected,
@@ -836,6 +989,11 @@ function M.new(host, opts)
             addr = result.addr,
             direction = "outbound",
           })
+          log.debug("dcutr outbound migration completed", {
+            peer_id = result.peer_id,
+            addr = result.addr,
+            rtt = result.rtt_seconds,
+          })
           return result
         end
         last_err = attempt_err
@@ -843,6 +1001,11 @@ function M.new(host, opts)
           break
         end
         if attempt < max_attempts then
+          log.debug("dcutr outbound attempt retrying", {
+            attempt = attempt,
+            max_attempts = max_attempts,
+            cause = tostring(attempt_err),
+          })
           emit_event(host, "dcutr:attempt:retry", {
             attempt = attempt,
             max_attempts = max_attempts,

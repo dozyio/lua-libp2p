@@ -3,7 +3,7 @@
 local socket = require("socket")
 
 local error_mod = require("lua_libp2p.error")
-local log = require("lua_libp2p.log")
+local log = require("lua_libp2p.log").subsystem("upnp")
 
 local M = {}
 
@@ -96,9 +96,18 @@ function M.discover(opts)
   local targets = options.search_targets or M.SEARCH_TARGETS
   local out = {}
   local seen = {}
+  log.debug("upnp ssdp discovery started", {
+    timeout = timeout,
+    targets = #targets,
+    interface = options.interface,
+  })
 
   local udp, udp_err = socket.udp()
   if not udp then
+    log.debug("upnp ssdp discovery failed", {
+      stage = "socket",
+      cause = tostring(udp_err),
+    })
     return nil, error_mod.new("io", "failed to create SSDP UDP socket", { cause = udp_err })
   end
   udp:settimeout(timeout)
@@ -121,11 +130,23 @@ function M.discover(opts)
     local ok, send_err = udp:sendto(payload, M.MULTICAST_ADDR, M.MULTICAST_PORT)
     if not ok then
       udp:close()
+      log.debug("upnp ssdp search failed", {
+        st = st,
+        cause = tostring(send_err),
+      })
       return nil, error_mod.new("io", "failed to send SSDP search", { cause = send_err, st = st })
     end
+    log.debug("upnp ssdp search sent", {
+      st = st,
+      multicast_addr = M.MULTICAST_ADDR,
+      multicast_port = M.MULTICAST_PORT,
+    })
   end
   collect_responses(udp, timeout, out, seen, options)
   udp:close()
+  log.debug("upnp ssdp discovery completed", {
+    responses = #out,
+  })
   return out
 end
 

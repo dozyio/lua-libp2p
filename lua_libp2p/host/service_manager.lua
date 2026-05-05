@@ -1,6 +1,7 @@
 --- Host service graph construction and dependency ordering.
 -- @module lua_libp2p.host.service_manager
 local error_mod = require("lua_libp2p.error")
+local log = require("lua_libp2p.log").subsystem("host")
 
 local M = {}
 
@@ -89,6 +90,11 @@ local function build_service_defs(host, services)
     if not instance then
       return nil, nil, new_err
     end
+    log.debug("host service constructed", {
+      service = service_name,
+      provides = table.concat(provides, ","),
+      requires = table.concat(requires, ","),
+    })
 
     local def = {
       name = service_name,
@@ -155,15 +161,25 @@ local function start_services(host, service_defs, capability_providers)
         end
 
         if can_start then
+          log.debug("host service starting", {
+            service = def.name,
+          })
           if type(def.instance.start) == "function" then
             local started, start_err = def.instance:start()
             if not started then
+              log.debug("host service start failed", {
+                service = def.name,
+                cause = tostring(start_err),
+              })
               return nil, start_err
             end
           end
           def.started = true
           started_count = started_count + 1
           host._service_order[#host._service_order + 1] = def.name
+          log.debug("host service started", {
+            service = def.name,
+          })
           progressed = true
         end
       end
@@ -227,6 +243,9 @@ function M.on_host_started(host)
     local service = host._services and host._services[service_name]
     seen[service_name] = true
     if service and type(service.on_host_started) == "function" then
+      log.debug("host service on_host_started", {
+        service = service_name,
+      })
       local ok, err = service:on_host_started()
       if not ok then
         return nil, err
