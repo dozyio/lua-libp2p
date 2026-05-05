@@ -286,6 +286,15 @@ function Host:new(config)
     end
   end
 
+  log.debug("host constructed", {
+    peer_id = self_obj:peer_id().id,
+    runtime = runtime_name,
+    listen_addrs = #self_obj.listen_addrs,
+    transports = table.concat(self_obj.transports, ","),
+    security_transports = table.concat(self_obj.security_transports, ","),
+    muxers = table.concat(self_obj.muxers, ","),
+  })
+
   local services = cfg.services
   if contains_circuit_listen_addr(self_obj.listen_addrs) and not (type(services) == "table" and services.autorelay ~= nil) then
     return nil, error_mod.new("input", "/p2p-circuit listen addr requires autorelay service")
@@ -327,6 +336,11 @@ function Host:_spawn_stream_negotiation_task(stream, conn, entry)
     local protocol_id, handler, handler_options, neg_err = router:negotiate(stream)
     if not protocol_id then
       self:_close_stream_resource(stream_scope)
+      log.debug("host inbound stream negotiation failed", {
+        peer_id = entry.state and entry.state.remote_peer_id or nil,
+        connection_id = entry.id,
+        cause = tostring(neg_err),
+      })
       return nil, neg_err
     end
     local set_ok, set_err = self:_set_stream_resource_protocol(stream_scope, protocol_id)
@@ -337,6 +351,12 @@ function Host:_spawn_stream_negotiation_task(stream, conn, entry)
         pcall(function() stream:close() end)
       end
       self:_close_stream_resource(stream_scope)
+      log.debug("host inbound stream resource protocol failed", {
+        peer_id = entry.state and entry.state.remote_peer_id or nil,
+        connection_id = entry.id,
+        protocol = protocol_id,
+        cause = tostring(set_err),
+      })
       return nil, set_err
     end
     stream = self:_wrap_stream_resource(stream, stream_scope)
@@ -349,8 +369,19 @@ function Host:_spawn_stream_negotiation_task(stream, conn, entry)
         pcall(function() stream:close() end)
       end
       self:_release_stream_resource(stream)
+      log.debug("host inbound stream blocked on limited connection", {
+        peer_id = entry.state and entry.state.remote_peer_id or nil,
+        connection_id = entry.id,
+        protocol = protocol_id,
+      })
       return true
     end
+    log.debug("host inbound stream negotiated", {
+      peer_id = entry.state and entry.state.remote_peer_id or nil,
+      connection_id = entry.id,
+      protocol = protocol_id,
+      limited = self:_connection_is_limited(entry.state),
+    })
     if self._debug_connection_events then
       emit_event(self, "stream:negotiated", {
         peer_id = entry.state and entry.state.remote_peer_id or nil,
@@ -363,6 +394,11 @@ function Host:_spawn_stream_negotiation_task(stream, conn, entry)
       })
     end
     if handler then
+      log.debug("host handler task spawning", {
+        peer_id = entry.state and entry.state.remote_peer_id or nil,
+        connection_id = entry.id,
+        protocol = protocol_id,
+      })
       self:_spawn_handler_task(handler, {
         stream = stream,
         host = self,
@@ -561,6 +597,12 @@ function Host:_register_connection(conn, state)
   })
   if not ok then
     rollback_registration()
+    log.debug("host connection event failed", {
+      connection_id = connection_id,
+      peer_id = peer_id,
+      event = "peer_connected",
+      cause = tostring(emit_err),
+    })
     return nil, emit_err
   end
 
@@ -572,6 +614,12 @@ function Host:_register_connection(conn, state)
   })
   if not opened_ok then
     rollback_registration()
+    log.debug("host connection event failed", {
+      connection_id = connection_id,
+      peer_id = peer_id,
+      event = "connection_opened",
+      cause = tostring(opened_err),
+    })
     return nil, opened_err
   end
 
@@ -602,6 +650,15 @@ function Host:_register_connection(conn, state)
     entry._connection_manager_tracked = true
   end
 
+  log.debug("connection opened", {
+    peer_id = peer_id,
+    connection_id = connection_id,
+    direction = entry.state and entry.state.direction or nil,
+    security = entry.state and entry.state.security or nil,
+    muxer = entry.state and entry.state.muxer or nil,
+    relay_limit_kind = entry.state and entry.state.relay and entry.state.relay.limit_kind or nil,
+  })
+
   return entry
 end
 
@@ -610,6 +667,7 @@ function Host:_unregister_connection(index, entry, cause)
     return false
   end
   if entry.scheduler_pump_task and entry.scheduler_pump_task.status ~= "completed" then
+    entry.scheduler_pump_task.on_finished = nil
     self:cancel_task(entry.scheduler_pump_task.id)
   end
   local peer_id = entry.state and entry.state.remote_peer_id
@@ -740,6 +798,9 @@ function Host:_process_runtime_events(timeout, ready_map)
       local entry, register_err = self:_register_connection(conn, state)
       if not entry then
         conn:close()
+        log.debug("host relay inbound registration failed", {
+          cause = tostring(register_err),
+        })
         return nil, register_err
       end
     elseif not (up_err and error_mod.is_error(up_err) and up_err.kind == "timeout") then
@@ -748,6 +809,9 @@ function Host:_process_runtime_events(timeout, ready_map)
       if raw_conn and type(raw_conn.close) == "function" then
         raw_conn:close()
       end
+      log.debug("host relay inbound upgrade failed", {
+        cause = tostring(up_err),
+      })
       if not is_nonfatal_stream_error(up_err) then
         return nil, up_err
       end
@@ -846,13 +910,23 @@ function Host:_process_runtime_events(timeout, ready_map)
     end
 
     if raw_conn then
+      log.debug("host inbound raw connection accepted")
       local resource_scope, resource_err = self:_open_connection_resource("inbound", nil, { transient = true })
       if resource_err then
         raw_conn:close()
+        log.debug("host inbound connection resource failed", flatten_error_fields(resource_err, "cause", {
+          cause = tostring(resource_err),
+        }))
+        if error_mod.is_error(resource_err) and resource_err.kind == "resource" then
+          goto continue_listeners
+        end
         return nil, resource_err
       end
       if host_runtime_luv_native.is_native_host(self) then
         self._pending_inbound[#self._pending_inbound + 1] = { raw_conn = raw_conn, resource_scope = resource_scope }
+        log.debug("host inbound upgrade pending", {
+          pending_inbound = #self._pending_inbound,
+        })
         goto continue_listeners
       end
 
@@ -883,6 +957,9 @@ function Host:_process_runtime_events(timeout, ready_map)
         end
         self:_close_connection_resource(resource_scope)
         raw_conn:close()
+        log.debug("host inbound upgrade failed", {
+          cause = tostring(up_err),
+        })
         if is_nonfatal_stream_error(up_err) then
           goto continue_listeners
         end
@@ -896,6 +973,9 @@ function Host:_process_runtime_events(timeout, ready_map)
       local entry, register_err = self:_register_connection(conn, state)
       if not entry then
         conn:close()
+        log.debug("host inbound registration failed", {
+          cause = tostring(register_err),
+        })
         return nil, register_err
       end
       break
@@ -974,6 +1054,10 @@ function Host:_process_runtime_events(timeout, ready_map)
         return nil, stream_err
       end
       if stream then
+        log.debug("host inbound raw stream accepted", {
+          peer_id = entry.state and entry.state.remote_peer_id or nil,
+          connection_id = entry.id,
+        })
         local _, neg_task_err = self:_spawn_stream_negotiation_task(stream, conn, entry)
         if neg_task_err then
           return nil, neg_task_err
@@ -989,6 +1073,11 @@ function Host:_process_runtime_events(timeout, ready_map)
         return nil, stream_err
       end
       if stream and handler then
+        log.debug("host inbound stream accepted", {
+          peer_id = entry.state and entry.state.remote_peer_id or nil,
+          connection_id = entry.id,
+          protocol = protocol_id,
+        })
         local stream_scope, resource_err = self:_open_stream_resource(entry, "inbound", protocol_id)
         if resource_err then
           if type(stream.reset_now) == "function" then
@@ -996,6 +1085,12 @@ function Host:_process_runtime_events(timeout, ready_map)
           elseif type(stream.close) == "function" then
             pcall(function() stream:close() end)
           end
+          log.debug("host inbound stream resource failed", {
+            peer_id = entry.state and entry.state.remote_peer_id or nil,
+            connection_id = entry.id,
+            protocol = protocol_id,
+            cause = tostring(resource_err),
+          })
           return nil, resource_err
         end
         stream = self:_wrap_stream_resource(stream, stream_scope)
@@ -1007,6 +1102,11 @@ function Host:_process_runtime_events(timeout, ready_map)
           elseif type(stream.close) == "function" then
             pcall(function() stream:close() end)
           end
+          log.debug("host inbound stream blocked on limited connection", {
+            peer_id = entry.state and entry.state.remote_peer_id or nil,
+            connection_id = entry.id,
+            protocol = protocol_id,
+          })
           goto continue_connections
         end
         self:_spawn_handler_task(handler, {
@@ -1046,6 +1146,12 @@ end
 -- @treturn true|nil ok
 -- @treturn[opt] table err
 function Host:start()
+  log.debug("host start requested", {
+    peer_id = self:peer_id().id,
+    runtime = self._runtime,
+    listeners = #self._listeners,
+    blocking = self._start_blocking,
+  })
   if #self._listeners == 0 then
     local ok, bind_err = self:_bind_listeners()
     if not ok then
@@ -1060,6 +1166,9 @@ function Host:start()
     self._running = true
   end
   if self._bootstrap_discovery and self._bootstrap_discovery.dial_on_start ~= false then
+    log.debug("host bootstrap discovery scheduling", {
+      timeout = self._bootstrap_discovery.timeout or 1,
+    })
     local boot_ok, boot_err = self:_schedule_bootstrap_discovery(self._bootstrap_discovery.timeout or 1)
     if not boot_ok then
       return nil, boot_err
@@ -1077,6 +1186,14 @@ function Host:start()
   if type(self._on_started) == "function" then
     self._on_started(self)
   end
+
+  log.debug("host started", {
+    peer_id = self:peer_id().id,
+    runtime = self._runtime,
+    listeners = #self._listeners,
+    listen_addrs = #self.listen_addrs,
+    services = #(self._service_order or {}),
+  })
 
   if self._runtime_impl and self._runtime_impl.start then
     local runtime_ok, runtime_err, handled = self._runtime_impl.start(self)
@@ -1116,11 +1233,24 @@ end
 -- @treturn true|nil ok
 -- @treturn[opt] table err
 function Host:stop()
+  log.debug("host stop requested", {
+    peer_id = self:peer_id().id,
+  })
   self._running = false
   return self:close()
 end
 
 function Host:close()
+  log.debug("host close started", {
+    peer_id = self:peer_id().id,
+    connections = #self._connections,
+    listeners = #self._listeners,
+    tasks = (function()
+      local n = 0
+      for _ in pairs(self._tasks) do n = n + 1 end
+      return n
+    end)(),
+  })
   self._running = false
   if self._runtime_impl and self._runtime_impl.stop then
     self._runtime_impl.stop(self)
@@ -1138,6 +1268,10 @@ function Host:close()
   host_connections.reset(self)
   for _, task in pairs(self._tasks) do
     self:_cleanup_task_waiters(task)
+    if task.stream then
+      self:_release_stream_resource(task.stream)
+      task.stream = nil
+    end
   end
   self._tasks = {}
   self._task_queue = {}
@@ -1166,6 +1300,10 @@ function Host:close()
   self._pending_relay_inbound = {}
 
   self:_close_listeners()
+
+  log.debug("host closed", {
+    peer_id = self:peer_id().id,
+  })
 
   return true
 end

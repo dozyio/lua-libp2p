@@ -62,6 +62,7 @@ local tests = {
   (require("tests.unit.autonat_client")),
   (require("tests.unit.dcutr")),
   (require("tests.unit.upnp")),
+  (require("tests.unit.pcp_service")),
   (require("tests.unit.identify")),
   (require("tests.unit.circuit_relay_v2")),
   (require("tests.unit.relay_client")),

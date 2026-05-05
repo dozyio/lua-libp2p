@@ -44,6 +44,29 @@ local function dialable_tcp_addrs(addrs)
   return out
 end
 
+local function add_error_fields(out, prefix, err, depth)
+  local remaining = depth or 3
+  out[prefix] = tostring(err)
+  if remaining <= 0 or not error_mod.is_error(err) then
+    return out
+  end
+  out[prefix .. "_kind"] = err.kind
+  if type(err.context) == "table" then
+    for k, v in pairs(err.context) do
+      local key = prefix .. "_" .. tostring(k)
+      if k == "cause" then
+        out[key] = tostring(v)
+        if error_mod.is_error(v) then
+          add_error_fields(out, key, v, remaining - 1)
+        end
+      elseif type(v) ~= "table" and type(v) ~= "function" and type(v) ~= "thread" then
+        out[key] = v
+      end
+    end
+  end
+  return out
+end
+
 function M.sort_candidates(dht, target_hash, candidates)
   table.sort(candidates, function(a, b)
     local da = dht:_distance_to_target(a.peer_id or "", target_hash) or string.rep("\255", 32)
@@ -181,10 +204,9 @@ function M.run_client_lookup(dht, key, seed_peers, query_func, opts)
       peer.state = "unreachable"
       result.failed = result.failed + 1
       if response_or_err then result.errors[#result.errors + 1] = response_or_err end
-      log.debug("kad dht peer query failed", {
+      log.debug("kad dht peer query failed", add_error_fields({
         peer_id = peer.peer_id,
-        cause = tostring(response_or_err),
-      })
+      }, "cause", response_or_err))
     end
   end
 

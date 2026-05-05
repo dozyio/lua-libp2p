@@ -262,18 +262,37 @@ function Client:soap(action, args)
 end
 
 function Client:get_external_ip()
+  log.debug("upnp external ip request started", {
+    control_url = self.control_url,
+  })
   local body, err = self:soap("GetExternalIPAddress")
   if not body then
+    log.debug("upnp external ip request failed", {
+      control_url = self.control_url,
+      cause = tostring(err),
+    })
     return nil, err
   end
   local ip = tag_text(body, "NewExternalIPAddress")
   if ip == "" then
     return nil, error_mod.new("protocol", "UPnP GetExternalIPAddress response missing IP")
   end
+  log.debug("upnp external ip received", {
+    control_url = self.control_url,
+    external_ip = ip,
+  })
   return ip
 end
 
 function Client:add_port_mapping(protocol, internal_port, external_port, internal_client, ttl, description)
+  log.debug("upnp add port mapping started", {
+    control_url = self.control_url,
+    protocol = protocol,
+    internal_client = internal_client,
+    internal_port = internal_port,
+    external_port = external_port or internal_port,
+    ttl = ttl or 720,
+  })
   local body, err = self:soap("AddPortMapping", {
     NewRemoteHost = "",
     NewExternalPort = external_port or internal_port,
@@ -285,26 +304,53 @@ function Client:add_port_mapping(protocol, internal_port, external_port, interna
     NewLeaseDuration = ttl or 720,
   })
   if not body then
+    log.debug("upnp add port mapping failed", {
+      control_url = self.control_url,
+      protocol = protocol,
+      internal_client = internal_client,
+      internal_port = internal_port,
+      external_port = external_port or internal_port,
+      cause = tostring(err),
+    })
     return nil, err
   end
-  return {
+  local mapping = {
     protocol = string.lower(protocol),
     internal_port = tonumber(internal_port),
     external_port = tonumber(external_port or internal_port),
     internal_client = internal_client,
   }
+  log.debug("upnp add port mapping completed", {
+    control_url = self.control_url,
+    protocol = mapping.protocol,
+    internal_client = mapping.internal_client,
+    internal_port = mapping.internal_port,
+    external_port = mapping.external_port,
+  })
+  return mapping
 end
 
 function Client:get_specific_port_mapping(protocol, external_port)
+  log.debug("upnp specific port mapping request started", {
+    control_url = self.control_url,
+    protocol = protocol,
+    external_port = external_port,
+  })
   local body, err = self:soap("GetSpecificPortMappingEntry", {
     NewRemoteHost = "",
     NewExternalPort = external_port,
     NewProtocol = string.upper(protocol),
   })
   if not body then
+    log.debug("upnp specific port mapping request failed", {
+      control_url = self.control_url,
+      protocol = protocol,
+      external_port = external_port,
+      cause = tostring(err),
+    })
     return nil, err
   end
-  return {
+  local mapping = {
     protocol = string.lower(protocol),
     external_port = tonumber(external_port),
     internal_client = tag_text(body, "NewInternalClient"),
@@ -313,6 +359,14 @@ function Client:get_specific_port_mapping(protocol, external_port)
     description = tag_text(body, "NewPortMappingDescription"),
     lease_duration = tonumber(tag_text(body, "NewLeaseDuration")),
   }
+  log.debug("upnp specific port mapping received", {
+    control_url = self.control_url,
+    protocol = mapping.protocol,
+    external_port = mapping.external_port,
+    internal_client = mapping.internal_client,
+    internal_port = mapping.internal_port,
+  })
+  return mapping
 end
 
 function Client:get_generic_port_mapping(index)
@@ -343,6 +397,10 @@ function Client:list_port_mappings(opts)
   local options = opts or {}
   local max = options.max or 64
   local out = {}
+  log.debug("upnp port mapping list started", {
+    control_url = self.control_url,
+    max = max,
+  })
   for index = 0, max - 1 do
     local mapping = self:get_generic_port_mapping(index)
     if not mapping then
@@ -350,18 +408,38 @@ function Client:list_port_mappings(opts)
     end
     out[#out + 1] = mapping
   end
+  log.debug("upnp port mapping list completed", {
+    control_url = self.control_url,
+    mappings = #out,
+  })
   return out
 end
 
 function Client:delete_port_mapping(protocol, external_port)
+  log.debug("upnp delete port mapping started", {
+    control_url = self.control_url,
+    protocol = protocol,
+    external_port = external_port,
+  })
   local body, err = self:soap("DeletePortMapping", {
     NewRemoteHost = "",
     NewExternalPort = external_port,
     NewProtocol = string.upper(protocol),
   })
   if not body then
+    log.debug("upnp delete port mapping failed", {
+      control_url = self.control_url,
+      protocol = protocol,
+      external_port = external_port,
+      cause = tostring(err),
+    })
     return nil, err
   end
+  log.debug("upnp delete port mapping completed", {
+    control_url = self.control_url,
+    protocol = protocol,
+    external_port = external_port,
+  })
   return true
 end
 
@@ -380,16 +458,32 @@ end
 -- @treturn table|nil client
 -- @treturn[opt] table err
 function M.from_location(location, opts)
+  log.debug("upnp descriptor fetch started", {
+    location = location,
+  })
   local body, err = http_request(location, {
     debug_raw = opts and opts.debug_raw,
   })
   if not body then
+    log.debug("upnp descriptor fetch failed", {
+      location = location,
+      cause = tostring(err),
+    })
     return nil, err
   end
   local service, service_err = M.parse_descriptor(body, location, opts)
   if not service then
+    log.debug("upnp descriptor parse failed", {
+      location = location,
+      cause = tostring(service_err),
+    })
     return nil, service_err
   end
+  log.debug("upnp descriptor selected service", {
+    location = location,
+    service_type = service.service_type,
+    control_url = service.control_url,
+  })
   return M.new(service)
 end
 
@@ -405,14 +499,30 @@ function M.discover(opts)
   if not responses then
     return nil, err
   end
+  log.debug("upnp igd discovery responses", {
+    responses = #responses,
+  })
   local last_err
   for _, response in ipairs(responses) do
     local client, client_err = M.from_location(response.location, options)
     if client then
+      log.debug("upnp igd discovery selected", {
+        location = response.location,
+        service_type = client.service_type,
+        control_url = client.control_url,
+      })
       return client
     end
     last_err = client_err
+    log.debug("upnp igd discovery candidate failed", {
+      location = response.location,
+      cause = tostring(client_err),
+    })
   end
+  log.debug("upnp igd discovery failed", {
+    responses = #responses,
+    cause = tostring(last_err),
+  })
   return nil, last_err or error_mod.new("not_found", "no UPnP IGD gateway found")
 end
 

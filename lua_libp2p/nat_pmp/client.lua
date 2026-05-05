@@ -3,6 +3,7 @@
 local socket = require("socket")
 
 local error_mod = require("lua_libp2p.error")
+local log = require("lua_libp2p.log").subsystem("nat_pmp")
 
 local M = {}
 
@@ -75,9 +76,23 @@ function Client:_exchange(op, payload)
   local timeout = self.timeout or 0.25
 
   local request = string.char(M.VERSION, op) .. payload
+  log.debug("nat-pmp request begin", {
+    gateway = self.gateway,
+    gateway_port = self.port,
+    opcode = op,
+    retries = retries,
+    timeout = timeout,
+  })
 
   local udp, udp_err = socket.udp()
   if not udp then
+    log.debug("nat-pmp request failed", {
+      gateway = self.gateway,
+      gateway_port = self.port,
+      opcode = op,
+      stage = "socket",
+      cause = tostring(udp_err),
+    })
     return nil, error_mod.new("io", "nat-pmp udp socket failed", { cause = udp_err })
   end
 
@@ -86,6 +101,14 @@ function Client:_exchange(op, payload)
     local ok, send_err = udp:sendto(request, self.gateway, self.port)
     if not ok then
       udp:close()
+      log.debug("nat-pmp request failed", {
+        gateway = self.gateway,
+        gateway_port = self.port,
+        opcode = op,
+        stage = "send",
+        attempt = try + 1,
+        cause = tostring(send_err),
+      })
       return nil, error_mod.new("io", "nat-pmp send failed", { cause = send_err })
     end
 
@@ -106,6 +129,14 @@ function Client:_exchange(op, payload)
         return nil, error_mod.new("protocol", "nat-pmp unexpected opcode", { opcode = rop, expected = 128 + op })
       end
       if result ~= M.RESULT.SUCCESS then
+        log.debug("nat-pmp request failed", {
+          gateway = self.gateway,
+          gateway_port = self.port,
+          opcode = op,
+          stage = "response",
+          result = result,
+          epoch = epoch,
+        })
         return nil, error_mod.new("protocol", "nat-pmp non-success result", {
           result = result,
           epoch = epoch,
@@ -117,11 +148,24 @@ function Client:_exchange(op, payload)
       }
     end
 
+    log.debug("nat-pmp request retry", {
+      gateway = self.gateway,
+      gateway_port = self.port,
+      opcode = op,
+      attempt = try + 1,
+      timeout = timeout,
+    })
     try = try + 1
     timeout = timeout * 2
   end
 
   udp:close()
+  log.debug("nat-pmp request timed out", {
+    gateway = self.gateway,
+    gateway_port = self.port,
+    opcode = op,
+    attempts = retries + 1,
+  })
   return nil, error_mod.new("timeout", "nat-pmp request timed out", {
     gateway = self.gateway,
     opcode = op,
@@ -129,6 +173,9 @@ function Client:_exchange(op, payload)
 end
 
 function Client:get_external_address()
+  log.debug("nat-pmp external address request started", {
+    gateway = self.gateway,
+  })
   local resp, err = self:_exchange(M.OP.EXTERNAL_ADDRESS, "")
   if not resp then
     return nil, err
@@ -138,7 +185,13 @@ function Client:get_external_address()
     return nil, error_mod.new("protocol", "nat-pmp external address response too short")
   end
   local a, b, c, d = data:byte(9, 12)
-  return string.format("%d.%d.%d.%d", a, b, c, d), {
+  local external_ip = string.format("%d.%d.%d.%d", a, b, c, d)
+  log.debug("nat-pmp external address received", {
+    gateway = self.gateway,
+    external_ip = external_ip,
+    epoch = resp.epoch,
+  })
+  return external_ip, {
     epoch = resp.epoch,
   }
 end
@@ -162,6 +215,13 @@ function Client:map_port(protocol, internal_port, external_port, lifetime)
   end
 
   local payload = u16be(0) .. u16be(iport) .. u16be(eport) .. u32be(ttl)
+  log.debug("nat-pmp map request started", {
+    gateway = self.gateway,
+    protocol = protocol,
+    internal_port = iport,
+    requested_external_port = eport,
+    lifetime = ttl,
+  })
   local resp, err = self:_exchange(op, payload)
   if not resp then
     return nil, err
@@ -171,13 +231,22 @@ function Client:map_port(protocol, internal_port, external_port, lifetime)
     return nil, error_mod.new("protocol", "nat-pmp map response too short")
   end
 
-  return {
+  local mapping = {
     protocol = protocol,
     internal_port = be16(data, 9),
     external_port = be16(data, 11),
     lifetime = be32(data, 13),
     epoch = resp.epoch,
   }
+  log.debug("nat-pmp map request completed", {
+    gateway = self.gateway,
+    protocol = mapping.protocol,
+    internal_port = mapping.internal_port,
+    external_port = mapping.external_port,
+    lifetime = mapping.lifetime,
+    epoch = mapping.epoch,
+  })
+  return mapping
 end
 
 function Client:unmap_port(protocol, internal_port, external_port)

@@ -19,6 +19,26 @@ function M.pending_raw(entry)
   return entry
 end
 
+local function release_pending_scope(host, pending_entry)
+  if type(pending_entry) == "table" and pending_entry.resource_scope ~= nil then
+    local scope = pending_entry.resource_scope
+    pending_entry.resource_scope = nil
+    if host and type(host._close_connection_resource) == "function" then
+      host:_close_connection_resource(scope)
+    end
+  end
+end
+
+local function is_terminal_connection_error(err)
+  if not error_mod.is_error(err) then
+    return false
+  end
+  if err.context and err.context.stream_id ~= nil then
+    return false
+  end
+  return err.kind == "closed" or err.kind == "decode" or err.kind == "protocol"
+end
+
 function M.resume_inbound_upgrade(host, pending_entry, is_nonfatal_stream_error)
   local raw_conn = M.pending_raw(pending_entry)
   if type(pending_entry) ~= "table" or pending_entry.raw_conn == nil then
@@ -49,6 +69,7 @@ function M.resume_inbound_upgrade(host, pending_entry, is_nonfatal_stream_error)
         end
         state.direction = state.direction or "inbound"
         state.resource_scope = pending_entry.resource_scope
+        pending_entry.resource_scope = nil
         local entry, register_err = host:_register_connection(conn, state)
         if not entry then
           conn:close()
@@ -58,6 +79,7 @@ function M.resume_inbound_upgrade(host, pending_entry, is_nonfatal_stream_error)
       end, { service = "host", priority = "front" })
       if not task then
         raw_conn:close()
+        release_pending_scope(host, pending_entry)
         return "error", nil, task_err, pending_entry
       end
       pending_entry.task = task
@@ -69,6 +91,7 @@ function M.resume_inbound_upgrade(host, pending_entry, is_nonfatal_stream_error)
     end
     if task.status == "failed" or task.status == "cancelled" then
       raw_conn:close()
+      release_pending_scope(host, pending_entry)
       local task_err = task.error or task.status
       if is_nonfatal_stream_error(task_err) then
         return "done", nil, nil, pending_entry
@@ -91,6 +114,7 @@ function M.resume_inbound_upgrade(host, pending_entry, is_nonfatal_stream_error)
   local ok, conn, state, up_err = coroutine.resume(pending_entry.co)
   if not ok then
     raw_conn:close()
+    release_pending_scope(host, pending_entry)
     return "error", nil, error_mod.new("protocol", "inbound upgrade coroutine failed", { cause = conn }), pending_entry
   end
   if coroutine.status(pending_entry.co) ~= "dead" then
@@ -99,6 +123,7 @@ function M.resume_inbound_upgrade(host, pending_entry, is_nonfatal_stream_error)
   if conn then
     state.direction = state.direction or "inbound"
     state.resource_scope = pending_entry.resource_scope
+    pending_entry.resource_scope = nil
     local entry, register_err = host:_register_connection(conn, state)
     if not entry then
       conn:close()
@@ -113,6 +138,7 @@ function M.resume_inbound_upgrade(host, pending_entry, is_nonfatal_stream_error)
   end
 
   raw_conn:close()
+  release_pending_scope(host, pending_entry)
   if is_nonfatal_stream_error(up_err) then
     return "done", nil, nil, pending_entry
   end
@@ -120,6 +146,30 @@ function M.resume_inbound_upgrade(host, pending_entry, is_nonfatal_stream_error)
 end
 
 function M.process_connection(host, entry, router, is_nonfatal_stream_error)
+  local conn = entry.conn
+
+  local function close_and_unregister(cause)
+    if conn and type(conn.close) == "function" then
+      conn:close()
+    end
+    if type(host._unregister_connection) == "function"
+      and host._connections_by_id
+      and host._connections_by_id[entry.id] == entry
+    then
+      local unregistered, unregister_err = host:_unregister_connection(nil, entry, cause)
+      if not unregistered then
+        return nil, unregister_err
+      end
+    end
+    if host._runtime_impl and type(host._runtime_impl.sync_watchers) == "function" then
+      local sync_ok, sync_err = host._runtime_impl.sync_watchers(host)
+      if not sync_ok then
+        return nil, sync_err
+      end
+    end
+    return true
+  end
+
   if entry.scheduler_pump_task ~= nil then
     local task = entry.scheduler_pump_task
     if task.status == "failed" or task.status == "cancelled" then
@@ -132,15 +182,14 @@ function M.process_connection(host, entry, router, is_nonfatal_stream_error)
         cause = tostring(task_err),
         kind = error_mod.is_error(task_err) and task_err.kind or nil,
       })
-      if is_nonfatal_stream_error(task_err) then
-        return true
+      if is_terminal_connection_error(task_err) then
+        return close_and_unregister(task_err)
       end
       return nil, task_err
     end
     return true
   end
 
-  local conn = entry.conn
   if entry.pump_co == nil then
     entry.pump_co = coroutine.create(function()
       if type(conn.pump_once) == "function" then
@@ -166,6 +215,9 @@ function M.process_connection(host, entry, router, is_nonfatal_stream_error)
       })
       if not is_nonfatal_stream_error(pump_err) then
         return nil, pump_err
+      end
+      if is_terminal_connection_error(pump_err) then
+        return close_and_unregister(pump_err)
       end
       return true
     end
@@ -252,6 +304,12 @@ function M.start_connection_pump_task(host, entry, is_nonfatal_stream_error)
           end
           return nil, pump_err
         end
+        if not frame and pump_err and is_terminal_connection_error(pump_err) then
+          if type(conn.set_context) == "function" then
+            conn:set_context(nil)
+          end
+          return nil, pump_err
+        end
         if not frame then
           should_wait = true
         end
@@ -295,6 +353,31 @@ function M.start_connection_pump_task(host, entry, is_nonfatal_stream_error)
   end, { service = "host" })
   if not task then
     return nil, task_err
+  end
+  task.on_finished = function(host_obj, finished_task)
+    local task_err = finished_task.error or finished_task.status
+    if (finished_task.status == "failed" or finished_task.status == "cancelled")
+      and is_terminal_connection_error(task_err) then
+      if type(conn.close) == "function" then
+        conn:close()
+      end
+      if type(host_obj._unregister_connection) == "function"
+        and host_obj._connections_by_id
+        and host_obj._connections_by_id[entry.id] == entry
+      then
+        local unregistered, unregister_err = host_obj:_unregister_connection(nil, entry, task_err)
+        if not unregistered then
+          return nil, unregister_err
+        end
+      end
+      if host_obj._runtime_impl and type(host_obj._runtime_impl.sync_watchers) == "function" then
+        local sync_ok, sync_err = host_obj._runtime_impl.sync_watchers(host_obj)
+        if not sync_ok then
+          return nil, sync_err
+        end
+      end
+    end
+    return true
   end
   entry.scheduler_pump_task = task
   return task

@@ -5,6 +5,7 @@ package.path = table.concat({
 }, ";")
 
 local host_mod = require("lua_libp2p.host")
+local ed25519 = require("lua_libp2p.crypto.ed25519")
 local identify_service = require("lua_libp2p.protocol_identify.service")
 local ping_service = require("lua_libp2p.protocol_ping.service")
 local autonat_service = require("lua_libp2p.autonat.client")
@@ -28,6 +29,7 @@ local function parse_args(args)
 	local opts = {
 		port = 4001,
 		runtime = "auto",
+		identity_key_path = ".lua-libp2p-pcp.key",
 		ttl = 7200,
 		timeout = 0.25,
 		retries = 6,
@@ -64,6 +66,12 @@ local function parse_args(args)
 			i = i + 2
 		elseif name == "--runtime" then
 			opts.runtime = value or opts.runtime
+			i = i + 2
+		elseif name == "--identity-key" then
+			if not value then
+				return nil, "--identity-key requires a file path"
+			end
+			opts.identity_key_path = value
 			i = i + 2
 		elseif name == "--listen-ipv6" then
 			opts.listen_ipv6 = true
@@ -116,6 +124,22 @@ local function parse_args(args)
 		return nil, "--gateway is required"
 	end
 	return opts
+end
+
+local function load_or_create_identity(path)
+	local loaded = ed25519.load_private_key(path)
+	if loaded then
+		return loaded
+	end
+	local keypair, key_err = ed25519.generate_keypair()
+	if not keypair then
+		return nil, key_err
+	end
+	local saved, save_err = ed25519.save_private_key(path, keypair)
+	if not saved then
+		return nil, save_err
+	end
+	return keypair
 end
 
 local opts, err = parse_args(arg)
@@ -186,14 +210,46 @@ else
 	}
 end
 
+local identity, identity_err = load_or_create_identity(opts.identity_key_path)
+if not identity then
+	io.stderr:write("identity key failed: " .. tostring(identity_err) .. "\n")
+	os.exit(1)
+end
+
 local h, host_err = host_mod.new({
 	runtime = opts.runtime,
+	identity = identity,
 	listen_addrs = listen_addrs,
 	services = {
 		identify = { module = identify_service },
 		ping = { module = ping_service },
-		autonat = { module = autonat_service },
-		kad_dht = { module = kad_dht_service, config = { mode = "client" } },
+		autonat = {
+			module = autonat_service,
+			config = {
+				monitor_on_start = opts.discover_autonat,
+				monitor_start_opts = {
+					poll_interval = 0.05,
+					discovery_timeout = opts.discovery_timeout,
+					seed_wait_seconds = opts.seed_wait_seconds,
+					initial_delay_seconds = opts.seed_wait_seconds,
+					walk_timeout = opts.walk_timeout,
+					dht_alpha = opts.dht_alpha,
+					dht_paths = opts.dht_paths,
+					dht_count = opts.dht_count,
+					max_autonat_servers = opts.max_autonat_servers,
+					target_autonat_responses = opts.target_autonat_responses,
+					stop_on_first_reachable = opts.stop_on_first_reachable,
+					drain_seconds = opts.drain_seconds,
+					check_type = "ip-mapping",
+					retry_interval_seconds = 5,
+					healthy_interval_seconds = 30,
+					min_success_rounds = 2,
+					checked_peer_cooldown_seconds = 30,
+					required_addr_proto = opts.listen_ipv6 and "ip6" or "ip4",
+				},
+			},
+		},
+		kad_dht = { module = kad_dht_service, config = { mode = "auto" } },
 		pcp = {
 			module = pcp_service,
 			config = {
@@ -219,6 +275,20 @@ local h, host_err = host_mod.new({
 if not h then
 	io.stderr:write("host init failed: " .. tostring(host_err) .. "\n")
 	os.exit(1)
+end
+
+if opts.discover_autonat and h.autonat and h.autonat._monitor_start_opts then
+	h.autonat._monitor_start_opts.check_opts_builder = function()
+		local mappings = h.address_manager:get_public_address_mappings()
+		for _, addr in ipairs(mappings) do
+			print("  checking mapping: " .. tostring(addr) .. " status=" .. metadata_status(h, addr))
+		end
+		return {
+			addrs = mappings,
+			type = "ip-mapping",
+			timeout = 8,
+		}
+	end
 end
 
 local print_autonat_summary
@@ -291,39 +361,12 @@ h:on("autonat:monitor:verified", function(payload)
 	return true
 end)
 
-h:on("peer_connected", function(payload)
-	if opts.debug then
-		print("peer connected: " .. tostring(payload.peer_id))
-	end
-	return true
-end)
-
 h:on("peer_identify_failed", function(payload)
-	print("peer identify failed: " .. tostring(payload.peer_id) .. " cause=" .. tostring(payload.error_message or payload.error))
-	return true
-end)
-
-h:on("connection_opened", function(payload)
-	if not opts.debug then
-		return true
-	end
-	local state = payload and payload.state or {}
-	local remote_addr = nil
-	if payload and payload.connection and type(payload.connection.raw) == "function" then
-		local raw = payload.connection:raw()
-		if raw and type(raw.remote_multiaddr) == "function" then
-			remote_addr = raw:remote_multiaddr()
-		end
-	end
 	print(
-		"connection opened: peer="
-			.. tostring(payload and payload.peer_id)
-			.. " transport="
-			.. tostring(remote_addr or "unknown")
-			.. " security="
-			.. tostring(state.security)
-			.. " muxer="
-			.. tostring(state.muxer)
+		"peer identify failed: "
+			.. tostring(payload.peer_id)
+			.. " cause="
+			.. tostring(payload.error_message or payload.error)
 	)
 	return true
 end)
@@ -398,42 +441,6 @@ if opts.autonat_server and h.autonat then
 		print_pcp_mapping_status(h, "pcp mapping summary")
 		return true
 	end, { service = "example" })
-end
-
-if opts.discover_autonat then
-	local monitor_task, monitor_err = h.autonat:start_monitor({
-		poll_interval = 0.05,
-		discovery_timeout = opts.discovery_timeout,
-		seed_wait_seconds = opts.seed_wait_seconds,
-		walk_timeout = opts.walk_timeout,
-		dht_alpha = opts.dht_alpha,
-		dht_paths = opts.dht_paths,
-		dht_count = opts.dht_count,
-		max_autonat_servers = opts.max_autonat_servers,
-		target_autonat_responses = opts.target_autonat_responses,
-		stop_on_first_reachable = opts.stop_on_first_reachable,
-		drain_seconds = opts.drain_seconds,
-		check_type = "ip-mapping",
-		retry_interval_seconds = 5,
-		healthy_interval_seconds = 30,
-		min_success_rounds = 2,
-		checked_peer_cooldown_seconds = 30,
-		required_addr_proto = opts.listen_ipv6 and "ip6" or "ip4",
-		check_opts_builder = function()
-			local mappings = h.address_manager:get_public_address_mappings()
-			for _, addr in ipairs(mappings) do
-				print("  checking mapping: " .. tostring(addr) .. " status=" .. metadata_status(h, addr))
-			end
-			return {
-				addrs = mappings,
-				type = "ip-mapping",
-				timeout = 8,
-			}
-		end,
-	})
-	if not monitor_task then
-		print("autonat monitor failed to start: " .. tostring(monitor_err))
-	end
 end
 
 h:sleep(opts.duration, { poll_interval = 0.05 })

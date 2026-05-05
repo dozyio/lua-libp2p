@@ -458,6 +458,16 @@ local function run()
     return nil, "connection manager should admit new connection after pruning below max_connections"
   end
 
+  local default_watermark_host = assert(host.new({
+    runtime = "luv",
+    identity = keypair,
+    blocking = false,
+  }))
+  local default_watermark_stats = default_watermark_host.connection_manager:stats()
+  if default_watermark_stats.high_water ~= 96 or default_watermark_stats.low_water ~= 64 then
+    return nil, "connection manager should install default watermarks below resource limits"
+  end
+
   local watermark_host = assert(host.new({
     runtime = "luv",
     identity = keypair,

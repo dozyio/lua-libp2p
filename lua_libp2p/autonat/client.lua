@@ -73,6 +73,21 @@ local function target_label(target)
   return target
 end
 
+local function should_backoff_peer(err)
+  if error_mod.is_error(err) then
+    if err.kind == "unsupported" or err.kind == "timeout" or err.kind == "closed" or err.kind == "protocol" then
+      return true
+    end
+  end
+  local text = tostring(err or ""):lower()
+  return string.find(text, "no common protocol", 1, true) ~= nil
+    or string.find(text, "unsupported", 1, true) ~= nil
+    or string.find(text, "stream reset", 1, true) ~= nil
+    or string.find(text, "timed out", 1, true) ~= nil
+    or string.find(text, "timeout", 1, true) ~= nil
+    or string.find(text, "closed", 1, true) ~= nil
+end
+
 local function addrs_for_proto(addrs, required_proto)
   if required_proto == nil then
     return copy_list(addrs or {})
@@ -463,6 +478,8 @@ function Client:_discover_servers(limit, opts)
   local options = opts or {}
   local host = self.host
   local checked_peers = options.checked_peers or {}
+  local backoff_peers = options.backoff_peers or {}
+  local backoff_seconds = options.peer_backoff_seconds or DEFAULT_CHECKED_PEER_COOLDOWN
   local checked_peer_cooldown = options.checked_peer_cooldown_seconds or 0
   local now = os.time()
   local max_candidates = limit or 1
@@ -477,18 +494,20 @@ function Client:_discover_servers(limit, opts)
       local checked_at = checked_peers[peer.peer_id]
       local recently_checked = checked_at == true
         or (type(checked_at) == "number" and checked_peer_cooldown > 0 and (now - checked_at) < checked_peer_cooldown)
+      local backed_off_at = backoff_peers[peer.peer_id]
+      local backed_off = backed_off_at == true
+        or (type(backed_off_at) == "number" and backoff_seconds > 0 and (now - backed_off_at) < backoff_seconds)
       local peer_addrs = addrs_for_proto(host.peerstore:get_addrs(peer.peer_id), required_addr_proto)
-      if not recently_checked
+      if not recently_checked and not backed_off
         and host.peerstore:supports_protocol(peer.peer_id, autonat_proto.DIAL_REQUEST_ID)
         and #peer_addrs > 0
       then
         proto_candidates = proto_candidates + 1
-        candidates[#candidates + 1] = {
-          peer_id = peer.peer_id,
-          addrs = peer_addrs,
-        }
-        if #candidates >= max_candidates then
-          break
+        if #candidates < max_candidates then
+          candidates[#candidates + 1] = {
+            peer_id = peer.peer_id,
+            addrs = peer_addrs,
+          }
         end
       end
     end
@@ -498,8 +517,11 @@ function Client:_discover_servers(limit, opts)
         local checked_at = checked_peers[peer.peer_id]
         local recently_checked = checked_at == true
           or (type(checked_at) == "number" and checked_peer_cooldown > 0 and (now - checked_at) < checked_peer_cooldown)
+        local backed_off_at = backoff_peers[peer.peer_id]
+        local backed_off = backed_off_at == true
+          or (type(backed_off_at) == "number" and backoff_seconds > 0 and (now - backed_off_at) < backoff_seconds)
         local peer_addrs = addrs_for_proto(host.peerstore:get_addrs(peer.peer_id), required_addr_proto)
-        if not recently_checked and #peer_addrs > 0 then
+        if not recently_checked and not backed_off and #peer_addrs > 0 then
           candidates[#candidates + 1] = {
             peer_id = peer.peer_id,
             addrs = peer_addrs,
@@ -544,14 +566,29 @@ function Client:_discover_servers(limit, opts)
     out, proto_candidates, peerstore_peers = collect_candidates()
   end
 
-  emit_event(host, "autonat:discovery:candidates", {
+  local snapshot = {
     peerstore_peers = peerstore_peers,
     protocol_candidates = proto_candidates,
-    candidates = out,
+    candidates = #out,
     required_addr_proto = required_addr_proto,
-    walk_triggered = walk_triggered,
-  })
-  if #out > 0 or walk_triggered then
+  }
+  local previous = self._last_discovery_candidate_snapshot
+  local changed = not previous
+    or previous.peerstore_peers ~= snapshot.peerstore_peers
+    or previous.protocol_candidates ~= snapshot.protocol_candidates
+    or previous.candidates ~= snapshot.candidates
+    or previous.required_addr_proto ~= snapshot.required_addr_proto
+  if changed or walk_triggered then
+    self._last_discovery_candidate_snapshot = snapshot
+    emit_event(host, "autonat:discovery:candidates", {
+      peerstore_peers = peerstore_peers,
+      protocol_candidates = proto_candidates,
+      candidates = out,
+      required_addr_proto = required_addr_proto,
+      walk_triggered = walk_triggered,
+    })
+  end
+  if (#out > 0 and changed) or walk_triggered then
     log.debug("autonat discovery candidates ready", {
       peerstore_peers = peerstore_peers,
       protocol_candidates = proto_candidates,
@@ -590,6 +627,71 @@ function Client:_discover(opts)
 
   local max_servers = options.max_autonat_servers or DEFAULT_DISCOVERY_MAX_SERVERS
   local target_responses = options.target_autonat_responses or DEFAULT_DISCOVERY_TARGET_RESPONSES
+  local logged_no_candidates = false
+  local function run_check(server, check_opts)
+    local timeout = tonumber(check_opts.timeout)
+    if not (options.ctx
+      and type(options.ctx.await_any_task) == "function"
+      and host
+      and type(host.spawn_task) == "function"
+      and type(host.cancel_task) == "function")
+    then
+      return self:check(server, check_opts)
+    end
+
+    local check_task, check_task_err = host:spawn_task("autonat.check.discovery", function(task_ctx)
+      local task_opts = {}
+      for k, v in pairs(check_opts) do task_opts[k] = v end
+      task_opts.stream_opts = task_opts.stream_opts or {}
+      task_opts.stream_opts.ctx = task_opts.stream_opts.ctx or task_ctx
+      return self:check(server, task_opts)
+    end, { service = "autonat" })
+    if not check_task then return nil, check_task_err end
+
+    local timeout_task
+    if timeout and timeout > 0 then
+      local timeout_task_err
+      timeout_task, timeout_task_err = host:spawn_task("autonat.check.timeout", function(timeout_ctx)
+        local slept, sleep_err = timeout_ctx:sleep(timeout)
+        if slept == nil and sleep_err then return nil, sleep_err end
+        return true
+      end, { service = "autonat" })
+      if not timeout_task then
+        host:cancel_task(check_task.id)
+        return nil, timeout_task_err
+      end
+    end
+
+    if timeout_task then
+      local _, wait_err = options.ctx:await_any_task({ check_task, timeout_task })
+      if wait_err then
+        host:cancel_task(check_task.id)
+        host:cancel_task(timeout_task.id)
+        return nil, wait_err
+      end
+      if timeout_task.status == "completed" and check_task.status ~= "completed" and check_task.status ~= "failed" then
+        host:cancel_task(check_task.id)
+        return nil, error_mod.new("timeout", "autonat check timed out", {
+          peer_id = server.peer_id,
+          timeout = timeout,
+        })
+      end
+      if check_task.status == "completed" then
+        host:cancel_task(timeout_task.id)
+      end
+    else
+      local _, wait_err = options.ctx:await_task(check_task)
+      if wait_err then return nil, wait_err end
+    end
+
+    if check_task.status ~= "completed" then
+      return nil, check_task.error or error_mod.new("state", "autonat check did not complete", {
+        peer_id = server.peer_id,
+        status = check_task.status,
+      })
+    end
+    return check_task.result
+  end
 
   while stats.checked < max_servers
     and (stats.responses < target_responses or stats.reachable == 0)
@@ -599,6 +701,8 @@ function Client:_discover(opts)
     end
     local candidates = self:_discover_servers(max_servers, {
       checked_peers = checked_peers,
+      backoff_peers = options.backoff_peers,
+      peer_backoff_seconds = options.peer_backoff_seconds,
       checked_peer_cooldown_seconds = options.checked_peer_cooldown_seconds,
       required_addr_proto = options.required_addr_proto,
       seed_wait_seconds = options.seed_wait_seconds,
@@ -612,11 +716,14 @@ function Client:_discover(opts)
     })
 
     if #candidates == 0 then
-      log.debug("autonat discovery no candidates", {
-        checked = stats.checked,
-        responses = stats.responses,
-        reachable = stats.reachable,
-      })
+      if not logged_no_candidates then
+        logged_no_candidates = true
+        log.debug("autonat discovery no candidates", {
+          checked = stats.checked,
+          responses = stats.responses,
+          reachable = stats.reachable,
+        })
+      end
       if os.time() >= deadline then
         break
       end
@@ -627,6 +734,7 @@ function Client:_discover(opts)
         })
       end
     else
+      logged_no_candidates = false
       for _, server in ipairs(candidates) do
         if stats.checked >= max_servers then
           break
@@ -654,7 +762,7 @@ function Client:_discover(opts)
           end
         end
 
-        local result, check_err = self:check(server, check_opts)
+        local result, check_err = run_check(server, check_opts)
         if result then
           log.debug("autonat discovery check completed", {
             peer_id = peer_id,
@@ -675,6 +783,14 @@ function Client:_discover(opts)
             peer_id = peer_id,
             cause = tostring(check_err),
           })
+          if options.backoff_peers and should_backoff_peer(check_err) then
+            options.backoff_peers[peer_id] = os.time()
+            log.debug("autonat discovery peer backed off", {
+              peer_id = peer_id,
+              backoff_seconds = options.peer_backoff_seconds or DEFAULT_CHECKED_PEER_COOLDOWN,
+              cause = tostring(check_err),
+            })
+          end
           emit_event(host, "autonat:discovery:check_failed", {
             peer_id = peer_id,
             error = check_err,
@@ -745,11 +861,13 @@ function Client:start_monitor(opts)
   end
   local options = opts or {}
   local task, task_err = self.host:spawn_task("autonat.monitor", function(ctx)
-    local checked_peers = {}
+    local backoff_peers = {}
     local min_success_rounds = options.min_success_rounds or DEFAULT_MONITOR_MIN_SUCCESS_ROUNDS
     local retry_interval = options.retry_interval_seconds or DEFAULT_MONITOR_RETRY_INTERVAL
     local healthy_interval = options.healthy_interval_seconds or DEFAULT_MONITOR_HEALTHY_INTERVAL
     local round_timeout = options.round_timeout_seconds or 30
+    local initial_delay = options.initial_delay_seconds
+    if initial_delay == nil then initial_delay = options.seed_wait_seconds end
     local success_rounds = 0
     local rounds = 0
     emit_event(self.host, "autonat:monitor:started", {
@@ -761,7 +879,21 @@ function Client:start_monitor(opts)
       min_success_rounds = min_success_rounds,
       retry_interval_seconds = retry_interval,
       healthy_interval_seconds = healthy_interval,
+      initial_delay_seconds = initial_delay,
     })
+    if initial_delay and initial_delay > 0 then
+      log.debug("autonat monitor initial delay", {
+        delay_seconds = initial_delay,
+      })
+      local slept, sleep_err = ctx:sleep(initial_delay)
+      if slept == nil and sleep_err then
+        emit_event(self.host, "autonat:monitor:stopped", {
+          round = rounds,
+          cause = tostring(sleep_err),
+        })
+        return nil, sleep_err
+      end
+    end
     while true do
       rounds = rounds + 1
       emit_event(self.host, "autonat:monitor:round_started", { round = rounds })
@@ -784,12 +916,11 @@ function Client:start_monitor(opts)
         check_timeout = options.check_timeout,
         poll_interval = options.poll_interval,
         check_opts_builder = options.check_opts_builder,
-        checked_peers = checked_peers,
-        preserve_checked_peers = true,
+        backoff_peers = backoff_peers,
+        peer_backoff_seconds = options.peer_backoff_seconds or options.checked_peer_cooldown_seconds or DEFAULT_CHECKED_PEER_COOLDOWN,
         checked_peer_cooldown_seconds = options.checked_peer_cooldown_seconds or DEFAULT_CHECKED_PEER_COOLDOWN,
         required_addr_proto = options.required_addr_proto,
       })
-      checked_peers = stats.checked_peers or checked_peers
       if stats.reachable and stats.reachable > 0 then
         success_rounds = success_rounds + 1
       else
@@ -906,10 +1037,13 @@ function Client:start()
   log.debug("autonat service started", {
     monitor_on_start = self._monitor_on_start == true,
   })
+  return true
+end
+
+function Client:on_host_started()
   if self._monitor_on_start then
     local monitor_task, monitor_err = self:start_monitor(self._monitor_start_opts)
     if not monitor_task then
-      self.started = false
       return nil, monitor_err
     end
   end

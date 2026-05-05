@@ -125,6 +125,10 @@ function Service:_eligible_addrs()
     end
     ::continue_addr::
   end
+  log.debug("pcp eligible addresses selected", {
+    candidates = #out,
+    gateway = self.gateway,
+  })
   return out
 end
 
@@ -132,8 +136,21 @@ end
 -- @treturn table|nil mappings
 -- @treturn[opt] table err
 function Service:map_ip_addresses()
+  if self._mapping_in_progress then
+    log.debug("pcp mapping refresh skipped", {
+      gateway = self.gateway,
+      reason = "mapping_in_progress",
+    })
+    return {}, nil
+  end
+  self._mapping_in_progress = true
+  log.debug("pcp mapping refresh started", {
+    gateway = self.gateway,
+    ttl = self.ttl,
+  })
   local client, client_err = self:_client()
   if not client then
+    self._mapping_in_progress = false
     self.last_error = client_err
     emit_event(self.host, "pcp:mapping:failed", { error = client_err, error_message = tostring(client_err) })
     return nil, client_err
@@ -142,7 +159,12 @@ function Service:map_ip_addresses()
   if #candidates == 0 then
     local err = error_mod.new("state", "no eligible private tcp transport addresses for PCP mapping")
     self.last_error = err
+    log.debug("pcp mapping refresh skipped", {
+      gateway = self.gateway,
+      reason = "no_eligible_addresses",
+    })
     emit_event(self.host, "pcp:mapping:failed", { error = err, error_message = tostring(err) })
+    self._mapping_in_progress = false
     return {}, nil
   end
 
@@ -150,6 +172,12 @@ function Service:map_ip_addresses()
   for _, addr in ipairs(candidates) do
     local key = mapping_key("tcp", addr.ip, addr.port)
     if self.mappings[key] then
+      log.debug("pcp mapping skipped", {
+        gateway = self.gateway,
+        internal_client = addr.ip,
+        internal_port = addr.port,
+        reason = "already_mapped",
+      })
       goto continue_map
     end
     local requested_external_port = self.external_port or addr.port
@@ -212,6 +240,12 @@ function Service:map_ip_addresses()
     end
     ::continue_map::
   end
+  log.debug("pcp mapping refresh completed", {
+    gateway = self.gateway,
+    mapped = #mapped,
+    candidates = #candidates,
+  })
+  self._mapping_in_progress = false
   return mapped
 end
 
@@ -223,6 +257,12 @@ function Service:start()
     return true
   end
   self.started = true
+  log.debug("pcp service started", {
+    gateway = self.gateway,
+    ttl = self.ttl,
+    map_on_self_peer_update = self.map_on_self_peer_update,
+    initial_map_delay_seconds = self.initial_map_delay_seconds,
+  })
   if self.host and type(self.host.on) == "function" then
     self._event_handler = function()
       return self:map_ip_addresses()
@@ -245,6 +285,9 @@ function Service:start()
   then
     local delay = self.initial_map_delay_seconds
     local task, task_err = self.host:spawn_task("pcp.initial_map_delay", function(ctx)
+      log.debug("pcp initial mapping delayed", {
+        delay_seconds = delay,
+      })
       local ok, sleep_err = ctx:sleep(delay)
       if ok == nil and sleep_err then
         return nil, sleep_err
@@ -264,6 +307,13 @@ end
 -- @treturn true
 function Service:stop()
   self.started = false
+  log.debug("pcp service stopped", {
+    mappings = (function()
+      local n = 0
+      for _ in pairs(self.mappings) do n = n + 1 end
+      return n
+    end)(),
+  })
   if self.host and self._event_handler and type(self.host.off) == "function" then
     self.host:off("self_peer_update", self._event_handler)
   end

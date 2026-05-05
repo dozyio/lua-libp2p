@@ -149,8 +149,16 @@
 <h2><a href="#Functions">Functions</a></h2>
 <table class="function_list">
 	<tr>
+	<td class="name" nowrap><a href="#configure">configure (spec)</a></td>
+	<td class="summary">Configure subsystem logging.</td>
+	</tr>
+	<tr>
 	<td class="name" nowrap><a href="#debug">debug (message, fields)</a></td>
 	<td class="summary">Shortcut for <a href="../modules/lua_libp2p.log.html#debug">debug</a> level logging.</td>
+	</tr>
+	<tr>
+	<td class="name" nowrap><a href="#enabled">enabled (level_name, fields)</a></td>
+	<td class="summary">Return whether a log event would be emitted.</td>
 	</tr>
 	<tr>
 	<td class="name" nowrap><a href="#error">error (message, fields)</a></td>
@@ -161,12 +169,24 @@
 	<td class="summary">Shortcut for <a href="../modules/lua_libp2p.log.html#info">info</a> level logging.</td>
 	</tr>
 	<tr>
+	<td class="name" nowrap><a href="#level">level ()</a></td>
+	<td class="summary">Return current global level name.</td>
+	</tr>
+	<tr>
 	<td class="name" nowrap><a href="#log">log (level_name, message[, fields])</a></td>
 	<td class="summary">Emit a structured log line.</td>
 	</tr>
 	<tr>
+	<td class="name" nowrap><a href="#reset">reset ()</a></td>
+	<td class="summary">Reset logging to default info-level, all-subsystem behavior.</td>
+	</tr>
+	<tr>
 	<td class="name" nowrap><a href="#set_level">set_level (name)</a></td>
 	<td class="summary">Set minimum log level.</td>
+	</tr>
+	<tr>
+	<td class="name" nowrap><a href="#subsystem">subsystem (name)</a></td>
+	<td class="summary">Create a logger that automatically attaches a subsystem field.</td>
 	</tr>
 	<tr>
 	<td class="name" nowrap><a href="#warn">warn (message, fields)</a></td>
@@ -182,6 +202,41 @@
 
     <dl class="function">
     <dt>
+    <a name = "configure"></a>
+    <strong>configure (spec)</strong>
+    </dt>
+    <dd>
+    Configure subsystem logging.
+ <code>spec</code> accepts <a href="../modules/lua_libp2p.log.html#debug">debug</a>, <a href="../modules/lua_libp2p.log.html#info">info</a>, <a href="../modules/lua_libp2p.log.html#warn">warn</a>, <a href="../modules/lua_libp2p.error.html">error</a>, comma-separated subsystem
+ names, or <code>subsystem=level</code> pairs. <code>*</code>/<code>all</code> sets the fallback level.
+ Examples: <code>kad_dht,host</code>, <code>kad_dht=debug,host=info,*=warn</code>.
+
+
+    <h3>Parameters:</h3>
+    <ul>
+        <li><span class="parameter">spec</span>
+            <span class="types"><a class="type" href="https://www.lua.org/manual/5.4/manual.html#6.4">string</a></span>
+
+
+
+        </li>
+    </ul>
+
+    <h3>Returns:</h3>
+    <ol>
+        <li>
+           <span class="types"><span class="type">true</span> or <span class="type">nil</span></span>
+        ok</li>
+        <li>
+           <span class="types"><a class="type" href="https://www.lua.org/manual/5.4/manual.html#6.4">string</a></span>
+        err</li>
+    </ol>
+
+
+
+
+</dd>
+    <dt>
     <a name = "debug"></a>
     <strong>debug (message, fields)</strong>
     </dt>
@@ -192,6 +247,33 @@
     <h3>Parameters:</h3>
     <ul>
         <li><span class="parameter">message</span>
+
+
+
+        </li>
+        <li><span class="parameter">fields</span>
+
+
+
+        </li>
+    </ul>
+
+
+
+
+
+</dd>
+    <dt>
+    <a name = "enabled"></a>
+    <strong>enabled (level_name, fields)</strong>
+    </dt>
+    <dd>
+    Return whether a log event would be emitted.
+
+
+    <h3>Parameters:</h3>
+    <ul>
+        <li><span class="parameter">level_name</span>
 
 
 
@@ -263,6 +345,20 @@
 
 </dd>
     <dt>
+    <a name = "level"></a>
+    <strong>level ()</strong>
+    </dt>
+    <dd>
+    Return current global level name.
+
+
+
+
+
+
+
+</dd>
+    <dt>
     <a name = "log"></a>
     <strong>log (level_name, message[, fields])</strong>
     </dt>
@@ -302,6 +398,20 @@
 
 </dd>
     <dt>
+    <a name = "reset"></a>
+    <strong>reset ()</strong>
+    </dt>
+    <dd>
+    Reset logging to default info-level, all-subsystem behavior.
+
+
+
+
+
+
+
+</dd>
+    <dt>
     <a name = "set_level"></a>
     <strong>set_level (name)</strong>
     </dt>
@@ -325,6 +435,33 @@
         <li>
            <span class="types"><a class="type" href="https://www.lua.org/manual/5.4/manual.html#6.4">string</a></span>
         err</li>
+    </ol>
+
+
+
+
+</dd>
+    <dt>
+    <a name = "subsystem"></a>
+    <strong>subsystem (name)</strong>
+    </dt>
+    <dd>
+    Create a logger that automatically attaches a subsystem field.
+
+
+    <h3>Parameters:</h3>
+    <ul>
+        <li><span class="parameter">name</span>
+            <span class="types"><a class="type" href="https://www.lua.org/manual/5.4/manual.html#6.4">string</a></span>
+         Subsystem name.
+        </li>
+    </ul>
+
+    <h3>Returns:</h3>
+    <ol>
+
+           <span class="types"><a class="type" href="https://www.lua.org/manual/5.4/manual.html#6.6">table</a></span>
+        logger
     </ol>
 
 
@@ -365,7 +502,7 @@
 </div> <!-- id="main" -->
 <div id="about">
 <i>generated by <a href="http://github.com/lunarmodules/LDoc">LDoc 1.5.0</a></i>
-<i style="float:right;">Last updated 2026-05-05 00:04:08 </i>
+<i style="float:right;">Last updated 2026-05-05 03:08:42 </i>
 </div> <!-- id="about" -->
 </div> <!-- id="container" -->
 </body>

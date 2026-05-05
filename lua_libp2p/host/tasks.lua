@@ -1,6 +1,7 @@
 --- Host cooperative task scheduler internals.
 -- @module lua_libp2p.host.tasks
 local error_mod = require("lua_libp2p.error")
+local log = require("lua_libp2p.log").subsystem("host")
 
 local M = {}
 
@@ -152,6 +153,33 @@ local function make_task_context(task)
   return ctx
 end
 
+local function release_task_resources(host, task)
+  if task and task.stream and type(host._release_stream_resource) == "function" then
+    host:_release_stream_resource(task.stream)
+    task.stream = nil
+  end
+end
+
+local function run_task_finalizer(host, task)
+  if not task or type(task.on_finished) ~= "function" then
+    return true
+  end
+  local finalizer = task.on_finished
+  task.on_finished = nil
+  local ok, result, err = pcall(finalizer, host, task)
+  if not ok then
+    return nil, error_mod.new("protocol", "task finalizer panicked", {
+      task_id = task.id,
+      name = task.name,
+      cause = result,
+    })
+  end
+  if result == nil and err then
+    return nil, err
+  end
+  return true
+end
+
 function M.install(Host)
   function Host:spawn_task(name, fn, opts)
     if type(name) ~= "string" or name == "" then
@@ -189,6 +217,12 @@ function M.install(Host)
       task_id = id,
       name = name,
       service = task.service,
+    })
+    log.debug("host task started", {
+      task_id = id,
+      name = name,
+      service = task.service,
+      queue_depth = #self._task_queue,
     })
     return task
   end
@@ -228,7 +262,7 @@ function M.install(Host)
   end
 
   function Host:_spawn_handler_task(handler, ctx)
-    return self:spawn_task("handler." .. tostring(ctx.protocol or "unknown"), function(task_ctx)
+    local task, task_err = self:spawn_task("handler." .. tostring(ctx.protocol or "unknown"), function(task_ctx)
       local handler_ctx = {}
       for k, v in pairs(ctx or {}) do
         handler_ctx[k] = v
@@ -238,8 +272,11 @@ function M.install(Host)
           handler_ctx[k] = v
         end
       end
-      local result, err = handler(ctx.stream, handler_ctx)
+      local call_ok, result, err = pcall(handler, ctx.stream, handler_ctx)
       self:_release_stream_resource(ctx.stream)
+      if not call_ok then
+        return nil, error_mod.new("protocol", "handler task panicked", { cause = result })
+      end
       if result == nil and err then
         if is_nonfatal_stream_error(err) then
           if ctx.connection and type(ctx.connection.close) == "function" then
@@ -255,6 +292,10 @@ function M.install(Host)
       protocol = ctx.protocol,
       peer_id = ctx.peer_id,
     })
+    if task then
+      task.stream = ctx.stream
+    end
+    return task, task_err
   end
 
   function Host:_cleanup_task_waiters(task)
@@ -311,7 +352,17 @@ function M.install(Host)
     task.cancelled = true
     task.status = "cancelled"
     task.updated_at = now_seconds()
+    release_task_resources(self, task)
+    local final_ok, final_err = run_task_finalizer(self, task)
+    if not final_ok then
+      return nil, final_err
+    end
     emit_task_event(self, "task:cancelled", {
+      task_id = task.id,
+      name = task.name,
+      service = task.service,
+    })
+    log.debug("host task cancelled", {
       task_id = task.id,
       name = task.name,
       service = task.service,
@@ -687,6 +738,7 @@ function M.install(Host)
       task.updated_at = now_seconds()
       if not ok then
         self:_cleanup_task_waiters(task)
+        release_task_resources(self, task)
         task.status = "failed"
         task.error = error_mod.new("protocol", "task panicked", {
           task_id = task.id,
@@ -700,11 +752,22 @@ function M.install(Host)
           service = task.service,
           error = task.error,
         })
+        log.debug("host task failed", {
+          task_id = task.id,
+          name = task.name,
+          service = task.service,
+          cause = tostring(task.error),
+        })
         self:_wake_task_completion_waiters(task)
+        local final_ok, final_err = run_task_finalizer(self, task)
+        if not final_ok then
+          return nil, final_err
+        end
         goto continue_tasks
       end
       if coroutine.status(task.co) == "dead" then
         self:_cleanup_task_waiters(task)
+        release_task_resources(self, task)
         if result_or_yield == nil and extra then
           task.status = "failed"
           task.error = extra
@@ -714,7 +777,17 @@ function M.install(Host)
             service = task.service,
             error = task.error,
           })
+          log.debug("host task failed", {
+            task_id = task.id,
+            name = task.name,
+            service = task.service,
+            cause = tostring(task.error),
+          })
           self:_wake_task_completion_waiters(task)
+          local final_ok, final_err = run_task_finalizer(self, task)
+          if not final_ok then
+            return nil, final_err
+          end
         else
           task.status = "completed"
           task.result = result_or_yield
@@ -728,7 +801,16 @@ function M.install(Host)
             service = task.service,
             result = task.result,
           })
+          log.debug("host task completed", {
+            task_id = task.id,
+            name = task.name,
+            service = task.service,
+          })
           self:_wake_task_completion_waiters(task)
+          local final_ok, final_err = run_task_finalizer(self, task)
+          if not final_ok then
+            return nil, final_err
+          end
         end
         goto continue_tasks
       end
