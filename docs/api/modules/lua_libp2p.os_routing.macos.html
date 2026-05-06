@@ -31,10 +31,6 @@
   <li><a href="../index.html">Index</a></li>
 </ul>
 
-<h2>Contents</h2>
-<ul>
-<li><a href="#Functions">Functions</a></li>
-</ul>
 
 
 <h2>Modules</h2>
@@ -54,7 +50,7 @@
   <li><a href="../modules/lua_libp2p.datastore.html">lua_libp2p.datastore</a></li>
   <li><a href="../modules/lua_libp2p.datastore.memory.html">lua_libp2p.datastore.memory</a></li>
   <li><a href="../modules/lua_libp2p.datastore.sqlite.html">lua_libp2p.datastore.sqlite</a></li>
-  <li><strong>lua_libp2p.discovery</strong></li>
+  <li><a href="../modules/lua_libp2p.discovery.html">lua_libp2p.discovery</a></li>
   <li><a href="../modules/lua_libp2p.dnsaddr.html">lua_libp2p.dnsaddr</a></li>
   <li><a href="../modules/lua_libp2p.error.html">lua_libp2p.error</a></li>
   <li><a href="../modules/lua_libp2p.host.html">lua_libp2p.host</a></li>
@@ -103,7 +99,7 @@
   <li><a href="../modules/lua_libp2p.operation.html">lua_libp2p.operation</a></li>
   <li><a href="../modules/lua_libp2p.os_routing.html">lua_libp2p.os_routing</a></li>
   <li><a href="../modules/lua_libp2p.os_routing.linux.html">lua_libp2p.os_routing.linux</a></li>
-  <li><a href="../modules/lua_libp2p.os_routing.macos.html">lua_libp2p.os_routing.macos</a></li>
+  <li><strong>lua_libp2p.os_routing.macos</strong></li>
   <li><a href="../modules/lua_libp2p.os_routing.windows.html">lua_libp2p.os_routing.windows</a></li>
   <li><a href="../modules/lua_libp2p.pcp.client.html">lua_libp2p.pcp.client</a></li>
   <li><a href="../modules/lua_libp2p.pcp.service.html">lua_libp2p.pcp.service</a></li>
@@ -145,99 +141,18 @@
 
 <div id="content">
 
-<h1>Module <code>lua_libp2p.discovery</code></h1>
-<p>Discovery source aggregation.</p>
+<h1>Module <code>lua_libp2p.os_routing.macos</code></h1>
+<p>macOS route and neighbor discovery helpers.</p>
 <p>
 
 </p>
 
 
-<h2><a href="#Functions">Functions</a></h2>
-<table class="function_list">
-	<tr>
-	<td class="name" nowrap><a href="#Discovery:discover">Discovery:discover ([opts])</a></td>
-	<td class="summary">Run all discovery sources and merge peer candidates.</td>
-	</tr>
-	<tr>
-	<td class="name" nowrap><a href="#new">new ([opts])</a></td>
-	<td class="summary">Construct a discovery aggregator.</td>
-	</tr>
-</table>
 
 <br/>
 <br/>
 
 
-    <h2 class="section-header "><a name="Functions"></a>Functions</h2>
-
-    <dl class="function">
-    <dt>
-    <a name = "Discovery:discover"></a>
-    <strong>Discovery:discover ([opts])</strong>
-    </dt>
-    <dd>
-    Run all discovery sources and merge peer candidates.
- <code>opts.ignore_source_errors=true</code> skips failing discovery sources.
-
-
-    <h3>Parameters:</h3>
-    <ul>
-        <li><span class="parameter">opts</span>
-            <span class="types"><a class="type" href="https://www.lua.org/manual/5.4/manual.html#6.6">table</a></span>
-
-
-
-         (<em>optional</em>)
-        </li>
-    </ul>
-
-    <h3>Returns:</h3>
-    <ol>
-        <li>
-           <span class="types"><a class="type" href="https://www.lua.org/manual/5.4/manual.html#6.6">table</a> or <span class="type">nil</span></span>
-        peers</li>
-        <li>
-           <span class="types"><a class="type" href="https://www.lua.org/manual/5.4/manual.html#6.6">table</a></span>
-        err</li>
-    </ol>
-
-
-
-
-</dd>
-    <dt>
-    <a name = "new"></a>
-    <strong>new ([opts])</strong>
-    </dt>
-    <dd>
-    Construct a discovery aggregator.
- <code>opts.sources</code> accepts functions or tables exposing <code>discover(opts)</code>.
-
-
-    <h3>Parameters:</h3>
-    <ul>
-        <li><span class="parameter">opts</span>
-            <span class="types"><a class="type" href="https://www.lua.org/manual/5.4/manual.html#6.6">table</a></span>
-         Constructor options.
-         (<em>optional</em>)
-        </li>
-    </ul>
-
-    <h3>Returns:</h3>
-    <ol>
-        <li>
-           <span class="types"><a class="type" href="https://www.lua.org/manual/5.4/manual.html#6.6">table</a> or <span class="type">nil</span></span>
-        discovery</li>
-        <li>
-           <span class="types"><a class="type" href="https://www.lua.org/manual/5.4/manual.html#6.6">table</a></span>
-        err</li>
-    </ol>
-
-
-
-
-</dd>
-</dl>
 
 
 </div> <!-- id="content" -->
