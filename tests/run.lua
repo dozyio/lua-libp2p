@@ -33,6 +33,7 @@ local tests = {
   (require("tests.unit.multiaddr_bytes")),
   (require("tests.unit.multiaddr_vectors")),
   (require("tests.unit.multiaddr_go_deltas")),
+  (require("tests.unit.os_routing")),
   (require("tests.unit.tcp_multiaddr")),
   (require("tests.unit.tcp_luv")),
   (require("tests.unit.address_manager")),
