@@ -444,4 +444,10 @@ if opts.autonat_server and h.autonat then
 end
 
 h:sleep(opts.duration, { poll_interval = 0.05 })
+
+print("listen addrs before stop:")
+for _, addr in ipairs(h:get_multiaddrs()) do
+	print("  " .. tostring(addr))
+end
+
 h:stop()

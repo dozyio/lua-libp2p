@@ -3,6 +3,7 @@
 local error_mod = require("lua_libp2p.error")
 local log = require("lua_libp2p.log").subsystem("pcp")
 local multiaddr = require("lua_libp2p.multiaddr")
+local os_routing = require("lua_libp2p.os_routing")
 local pcp_client = require("lua_libp2p.pcp.client")
 
 local M = {}
@@ -89,9 +90,68 @@ function Service:_client()
   return c
 end
 
-function Service:_eligible_addrs()
+function Service:_client_for_gateway(gateway)
+  if self.client then
+    return self.client
+  end
+  local c, err = pcp_client.new({
+    gateway = gateway,
+    timeout = self.timeout,
+    retries = self.retries,
+  })
+  if not c then
+    return nil, err
+  end
+  if gateway == self.gateway then
+    self.client = c
+  end
+  return c
+end
+
+function Service:_gateway_candidates()
+  local seen = {}
   local out = {}
-  local gateway_is_v6 = is_ipv6(self.gateway)
+  local function add(gateway)
+    if type(gateway) ~= "string" or gateway == "" or seen[gateway] then
+      return
+    end
+    seen[gateway] = true
+    out[#out + 1] = gateway
+  end
+
+  if type(self._selected_gateway) == "string" and self._selected_gateway ~= "" then
+    add(self._selected_gateway)
+  end
+  if type(self.gateway) == "string" and self.gateway ~= "" and self.gateway ~= "auto" then
+    add(self.gateway)
+    return out
+  end
+
+  local snapshot, snapshot_err = self.os_routing.snapshot()
+  if not snapshot then
+    return nil, snapshot_err
+  end
+  if snapshot.default_route_v6 and snapshot.default_route_v6.gateway then
+    add(snapshot.default_route_v6.gateway)
+  end
+  for _, candidate in ipairs(snapshot.router_candidates_v6 or {}) do
+    add(candidate.gateway)
+  end
+  if snapshot.default_route_v4 and snapshot.default_route_v4.gateway then
+    add(snapshot.default_route_v4.gateway)
+  end
+  add("2001:1::1")
+  add("192.0.0.9")
+
+  if #out == 0 then
+    return nil, error_mod.new("state", "no PCP gateway candidates available")
+  end
+  return out
+end
+
+function Service:_eligible_addrs(gateway)
+  local out = {}
+  local gateway_is_v6 = is_ipv6(gateway)
   local required_ip_proto = gateway_is_v6 and "ip6" or "ip4"
   local source = {}
   if self.host and self.host.address_manager then
@@ -127,7 +187,7 @@ function Service:_eligible_addrs()
   end
   log.debug("pcp eligible addresses selected", {
     candidates = #out,
-    gateway = self.gateway,
+    gateway = gateway,
   })
   return out
 end
@@ -148,32 +208,34 @@ function Service:map_ip_addresses()
     gateway = self.gateway,
     ttl = self.ttl,
   })
-  local client, client_err = self:_client()
-  if not client then
+
+  local gateways, gateways_err = self:_gateway_candidates()
+  if not gateways then
     self._mapping_in_progress = false
-    self.last_error = client_err
-    emit_event(self.host, "pcp:mapping:failed", { error = client_err, error_message = tostring(client_err) })
-    return nil, client_err
-  end
-  local candidates = self:_eligible_addrs()
-  if #candidates == 0 then
-    local err = error_mod.new("state", "no eligible private tcp transport addresses for PCP mapping")
-    self.last_error = err
-    log.debug("pcp mapping refresh skipped", {
-      gateway = self.gateway,
-      reason = "no_eligible_addresses",
-    })
-    emit_event(self.host, "pcp:mapping:failed", { error = err, error_message = tostring(err) })
-    self._mapping_in_progress = false
-    return {}, nil
+    self.last_error = gateways_err
+    emit_event(self.host, "pcp:mapping:failed", { error = gateways_err, error_message = tostring(gateways_err) })
+    return nil, gateways_err
   end
 
   local mapped = {}
-  for _, addr in ipairs(candidates) do
+  local last_err = nil
+  local had_candidates = false
+  for _, gateway in ipairs(gateways) do
+    local candidates = self:_eligible_addrs(gateway)
+    if #candidates == 0 then
+      goto continue_gateway
+    end
+    had_candidates = true
+    local client, client_err = self:_client_for_gateway(gateway)
+    if not client then
+      last_err = client_err
+      goto continue_gateway
+    end
+    for _, addr in ipairs(candidates) do
     local key = mapping_key("tcp", addr.ip, addr.port)
     if self.mappings[key] then
       log.debug("pcp mapping skipped", {
-        gateway = self.gateway,
+        gateway = gateway,
         internal_client = addr.ip,
         internal_port = addr.port,
         reason = "already_mapped",
@@ -183,7 +245,7 @@ function Service:map_ip_addresses()
     local requested_external_port = self.external_port or addr.port
     local suggested_external_ip = addr.ip_proto == "ip6" and "::" or "0.0.0.0"
     log.debug("pcp mapping attempt", {
-      gateway = self.gateway,
+      gateway = gateway,
       internal_client = addr.ip,
       internal_port = addr.port,
       protocol = "tcp",
@@ -210,10 +272,11 @@ function Service:map_ip_addresses()
         self.host.address_manager:add_public_address_mapping(info)
       end
       self.last_error = nil
+      self._selected_gateway = gateway
       self.mappings[key] = info
       mapped[#mapped + 1] = info
       log.info("pcp mapping active", {
-        gateway = self.gateway,
+        gateway = gateway,
         internal_client = addr.ip,
         internal_port = addr.port,
         external_addr = ext_addr,
@@ -225,8 +288,9 @@ function Service:map_ip_addresses()
       end
     else
       self.last_error = map_err
+      last_err = map_err
       log.warn("pcp mapping failed", {
-        gateway = self.gateway,
+        gateway = gateway,
         internal_client = addr.ip,
         internal_port = addr.port,
         cause = tostring(map_err),
@@ -239,11 +303,29 @@ function Service:map_ip_addresses()
       })
     end
     ::continue_map::
+    end
+    ::continue_gateway::
   end
+
+  if not had_candidates then
+    local err = error_mod.new("state", "no eligible private tcp transport addresses for PCP mapping")
+    self.last_error = err
+    log.debug("pcp mapping refresh skipped", {
+      gateway = self.gateway,
+      reason = "no_eligible_addresses",
+    })
+    emit_event(self.host, "pcp:mapping:failed", { error = err, error_message = tostring(err) })
+    self._mapping_in_progress = false
+    return {}, nil
+  end
+  if #mapped == 0 and last_err ~= nil then
+    self.last_error = last_err
+  end
+
   log.debug("pcp mapping refresh completed", {
     gateway = self.gateway,
     mapped = #mapped,
-    candidates = #candidates,
+    candidates = #gateways,
   })
   self._mapping_in_progress = false
   return mapped
@@ -280,23 +362,24 @@ function Service:start()
     return true
   end
 
-  if self.initial_map_delay_seconds and self.initial_map_delay_seconds > 0
-    and self.host and type(self.host.spawn_task) == "function"
-  then
-    local delay = self.initial_map_delay_seconds
-    local task, task_err = self.host:spawn_task("pcp.initial_map_delay", function(ctx)
+  if self.host and type(self.host.spawn_task) == "function" then
+    local delay = tonumber(self.initial_map_delay_seconds) or 0
+    local task, task_err = self.host:spawn_task("pcp.initial_map", function(ctx)
       log.debug("pcp initial mapping delayed", {
         delay_seconds = delay,
       })
-      local ok, sleep_err = ctx:sleep(delay)
-      if ok == nil and sleep_err then
-        return nil, sleep_err
+      if delay > 0 then
+        local ok, sleep_err = ctx:sleep(delay)
+        if ok == nil and sleep_err then
+          return nil, sleep_err
+        end
       end
       return run_initial_map()
     end, { service = "pcp" })
     if not task then
       return nil, task_err
     end
+    self._initial_map_task = task
     return true
   end
 
@@ -307,6 +390,10 @@ end
 -- @treturn true
 function Service:stop()
   self.started = false
+  if self._initial_map_task and self.host and type(self.host.cancel_task) == "function" then
+    self.host:cancel_task(self._initial_map_task.id)
+  end
+  self._initial_map_task = nil
   log.debug("pcp service stopped", {
     mappings = (function()
       local n = 0
@@ -327,10 +414,10 @@ function Service:stop()
 end
 
 --- Build a PCP service instance.
--- Common `opts`: `gateway` (required), `client`, `internal_client`,
+-- Common `opts`: `gateway` (optional, defaults to `"auto"`), `client`, `internal_client`,
 -- `external_port`, `timeout`, `retries`, `ttl`, `auto_confirm_address`,
 -- `fail_on_start_error`, `map_on_self_peer_update`, and `initial_map_delay_seconds`.
--- `opts.gateway` must be a router IP string.
+-- `opts.gateway` may be a router IP string or `"auto"`.
 -- `opts.timeout` defaults to `0.25`, `opts.retries` defaults to `6`, `opts.ttl` defaults to `7200`.
 -- @tparam table host Host instance.
 -- @tparam[opt] table opts
@@ -341,13 +428,12 @@ function M.new(host, opts)
     return nil, error_mod.new("input", "pcp service requires host")
   end
   local options = opts or {}
-  if type(options.gateway) ~= "string" or options.gateway == "" then
-    return nil, error_mod.new("input", "pcp service requires config.gateway")
-  end
   return setmetatable({
     host = host,
     client = options.client,
-    gateway = options.gateway,
+    gateway = options.gateway or "auto",
+    os_routing = options.os_routing or os_routing,
+    _selected_gateway = nil,
     internal_client = options.internal_client,
     external_port = options.external_port,
     timeout = options.timeout or 0.25,
@@ -357,6 +443,7 @@ function M.new(host, opts)
     fail_on_start_error = options.fail_on_start_error == true,
     map_on_self_peer_update = options.map_on_self_peer_update ~= false,
     initial_map_delay_seconds = tonumber(options.initial_map_delay_seconds) or 0,
+    _initial_map_task = nil,
     mappings = {},
     started = false,
   }, Service)

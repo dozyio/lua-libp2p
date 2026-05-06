@@ -4,19 +4,14 @@
 local error_mod = require("lua_libp2p.error")
 local multiaddr = require("lua_libp2p.multiaddr")
 local relay_proto = require("lua_libp2p.transport_circuit_relay_v2.protocol")
+local table_utils = require("lua_libp2p.util.tables")
 
 local M = {}
 
 local Client = {}
 Client.__index = Client
 
-local function copy_list(values)
-  local out = {}
-  for i, value in ipairs(values or {}) do
-    out[i] = value
-  end
-  return out
-end
+local copy_list = table_utils.copy_list
 
 local function peer_id_from_addr(addr)
   local parsed = multiaddr.parse(addr)

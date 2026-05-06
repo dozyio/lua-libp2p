@@ -2,16 +2,11 @@
 -- @module lua_libp2p.host.advertise
 local log = require("lua_libp2p.log").subsystem("host")
 local multiaddr = require("lua_libp2p.multiaddr")
+local table_utils = require("lua_libp2p.util.tables")
 
 local M = {}
 
-local function list_copy(values)
-  local out = {}
-  for i, v in ipairs(values or {}) do
-    out[i] = v
-  end
-  return out
-end
+local list_copy = table_utils.copy_list
 
 local function list_equal(a, b)
   if #a ~= #b then

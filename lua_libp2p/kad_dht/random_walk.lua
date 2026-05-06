@@ -1,7 +1,6 @@
 --- KAD-DHT random-walk routing table refresh.
 -- @module lua_libp2p.kad_dht.random_walk
 local error_mod = require("lua_libp2p.error")
-local multiaddr = require("lua_libp2p.multiaddr")
 local operation = require("lua_libp2p.operation")
 local protocol = require("lua_libp2p.kad_dht.protocol")
 local query = require("lua_libp2p.kad_dht.query")
@@ -10,27 +9,6 @@ local M = {}
 
 local function is_capacity_error(err)
   return error_mod.is_error(err) and err.kind == "capacity"
-end
-
-local function is_dialable_tcp_addr(addr)
-  local parsed = multiaddr.parse(addr)
-  if not parsed or type(parsed.components) ~= "table" or #parsed.components < 2 then return false end
-  local host_part = parsed.components[1]
-  local tcp_part = parsed.components[2]
-  if host_part.protocol ~= "ip4" and host_part.protocol ~= "dns" and host_part.protocol ~= "dns4" and host_part.protocol ~= "dns6" then return false end
-  if tcp_part.protocol ~= "tcp" then return false end
-  for i = 3, #parsed.components do
-    if parsed.components[i].protocol ~= "p2p" then return false end
-  end
-  return true
-end
-
-local function dialable_tcp_addrs(addrs)
-  local out = {}
-  for _, addr in ipairs(addrs or {}) do
-    if is_dialable_tcp_addr(addr) then out[#out + 1] = addr end
-  end
-  return out
 end
 
 --- Execute a random walk immediately and return its report.
@@ -63,7 +41,14 @@ function M.run(dht, opts)
       initial_peer_ids[entry.peer_id] = true
       local addrs = {}
       if dht.host and dht.host.peerstore then
-        addrs = dialable_tcp_addrs(dht:_filter_addrs(dht.host.peerstore:get_addrs(entry.peer_id), { peer_id = entry.peer_id, purpose = "random_walk_seed" }))
+        local filtered, filtered_err = dht:_dialable_tcp_addrs(dht:_filter_addrs(dht.host.peerstore:get_addrs(entry.peer_id), {
+          peer_id = entry.peer_id,
+          purpose = "random_walk_seed",
+        }))
+        if not filtered then
+          return nil, filtered_err
+        end
+        addrs = filtered
       end
       if #addrs > 0 then
         seeds[#seeds + 1] = { peer_id = entry.peer_id, addrs = addrs }
@@ -113,7 +98,14 @@ function M.run(dht, opts)
   local function enqueue(path_index, peer, referrer_distance)
     if not peer or not peer.peer_id or peer.peer_id == dht.local_peer_id then return end
     if queued[peer.peer_id] or queried_peers[peer.peer_id] then return end
-    if peer.addrs ~= nil and type(peer.addrs) == "table" and #dialable_tcp_addrs(dht:_filter_addrs(peer.addrs, { peer_id = peer.peer_id, purpose = "random_walk_enqueue" })) == 0 then return end
+    if peer.addrs ~= nil and type(peer.addrs) == "table" then
+      local filtered, filtered_err = dht:_dialable_tcp_addrs(dht:_filter_addrs(peer.addrs, { peer_id = peer.peer_id, purpose = "random_walk_enqueue" }))
+      if not filtered then
+        if not options.ignore_add_errors then report.errors[#report.errors + 1] = filtered_err end
+        return
+      end
+      if #filtered == 0 then return end
+    end
     local distance, distance_err = dht:_distance_to_target(peer.peer_id, target_hash)
     if not distance then
       if not options.ignore_add_errors then report.errors[#report.errors + 1] = distance_err end

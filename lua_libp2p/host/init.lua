@@ -8,6 +8,7 @@ local keys = require("lua_libp2p.crypto.keys")
 local error_mod = require("lua_libp2p.error")
 local log = require("lua_libp2p.log").subsystem("host")
 local host_advertise = require("lua_libp2p.host.advertise")
+local host_address_policy = require("lua_libp2p.host.address_policy")
 local host_bootstrap = require("lua_libp2p.host.bootstrap")
 local host_connections = require("lua_libp2p.host.connections")
 local host_dialer = require("lua_libp2p.host.dialer")
@@ -22,24 +23,20 @@ local host_runtime_luv_native = require("lua_libp2p.host.runtime_luv_native")
 local peerstore = require("lua_libp2p.peerstore")
 local resource_manager = require("lua_libp2p.resource_manager")
 local relay_proto = require("lua_libp2p.transport_circuit_relay_v2.protocol")
+local table_utils = require("lua_libp2p.util.tables")
 local upgrader = require("lua_libp2p.network.upgrader")
 local tcp_luv = require("lua_libp2p.transport_tcp.luv")
 
 local M = {}
 
-local function list_copy(values)
-  local out = {}
-  for i, v in ipairs(values or {}) do
-    out[i] = v
-  end
-  return out
-end
+local list_copy = table_utils.copy_list
 
 local emit_event = host_events.emit
 
 local Host = {}
 Host.__index = Host
 host_advertise.install(Host)
+host_address_policy.install(Host)
 host_bootstrap.install(Host)
 host_connections.install(Host)
 host_dialer.install(Host)

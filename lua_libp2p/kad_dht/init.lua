@@ -691,38 +691,6 @@ local function decode_kad_multiaddrs(addrs)
   return out
 end
 
-local function is_dialable_tcp_addr(addr)
-  local parsed = multiaddr.parse(addr)
-  if not parsed or type(parsed.components) ~= "table" or #parsed.components < 2 then
-    return false
-  end
-  local host_part = parsed.components[1]
-  local tcp_part = parsed.components[2]
-  if host_part.protocol ~= "ip4" and host_part.protocol ~= "dns" and host_part.protocol ~= "dns4" and host_part.protocol ~= "dns6" then
-    return false
-  end
-  if tcp_part.protocol ~= "tcp" then
-    return false
-  end
-  for i = 3, #parsed.components do
-    local proto = parsed.components[i].protocol
-    if proto ~= "p2p" then
-      return false
-    end
-  end
-  return true
-end
-
-local function dialable_tcp_addrs(addrs)
-  local out = {}
-  for _, addr in ipairs(addrs or {}) do
-    if is_dialable_tcp_addr(addr) then
-      out[#out + 1] = addr
-    end
-  end
-  return out
-end
-
 local function is_capacity_error(err)
   return error_mod.is_error(err) and err.kind == "capacity"
 end
@@ -769,6 +737,20 @@ function DHT:_filter_addrs(addrs, ctx)
     end
   end
   return out
+end
+
+function DHT:_dialable_tcp_addrs(addrs)
+  if self.host and type(self.host.filter_dialable_addrs) == "function" then
+    return self.host:filter_dialable_addrs(addrs)
+  end
+  return nil, error_mod.new("state", "kad dht host must provide filter_dialable_addrs")
+end
+
+function DHT:_is_dialable_addr(addr)
+  if self.host and type(self.host.is_dialable_addr) == "function" then
+    return self.host:is_dialable_addr(addr)
+  end
+  return nil, error_mod.new("state", "kad dht host must provide is_dialable_addr")
 end
 
 local function find_node_target_peer_id(target_key)
@@ -1233,10 +1215,14 @@ local function seed_candidates_from_routing_table(self, key, count)
   for _, entry in ipairs(nearest) do
     local addrs = {}
     if self.host and self.host.peerstore then
-      addrs = dialable_tcp_addrs(self:_filter_addrs(self.host.peerstore:get_addrs(entry.peer_id), {
+      local filtered, filtered_err = self:_dialable_tcp_addrs(self:_filter_addrs(self.host.peerstore:get_addrs(entry.peer_id), {
         peer_id = entry.peer_id,
         purpose = "client_query_seed",
       }))
+      if not filtered then
+        return nil, filtered_err
+      end
+      addrs = filtered
     end
     if #addrs > 0 then
       out[#out + 1] = { peer_id = entry.peer_id, addrs = addrs }
@@ -1270,7 +1256,14 @@ end
 -- `opts` forwarded to @{_run_client_lookup} and query functions.
 function DHT:_get_closest_peers(key, opts)
   local options = opts or {}
-  local lookup, lookup_err = self:_run_client_lookup(key, options.peers or seed_candidates_from_routing_table(self, key, self.k), function(peer, ctx)
+  local seed_peers = options.peers
+  if not seed_peers then
+    seed_peers, lookup_err = seed_candidates_from_routing_table(self, key, self.k)
+    if not seed_peers then
+      return nil, lookup_err
+    end
+  end
+  local lookup, lookup_err = self:_run_client_lookup(key, seed_peers, function(peer, ctx)
     local query_options = options
     if ctx then
       query_options = {}

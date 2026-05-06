@@ -4,6 +4,7 @@ local error_mod = require("lua_libp2p.error")
 local log = require("lua_libp2p.log").subsystem("autonat")
 local multiaddr = require("lua_libp2p.multiaddr")
 local autonat_proto = require("lua_libp2p.protocol.autonat_v2")
+local table_utils = require("lua_libp2p.util.tables")
 
 local M = {}
 M.provides = { "autonat" }
@@ -19,13 +20,7 @@ local DEFAULT_CHECKED_PEER_COOLDOWN = 30
 local Client = {}
 Client.__index = Client
 
-local function copy_list(values)
-  local out = {}
-  for i, value in ipairs(values or {}) do
-    out[i] = value
-  end
-  return out
-end
+local copy_list = table_utils.copy_list
 
 local function nonce()
   local hi = math.random(0, 0x1fffff)

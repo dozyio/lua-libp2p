@@ -1,6 +1,7 @@
 --- Address manager and advertisement policy.
 -- @module lua_libp2p.address_manager
 local multiaddr = require("lua_libp2p.multiaddr")
+local table_utils = require("lua_libp2p.util.tables")
 
 local M = {}
 
@@ -9,13 +10,7 @@ AddressManager.__index = AddressManager
 
 local LISTEN_ADDR_EXPANSION_CACHE_TTL = 60
 
-local function copy_list(values)
-  local out = {}
-  for i, value in ipairs(values or {}) do
-    out[i] = value
-  end
-  return out
-end
+local copy_list = table_utils.copy_list
 
 local function add_unique(out, seen, addr)
   if type(addr) ~= "string" or addr == "" or seen[addr] then

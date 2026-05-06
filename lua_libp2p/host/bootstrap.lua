@@ -154,6 +154,9 @@ function M.install(Host)
 
     local peers, discover_err = self.peer_discovery:discover({
       dialable_only = true,
+      addr_filter = function(addr)
+        return self:is_dialable_addr(addr)
+      end,
       ignore_resolve_errors = true,
       ignore_source_errors = true,
     })

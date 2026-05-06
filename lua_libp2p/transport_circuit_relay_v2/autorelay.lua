@@ -7,6 +7,7 @@ local multiaddr = require("lua_libp2p.multiaddr")
 local ping = require("lua_libp2p.protocol_ping.protocol")
 local relay_client = require("lua_libp2p.transport_circuit_relay_v2.client")
 local relay_proto = require("lua_libp2p.transport_circuit_relay_v2.protocol")
+local table_utils = require("lua_libp2p.util.tables")
 
 local M = {}
 M.provides = { "autorelay" }
@@ -17,13 +18,7 @@ M.DEFAULT_KEEPALIVE_INTERVAL = 30
 local AutoRelay = {}
 AutoRelay.__index = AutoRelay
 
-local function copy_list(values)
-  local out = {}
-  for i, value in ipairs(values or {}) do
-    out[i] = value
-  end
-  return out
-end
+local copy_list = table_utils.copy_list
 
 local function target_peer_id(target)
   if type(target) == "string" then

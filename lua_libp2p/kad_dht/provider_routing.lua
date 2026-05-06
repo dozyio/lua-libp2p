@@ -174,47 +174,20 @@ function M.get_providers(dht, peer_or_addr, key, opts)
   return { providers = providers, provider_peers = providers, closer_peers = closer, key = response.key }
 end
 
-local function is_dialable_tcp_addr(addr)
-  local parsed = multiaddr.parse(addr)
-  if not parsed or type(parsed.components) ~= "table" or #parsed.components < 2 then
-    return false
-  end
-  local host_part = parsed.components[1]
-  local tcp_part = parsed.components[2]
-  if host_part.protocol ~= "ip4" and host_part.protocol ~= "dns" and host_part.protocol ~= "dns4" and host_part.protocol ~= "dns6" then
-    return false
-  end
-  if tcp_part.protocol ~= "tcp" then
-    return false
-  end
-  for i = 3, #parsed.components do
-    if parsed.components[i].protocol ~= "p2p" then
-      return false
-    end
-  end
-  return true
-end
-
-local function dialable_tcp_addrs(addrs)
-  local out = {}
-  for _, addr in ipairs(addrs or {}) do
-    if is_dialable_tcp_addr(addr) then
-      out[#out + 1] = addr
-    end
-  end
-  return out
-end
-
 local function seed_candidates_from_routing_table(dht, key, count)
   local nearest = dht:find_closest_peers(key, count or dht.k) or {}
   local out = {}
   for _, entry in ipairs(nearest) do
     local addrs = {}
     if dht.host and dht.host.peerstore then
-      addrs = dialable_tcp_addrs(dht:_filter_addrs(dht.host.peerstore:get_addrs(entry.peer_id), {
+      local filtered, filtered_err = dht:_dialable_tcp_addrs(dht:_filter_addrs(dht.host.peerstore:get_addrs(entry.peer_id), {
         peer_id = entry.peer_id,
         purpose = "client_query_seed",
       }))
+      if not filtered then
+        return nil, filtered_err
+      end
+      addrs = filtered
     end
     if #addrs > 0 then
       out[#out + 1] = { peer_id = entry.peer_id, addrs = addrs }
@@ -232,7 +205,14 @@ function M.find_providers(dht, key, opts)
     limit = options.limit or 1,
   })
   local providers = {}
-  local lookup, lookup_err = dht:_run_client_lookup(key, options.peers or seed_candidates_from_routing_table(dht, key, dht.k), function(peer, ctx)
+  local seed_peers = options.peers
+  if not seed_peers then
+    seed_peers, lookup_err = seed_candidates_from_routing_table(dht, key, dht.k)
+    if not seed_peers then
+      return nil, lookup_err
+    end
+  end
+  local lookup, lookup_err = dht:_run_client_lookup(key, seed_peers, function(peer, ctx)
     local query_options = options
     if ctx then
       query_options = {}

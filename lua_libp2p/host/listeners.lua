@@ -2,14 +2,9 @@
 -- @module lua_libp2p.host.listeners
 local M = {}
 local log = require("lua_libp2p.log").subsystem("host")
+local table_utils = require("lua_libp2p.util.tables")
 
-local function list_copy(values)
-  local out = {}
-  for i, v in ipairs(values or {}) do
-    out[i] = v
-  end
-  return out
-end
+local list_copy = table_utils.copy_list
 
 local function close_all(listeners)
   for _, listener in ipairs(listeners or {}) do

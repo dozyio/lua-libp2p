@@ -2,7 +2,6 @@
 -- @module lua_libp2p.kad_dht.query
 local error_mod = require("lua_libp2p.error")
 local log = require("lua_libp2p.log").subsystem("kad_dht")
-local multiaddr = require("lua_libp2p.multiaddr")
 local protocol = require("lua_libp2p.kad_dht.protocol")
 
 local M = {}
@@ -19,29 +18,6 @@ function M.compare_distance(left, right)
   if #left < #right then return -1 end
   if #left > #right then return 1 end
   return 0
-end
-
-local function is_dialable_tcp_addr(addr)
-  local parsed = multiaddr.parse(addr)
-  if not parsed or type(parsed.components) ~= "table" or #parsed.components < 2 then return false end
-  local host_part = parsed.components[1]
-  local tcp_part = parsed.components[2]
-  if host_part.protocol ~= "ip4" and host_part.protocol ~= "dns" and host_part.protocol ~= "dns4" and host_part.protocol ~= "dns6" then
-    return false
-  end
-  if tcp_part.protocol ~= "tcp" then return false end
-  for i = 3, #parsed.components do
-    if parsed.components[i].protocol ~= "p2p" then return false end
-  end
-  return true
-end
-
-local function dialable_tcp_addrs(addrs)
-  local out = {}
-  for _, addr in ipairs(addrs or {}) do
-    if is_dialable_tcp_addr(addr) then out[#out + 1] = addr end
-  end
-  return out
 end
 
 local function add_error_fields(out, prefix, err, depth)
@@ -132,12 +108,20 @@ function M.run_client_lookup(dht, key, seed_peers, query_func, opts)
       end
       if allowed_or_err == false then return end
     end
-    local addrs = dialable_tcp_addrs(peer.addrs or (peer.addr and { peer.addr }) or {})
+    local addrs, addrs_err = dht:_dialable_tcp_addrs(peer.addrs or (peer.addr and { peer.addr }) or {})
+    if not addrs then
+      filter_errors[#filter_errors + 1] = addrs_err
+      return
+    end
     if #addrs == 0 and dht.host and dht.host.peerstore then
-      addrs = dialable_tcp_addrs(dht:_filter_addrs(dht.host.peerstore:get_addrs(peer.peer_id), {
+      addrs, addrs_err = dht:_dialable_tcp_addrs(dht:_filter_addrs(dht.host.peerstore:get_addrs(peer.peer_id), {
         peer_id = peer.peer_id,
         purpose = "client_query_enqueue",
       }))
+      if not addrs then
+        filter_errors[#filter_errors + 1] = addrs_err
+        return
+      end
     end
     local has_connection = dht.host and type(dht.host._find_connection) == "function" and dht.host:_find_connection(peer.peer_id) ~= nil
     if #addrs == 0 and dht.host and dht.host.peerstore and not has_connection then return end

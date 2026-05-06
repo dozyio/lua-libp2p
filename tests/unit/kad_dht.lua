@@ -17,12 +17,56 @@ local function fake_hash(value)
   return map[value] or (string.char(255) .. string.rep("\0", 31))
 end
 
+local function attach_dial_policy(host_obj)
+  host_obj.listen_addrs = host_obj.listen_addrs or { "/ip4/0.0.0.0/tcp/4001", "/ip6/::/tcp/4001" }
+  function host_obj:_dialable_ip_families()
+    local allow_ip4 = false
+    local allow_ip6 = false
+    for _, addr in ipairs(self.listen_addrs or {}) do
+      if addr:sub(1, 5) == "/ip4/" then
+        allow_ip4 = true
+      elseif addr:sub(1, 5) == "/ip6/" then
+        allow_ip6 = true
+      end
+    end
+    if not allow_ip4 and not allow_ip6 then
+      return true, true
+    end
+    return allow_ip4, allow_ip6
+  end
+  function host_obj:is_dialable_addr(addr)
+    local allow_ip4, allow_ip6 = self:_dialable_ip_families()
+    if addr:sub(1, 5) == "/ip4/" then
+      return allow_ip4
+    elseif addr:sub(1, 5) == "/ip6/" then
+      return allow_ip6
+    elseif addr:sub(1, 6) == "/dns4/" then
+      return allow_ip4
+    elseif addr:sub(1, 6) == "/dns6/" then
+      return allow_ip6
+    elseif addr:sub(1, 5) == "/dns/" then
+      return allow_ip4 or allow_ip6
+    end
+    return false
+  end
+  function host_obj:filter_dialable_addrs(addrs)
+    local out = {}
+    for _, addr in ipairs(addrs or {}) do
+      if self:is_dialable_addr(addr) then
+        out[#out + 1] = addr
+      end
+    end
+    return out
+  end
+end
+
 local function run()
   local wire_peer_id = "QmaCpDMGvV2BGHeYERUEnRQAwe3N8SzbUtfsmvsqQLuvuJ"
   local handled_protocol = nil
   local registered_handler = nil
   local host = {
     _peer = { id = "local" },
+    listen_addrs = { "/ip4/0.0.0.0/tcp/4001", "/ip6/::/tcp/4001" },
     peerstore = {
       addrs = {
         ["peer-a"] = { "/ip4/8.8.8.8/tcp/4001" },
@@ -30,6 +74,7 @@ local function run()
       },
     },
   }
+  attach_dial_policy(host)
 
   function host:peer_id()
     return self._peer
@@ -45,6 +90,7 @@ local function run()
     end
     return true
   end
+
 
   function host:handle(protocol_id, handler)
     handled_protocol = protocol_id
@@ -145,10 +191,59 @@ local function run()
     return nil, "custom address filter should be applied with context"
   end
 
+  host.listen_addrs = { "/ip4/0.0.0.0/tcp/4001" }
+  local ip4_only = dht:_dialable_tcp_addrs({
+    "/ip4/8.8.8.8/tcp/4001",
+    "/ip6/2001:db8::1/tcp/4001",
+    "/dns4/bootstrap.libp2p.io/tcp/4001",
+    "/dns6/bootstrap.libp2p.io/tcp/4001",
+  })
+  if #ip4_only ~= 2 or ip4_only[1] ~= "/ip4/8.8.8.8/tcp/4001" or ip4_only[2] ~= "/dns4/bootstrap.libp2p.io/tcp/4001" then
+    return nil, "dialable address filter should keep only ipv4-compatible addrs for ipv4-only listeners"
+  end
+
+  host.listen_addrs = { "/ip6/::/tcp/4001" }
+  local ip6_only = dht:_dialable_tcp_addrs({
+    "/ip4/8.8.8.8/tcp/4001",
+    "/ip6/2001:db8::1/tcp/4001",
+    "/dns4/bootstrap.libp2p.io/tcp/4001",
+    "/dns6/bootstrap.libp2p.io/tcp/4001",
+  })
+  if #ip6_only ~= 2 or ip6_only[1] ~= "/ip6/2001:db8::1/tcp/4001" or ip6_only[2] ~= "/dns6/bootstrap.libp2p.io/tcp/4001" then
+    return nil, "dialable address filter should keep only ipv6-compatible addrs for ipv6-only listeners"
+  end
+
+  host.listen_addrs = { "/ip4/0.0.0.0/tcp/4001", "/ip6/::/tcp/4001" }
+  local dual_stack = dht:_dialable_tcp_addrs({
+    "/ip4/8.8.8.8/tcp/4001",
+    "/ip6/2001:db8::1/tcp/4001",
+    "/dns/bootstrap.libp2p.io/tcp/4001",
+  })
+  if #dual_stack ~= 3 then
+    return nil, "dialable address filter should keep both families for dual-stack listeners"
+  end
+
+  local host_without_policy = {
+    _peer = { id = "local" },
+    peerstore = host.peerstore,
+  }
+  function host_without_policy:peer_id()
+    return self._peer
+  end
+  local strict_dht = assert(kad_dht.new(host_without_policy, {
+    hash_function = fake_hash,
+    address_filter = "all",
+  }))
+  local strict_filtered, strict_err = strict_dht:_dialable_tcp_addrs({ "/ip4/8.8.8.8/tcp/4001" })
+  if strict_filtered ~= nil or not strict_err or strict_err.kind ~= "state" then
+    return nil, "kad dht should require host filter_dialable_addrs policy helper"
+  end
+
   local client_handled_protocol = nil
   local client_host = {
     _peer = { id = "local" },
   }
+  attach_dial_policy(client_host)
   function client_host:peer_id()
     return self._peer
   end
@@ -181,6 +276,7 @@ local function run()
   local auto_self_callback = nil
   local auto_mode_events = {}
   local auto_host = { _peer = { id = "local" } }
+  attach_dial_policy(auto_host)
   function auto_host:peer_id()
     return self._peer
   end
@@ -437,6 +533,7 @@ local function run()
   local op_host = {
     _peer = { id = "local" },
   }
+  attach_dial_policy(op_host)
   function op_host:peer_id()
     return self._peer
   end
@@ -532,6 +629,7 @@ local function run()
   local scheduler_host = {
     _peer = { id = "local" },
   }
+  attach_dial_policy(scheduler_host)
   function scheduler_host:peer_id()
     return self._peer
   end
