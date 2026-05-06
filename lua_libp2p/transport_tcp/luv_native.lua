@@ -182,6 +182,28 @@ local function configure_tcp_socket(tcp, opts)
   enable_tcp_keepalive(tcp, options.keepalive, options.keepalive_initial_delay)
 end
 
+local function bind_listener_socket(server, host, port)
+  local is_ipv6 = parse_ipv6(host) ~= nil
+  if is_ipv6 then
+    local flags = nil
+    if uv and uv.constants and type(uv.constants.TCP_IPV6ONLY) == "number" then
+      flags = uv.constants.TCP_IPV6ONLY
+    end
+    if flags ~= nil then
+      local ok, bind_ok, bind_err = pcall(server.bind, server, host, port, flags)
+      if ok then
+        return bind_ok, bind_err
+      end
+      log.debug("tcp listen ipv6only bind unsupported, falling back", {
+        host = host,
+        port = port,
+        cause = tostring(bind_ok),
+      })
+    end
+  end
+  return server:bind(host, port)
+end
+
 local function yield_if_possible(reason, ctx)
   if ctx then
     if reason and reason.type == "read" and type(ctx.wait_read) == "function" then
@@ -842,7 +864,7 @@ function M.listen(target, opts)
     port = port,
   })
   local server = uv.new_tcp()
-  local ok, bind_err = server:bind(normalized_host, port)
+  local ok, bind_err = bind_listener_socket(server, normalized_host, port)
   if not ok then
     log.debug("tcp listen failed", {
       host = normalized_host,

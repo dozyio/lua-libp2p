@@ -2,6 +2,7 @@
 -- @module lua_libp2p.host.listeners
 local M = {}
 local log = require("lua_libp2p.log").subsystem("host")
+local multiaddr = require("lua_libp2p.multiaddr")
 local table_utils = require("lua_libp2p.util.tables")
 
 local list_copy = table_utils.copy_list
@@ -12,6 +13,50 @@ local function close_all(listeners)
       listener:close()
     end
   end
+end
+
+local function verify_bound_targets(targets, bound_addrs)
+  local bound = {}
+  for _, addr in ipairs(bound_addrs or {}) do
+    local parsed = multiaddr.parse(addr)
+    if parsed then
+      local endpoint = multiaddr.to_tcp_endpoint(parsed)
+      if endpoint and endpoint.host and endpoint.port then
+        local family = endpoint.host:find(":", 1, true) and "ip6" or "ip4"
+        bound[#bound + 1] = {
+          family = family,
+          port = endpoint.port,
+          addr = addr,
+        }
+      end
+    end
+  end
+
+  for _, target in ipairs(targets or {}) do
+    local parsed = multiaddr.parse(target)
+    if parsed then
+      local host_proto = parsed.components and parsed.components[1] and parsed.components[1].protocol or nil
+      if host_proto ~= "ip4" and host_proto ~= "ip6" then
+        goto continue_target
+      end
+      local endpoint = multiaddr.to_tcp_endpoint(parsed)
+      if endpoint and endpoint.host and endpoint.port then
+        local family = host_proto
+        local matched = false
+        for _, b in ipairs(bound) do
+          if b.family == family and (endpoint.port == 0 or b.port == endpoint.port) then
+            matched = true
+            break
+          end
+        end
+        if not matched then
+          return nil, "listen bind verification failed: missing " .. family .. " listener for " .. tostring(target)
+        end
+      end
+    end
+    ::continue_target::
+  end
+  return true
 end
 
 function M.init(host)
@@ -75,6 +120,15 @@ function M.install(Host)
         resolved_addr = resolved,
       })
       ::continue_target::
+    end
+
+    local verify_ok, verify_err = verify_bound_targets(targets, next_addrs)
+    if not verify_ok then
+      close_all(next_listeners)
+      log.debug("host listener bind verification failed", {
+        cause = tostring(verify_err),
+      })
+      return nil, verify_err
     end
 
     close_all(self._listeners)
