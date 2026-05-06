@@ -17,7 +17,7 @@ local mode = arg[1]
 
 local function usage()
   io.stderr:write("usage:\n")
-  io.stderr:write("  lua examples/kad_dht_bootstrap_demo.lua server [listen-multiaddr ...]\n")
+  io.stderr:write("  lua examples/kad_dht_bootstrap_demo.lua server [--default-bootstrap] [--bootstrap <multiaddr> ...] [listen-multiaddr ...]\n")
   io.stderr:write("  lua examples/kad_dht_bootstrap_demo.lua client </bootstrap-multiaddr-with-p2p>\n")
   io.stderr:write("  lua examples/kad_dht_bootstrap_demo.lua client --default-bootstrap\n")
   io.stderr:write("  (note: bootstrap multiaddr must start with '/'; e.g. /ip4/127.0.0.1/tcp/12345/p2p/12D3KooW...)\n")
@@ -71,9 +71,49 @@ end
 
 local function run_server()
   local listen_addrs = {}
-  for i = 2, #arg do
-    listen_addrs[#listen_addrs + 1] = arg[i]
+  local bootstrappers = {}
+  local use_default_bootstrap = false
+
+  local i = 2
+  while i <= #arg do
+    local name = arg[i]
+    local value = arg[i + 1]
+    if name == "--default-bootstrap" then
+      use_default_bootstrap = true
+      i = i + 1
+    elseif name == "--bootstrap" then
+      if not value then
+        io.stderr:write("--bootstrap requires a multiaddr\n")
+        usage()
+        os.exit(2)
+      end
+      bootstrappers[#bootstrappers + 1] = value
+      i = i + 2
+    else
+      listen_addrs[#listen_addrs + 1] = name
+      i = i + 1
+    end
   end
+
+  if use_default_bootstrap and #bootstrappers == 0 then
+    bootstrappers = bootstrap_defaults.default_bootstrappers()
+  end
+
+  local bootstrap_config = nil
+  if use_default_bootstrap or #bootstrappers > 0 then
+    bootstrap_config = {
+      module = peer_discovery_bootstrap,
+      config = {
+        dialable_only = true,
+        ignore_resolve_errors = true,
+        dial_on_start = true,
+      },
+    }
+    if #bootstrappers > 0 then
+      bootstrap_config.config.list = bootstrappers
+    end
+  end
+
   if #listen_addrs == 0 then
     listen_addrs = {
       "/ip4/0.0.0.0/tcp/4001",
@@ -83,6 +123,7 @@ local function run_server()
 
   local host, host_err = host_mod.new({
     listen_addrs = listen_addrs,
+    peer_discovery = bootstrap_config and { bootstrap = bootstrap_config } or nil,
     services = {
       identify = { module = identify_service },
       ping = { module = ping_service },
@@ -100,6 +141,18 @@ local function run_server()
       io.stdout:write("kad-dht demo server listening:\n")
       for _, addr in ipairs(h:get_multiaddrs()) do
         io.stdout:write("  " .. addr .. "\n")
+      end
+      if use_default_bootstrap or #bootstrappers > 0 then
+        io.stdout:write("bootstrapping from discovery peers...\n")
+        local report, report_err = h.kad_dht:_bootstrap({
+          ignore_discovery_errors = true,
+          ignore_add_errors = true,
+        })
+        if report then
+          io.stdout:write("  connected=" .. tostring(report.connected) .. " added=" .. tostring(report.added) .. " failed=" .. tostring(report.failed) .. "\n")
+        else
+          io.stdout:write("  bootstrap failed: " .. tostring(report_err) .. "\n")
+        end
       end
       io.stdout:write("running; Ctrl-C to stop\n")
       io.stdout:flush()
