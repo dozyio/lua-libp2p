@@ -14,9 +14,10 @@ local function new_host()
   return h
 end
 
-local function make_listener(name)
+local function make_listener(name, addr)
   local listener = {
     name = name,
+    addr = addr or ("/ip4/127.0.0.1/tcp/" .. name),
     closed = false,
   }
   function listener:close()
@@ -24,7 +25,7 @@ local function make_listener(name)
     return true
   end
   function listener:multiaddr()
-    return "/ip4/127.0.0.1/tcp/" .. name
+    return self.addr
   end
   return listener
 end
@@ -67,6 +68,35 @@ local function run_inner()
   end
 
   h._tcp_transport.listen = original_listen
+
+  local h2 = new_host()
+  local first = make_listener("4201", "/ip4/127.0.0.1/tcp/4201")
+  local second = make_listener("4201", "/ip4/127.0.0.1/tcp/4201")
+  local calls = 0
+  local original_listen2 = h2._tcp_transport.listen
+  h2._tcp_transport.listen = function()
+    calls = calls + 1
+    if calls == 1 then
+      return first
+    end
+    return second
+  end
+  h2.listen_addrs = {
+    "/ip4/0.0.0.0/tcp/4201",
+    "/ip6/::/tcp/4201",
+  }
+  local ok2, err2 = h2:start()
+  h2._tcp_transport.listen = original_listen2
+  if ok2 then
+    h2:stop()
+    return nil, "expected bind verification failure when ipv6 listener is missing"
+  end
+  if not tostring(err2):find("missing ip6 listener", 1, true) then
+    return nil, "expected explicit missing ip6 listener verification error"
+  end
+  if not first.closed or not second.closed then
+    return nil, "verification failure should close newly bound listeners"
+  end
 
   return true
 end
