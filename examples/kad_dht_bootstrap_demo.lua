@@ -17,10 +17,11 @@ local mode = arg[1]
 
 local function usage()
   io.stderr:write("usage:\n")
-  io.stderr:write("  lua examples/kad_dht_bootstrap_demo.lua server [listen-multiaddr]\n")
+  io.stderr:write("  lua examples/kad_dht_bootstrap_demo.lua server [listen-multiaddr ...]\n")
   io.stderr:write("  lua examples/kad_dht_bootstrap_demo.lua client </bootstrap-multiaddr-with-p2p>\n")
   io.stderr:write("  lua examples/kad_dht_bootstrap_demo.lua client --default-bootstrap\n")
   io.stderr:write("  (note: bootstrap multiaddr must start with '/'; e.g. /ip4/127.0.0.1/tcp/12345/p2p/12D3KooW...)\n")
+  io.stderr:write("  (server defaults to /ip4/0.0.0.0/tcp/4001 and /ip6/::/tcp/4001 when no listen addrs are provided)\n")
 end
 
 local function summarize_error(err)
@@ -69,10 +70,19 @@ local function print_error_summary(errors, max_lines)
 end
 
 local function run_server()
-  local listen_addr = arg[2] or "/ip4/127.0.0.1/tcp/0"
+  local listen_addrs = {}
+  for i = 2, #arg do
+    listen_addrs[#listen_addrs + 1] = arg[i]
+  end
+  if #listen_addrs == 0 then
+    listen_addrs = {
+      "/ip4/0.0.0.0/tcp/4001",
+      "/ip6/::/tcp/4001",
+    }
+  end
 
   local host, host_err = host_mod.new({
-    listen_addrs = { listen_addr },
+    listen_addrs = listen_addrs,
     services = {
       identify = { module = identify_service },
       ping = { module = ping_service },
