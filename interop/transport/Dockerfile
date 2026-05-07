@@ -13,6 +13,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
   liblua5.4-dev \
   luarocks \
   libsodium-dev \
+  libsqlite3-dev \
   redis-tools \
   && rm -rf /var/lib/apt/lists/*
 

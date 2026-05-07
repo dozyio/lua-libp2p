@@ -194,11 +194,6 @@ local function bind_listener_socket(server, host, port)
       if ok then
         return bind_ok, bind_err
       end
-      log.debug("tcp listen ipv6only bind unsupported, falling back", {
-        host = host,
-        port = port,
-        cause = tostring(bind_ok),
-      })
     end
   end
   return server:bind(host, port)
@@ -887,7 +882,7 @@ function M.listen(target, opts)
     },
   })
 
-  server:listen(128, function(err)
+  local listen_ok, listen_err = server:listen(128, function(err)
     if err then
       log.debug("tcp accept callback failed", {
         listen_host = listener._listen_host,
@@ -927,6 +922,19 @@ function M.listen(target, opts)
       cb()
     end
   end)
+  if not listen_ok then
+    pcall(function()
+      server:close()
+    end)
+    log.error("tcp listen failed", {
+      host = normalized_host,
+      port = port,
+      cause = tostring(listen_err),
+    })
+    return nil, error_mod.new("io", "failed starting native luv listener", {
+      cause = listen_err,
+    })
+  end
 
   log.debug("tcp listen active", {
     host = listener._listen_host,

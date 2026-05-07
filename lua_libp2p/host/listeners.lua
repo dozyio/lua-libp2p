@@ -15,6 +15,34 @@ local function close_all(listeners)
   end
 end
 
+local function is_addr_in_use_error(err)
+  local text = string.upper(tostring(err or ""))
+  if text:find("EADDRINUSE", 1, true) ~= nil then
+    return true
+  end
+  if type(err) == "table" and type(err.context) == "table" and err.context.cause ~= nil then
+    local cause_text = string.upper(tostring(err.context.cause))
+    if cause_text:find("EADDRINUSE", 1, true) ~= nil then
+      return true
+    end
+  end
+  return false
+end
+
+local function has_ipv6_wildcard_listener(bound_addrs, port)
+  for _, addr in ipairs(bound_addrs or {}) do
+    local parsed = multiaddr.parse(addr)
+    if parsed then
+      local endpoint = multiaddr.to_tcp_endpoint(parsed)
+      local host_proto = parsed.components and parsed.components[1] and parsed.components[1].protocol or nil
+      if endpoint and host_proto == "ip6" and endpoint.host == "::" and endpoint.port == port then
+        return true
+      end
+    end
+  end
+  return false
+end
+
 local function verify_bound_targets(targets, bound_addrs)
   local bound = {}
   for _, addr in ipairs(bound_addrs or {}) do
@@ -49,6 +77,9 @@ local function verify_bound_targets(targets, bound_addrs)
             break
           end
         end
+        if not matched and family == "ip4" and endpoint.port ~= 0 and has_ipv6_wildcard_listener(bound_addrs, endpoint.port) then
+          matched = true
+        end
         if not matched then
           return nil, "listen bind verification failed: missing " .. family .. " listener for " .. tostring(target)
         end
@@ -68,6 +99,25 @@ function M.install(Host)
     local targets = addrs and list_copy(addrs) or self.listen_addrs
     if #targets == 0 then
       targets = { "/ip4/127.0.0.1/tcp/0" }
+    end
+
+    local ip6_targets = {}
+    local other_targets = {}
+    for _, addr in ipairs(targets) do
+      local parsed = multiaddr.parse(addr)
+      local host_proto = parsed and parsed.components and parsed.components[1] and parsed.components[1].protocol or nil
+      if host_proto == "ip6" then
+        ip6_targets[#ip6_targets + 1] = addr
+      else
+        other_targets[#other_targets + 1] = addr
+      end
+    end
+    targets = {}
+    for _, addr in ipairs(ip6_targets) do
+      targets[#targets + 1] = addr
+    end
+    for _, addr in ipairs(other_targets) do
+      targets[#targets + 1] = addr
     end
     log.debug("host listener bind started", {
       targets = #targets,
@@ -96,8 +146,16 @@ function M.install(Host)
         keepalive_initial_delay = self._tcp_options and self._tcp_options.keepalive_initial_delay,
       })
       if not listener then
+        local parsed = multiaddr.parse(addr)
+        local endpoint = parsed and multiaddr.to_tcp_endpoint(parsed) or nil
+        local host_proto = parsed and parsed.components and parsed.components[1] and parsed.components[1].protocol or nil
+        if host_proto == "ip4" and endpoint and endpoint.port ~= 0 and is_addr_in_use_error(listen_err)
+          and has_ipv6_wildcard_listener(next_addrs, endpoint.port)
+        then
+          goto continue_target
+        end
         close_all(next_listeners)
-        log.debug("host listener bind failed", {
+        log.error("host listener bind failed", {
           addr = addr,
           cause = tostring(listen_err),
         })
@@ -125,7 +183,7 @@ function M.install(Host)
     local verify_ok, verify_err = verify_bound_targets(targets, next_addrs)
     if not verify_ok then
       close_all(next_listeners)
-      log.debug("host listener bind verification failed", {
+      log.error("host listener bind verification failed", {
         cause = tostring(verify_err),
       })
       return nil, verify_err
