@@ -98,6 +98,36 @@ local function run_inner()
     return nil, "verification failure should close newly bound listeners"
   end
 
+  local h3 = new_host()
+  local v6_listener = make_listener("4301", "/ip6/::/tcp/4301")
+  local calls3 = 0
+  local original_listen3 = h3._tcp_transport.listen
+  h3._tcp_transport.listen = function(opts)
+    calls3 = calls3 + 1
+    if opts and opts.multiaddr == "/ip6/::/tcp/4301" then
+      return v6_listener
+    end
+    return nil, "EADDRINUSE: address already in use"
+  end
+  h3.listen_addrs = {
+    "/ip4/0.0.0.0/tcp/4301",
+    "/ip6/::/tcp/4301",
+  }
+  local ok3, err3 = h3:start()
+  h3._tcp_transport.listen = original_listen3
+  if not ok3 then
+    return nil, err3
+  end
+  if #h3._listeners ~= 1 then
+    h3:stop()
+    return nil, "dual-stack coverage mode should keep single ipv6 wildcard listener"
+  end
+  if #h3.listen_addrs ~= 1 or h3.listen_addrs[1] ~= "/ip6/::/tcp/4301" then
+    h3:stop()
+    return nil, "dual-stack coverage mode should resolve to ipv6 wildcard listen address"
+  end
+  h3:stop()
+
   return true
 end
 
