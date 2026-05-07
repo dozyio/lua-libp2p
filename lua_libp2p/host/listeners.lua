@@ -74,6 +74,9 @@ local function verify_bound_targets(targets, bound_addrs)
             break
           end
         end
+        if not matched and family == "ip4" and endpoint.port ~= 0 and has_ipv6_wildcard_listener(bound_addrs, endpoint.port) then
+          matched = true
+        end
         if not matched then
           return nil, "listen bind verification failed: missing " .. family .. " listener for " .. tostring(target)
         end
