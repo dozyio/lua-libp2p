@@ -15,32 +15,29 @@ local function close_all(listeners)
   end
 end
 
-local function is_addr_in_use_error(err)
-  local text = string.upper(tostring(err or ""))
-  if text:find("EADDRINUSE", 1, true) ~= nil then
-    return true
-  end
-  if type(err) == "table" and type(err.context) == "table" and err.context.cause ~= nil then
-    local cause_text = string.upper(tostring(err.context.cause))
-    if cause_text:find("EADDRINUSE", 1, true) ~= nil then
-      return true
-    end
-  end
-  return false
-end
-
-local function has_ipv6_wildcard_listener(bound_addrs, port)
-  for _, addr in ipairs(bound_addrs or {}) do
-    local parsed = multiaddr.parse(addr)
-    if parsed then
-      local endpoint = multiaddr.to_tcp_endpoint(parsed)
-      local host_proto = parsed.components and parsed.components[1] and parsed.components[1].protocol or nil
-      if endpoint and host_proto == "ip6" and endpoint.host == "::" and endpoint.port == port then
+local function listener_covers_target(listeners, target, listen_err)
+  for _, listener in ipairs(listeners or {}) do
+    if type(listener.covers_multiaddr) == "function" then
+      local covered = listener:covers_multiaddr(target, listen_err)
+      if covered then
         return true
       end
     end
   end
   return false
+end
+
+local function rewrite_tcp_port(addr, port)
+  local parsed = multiaddr.parse(addr)
+  if not parsed or type(parsed.components) ~= "table" or #parsed.components < 2 then
+    return addr
+  end
+  local host_component = parsed.components[1]
+  local tcp_component = parsed.components[2]
+  if not host_component or not tcp_component or tcp_component.protocol ~= "tcp" then
+    return addr
+  end
+  return "/" .. tostring(host_component.protocol) .. "/" .. tostring(host_component.value) .. "/tcp/" .. tostring(port)
 end
 
 local function verify_bound_targets(targets, bound_addrs)
@@ -77,9 +74,6 @@ local function verify_bound_targets(targets, bound_addrs)
             break
           end
         end
-        if not matched and family == "ip4" and endpoint.port ~= 0 and has_ipv6_wildcard_listener(bound_addrs, endpoint.port) then
-          matched = true
-        end
         if not matched then
           return nil, "listen bind verification failed: missing " .. family .. " listener for " .. tostring(target)
         end
@@ -103,11 +97,24 @@ function M.install(Host)
 
     local ip6_targets = {}
     local other_targets = {}
+    local has_ip4_targets = false
+    local has_ip4_zero_target = false
+    local has_ip6_zero_target = false
     for _, addr in ipairs(targets) do
       local parsed = multiaddr.parse(addr)
+      local endpoint = parsed and multiaddr.to_tcp_endpoint(parsed) or nil
       local host_proto = parsed and parsed.components and parsed.components[1] and parsed.components[1].protocol or nil
       if host_proto == "ip6" then
         ip6_targets[#ip6_targets + 1] = addr
+        if endpoint and endpoint.port == 0 then
+          has_ip6_zero_target = true
+        end
+      elseif host_proto == "ip4" then
+        has_ip4_targets = true
+        other_targets[#other_targets + 1] = addr
+        if endpoint and endpoint.port == 0 then
+          has_ip4_zero_target = true
+        end
       else
         other_targets[#other_targets + 1] = addr
       end
@@ -119,6 +126,9 @@ function M.install(Host)
     for _, addr in ipairs(other_targets) do
       targets[#targets + 1] = addr
     end
+
+    local share_zero_port = has_ip4_zero_target and has_ip6_zero_target
+    local shared_zero_port = nil
     log.debug("host listener bind started", {
       targets = #targets,
     })
@@ -127,36 +137,40 @@ function M.install(Host)
     local next_addrs = {}
 
     for _, addr in ipairs(targets) do
-      if addr == "/p2p-circuit" then
+      local bind_addr = addr
+      local parsed_for_share = multiaddr.parse(bind_addr)
+      local endpoint_for_share = parsed_for_share and multiaddr.to_tcp_endpoint(parsed_for_share) or nil
+      if share_zero_port and shared_zero_port ~= nil and endpoint_for_share and endpoint_for_share.port == 0 then
+        bind_addr = rewrite_tcp_port(bind_addr, shared_zero_port)
+      end
+
+      if bind_addr == "/p2p-circuit" then
         log.debug("host listener bind skipped", {
-          addr = addr,
+          addr = bind_addr,
           reason = "circuit_listener_managed_by_autorelay",
         })
         goto continue_target
       end
       log.debug("host listener bind attempt", {
-        addr = addr,
+        addr = bind_addr,
       })
       local listener, listen_err = self._tcp_transport.listen({
-        multiaddr = addr,
+        multiaddr = bind_addr,
         accept_timeout = self._accept_timeout,
         io_timeout = self._io_timeout,
         nodelay = self._tcp_options and self._tcp_options.nodelay,
         keepalive = self._tcp_options and self._tcp_options.keepalive,
         keepalive_initial_delay = self._tcp_options and self._tcp_options.keepalive_initial_delay,
+        require_ipv6_only = not has_ip4_targets,
       })
       if not listener then
-        local parsed = multiaddr.parse(addr)
-        local endpoint = parsed and multiaddr.to_tcp_endpoint(parsed) or nil
-        local host_proto = parsed and parsed.components and parsed.components[1] and parsed.components[1].protocol or nil
-        if host_proto == "ip4" and endpoint and endpoint.port ~= 0 and is_addr_in_use_error(listen_err)
-          and has_ipv6_wildcard_listener(next_addrs, endpoint.port)
-        then
+        if listener_covers_target(next_listeners, bind_addr, listen_err) then
+          next_addrs[#next_addrs + 1] = bind_addr
           goto continue_target
         end
         close_all(next_listeners)
         log.error("host listener bind failed", {
-          addr = addr,
+          addr = bind_addr,
           cause = tostring(listen_err),
         })
         return nil, listen_err
@@ -167,14 +181,21 @@ function M.install(Host)
       if not resolved then
         close_all(next_listeners)
         log.debug("host listener address resolution failed", {
-          addr = addr,
+          addr = bind_addr,
           cause = tostring(resolved_err),
         })
         return nil, resolved_err
       end
       next_addrs[#next_addrs + 1] = resolved
+      if share_zero_port and shared_zero_port == nil then
+        local resolved_parsed = multiaddr.parse(resolved)
+        local resolved_endpoint = resolved_parsed and multiaddr.to_tcp_endpoint(resolved_parsed) or nil
+        if resolved_endpoint and resolved_endpoint.port and resolved_endpoint.port ~= 0 then
+          shared_zero_port = resolved_endpoint.port
+        end
+      end
       log.debug("host listener bound", {
-        addr = addr,
+        addr = bind_addr,
         resolved_addr = resolved,
       })
       ::continue_target::
