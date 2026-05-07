@@ -100,6 +100,9 @@ local function run_inner()
 
   local h3 = new_host()
   local v6_listener = make_listener("4301", "/ip6/::/tcp/4301")
+  function v6_listener:covers_multiaddr(target, listen_err)
+    return target == "/ip4/0.0.0.0/tcp/4301" and tostring(listen_err):find("EADDRINUSE", 1, true) ~= nil
+  end
   local calls3 = 0
   local original_listen3 = h3._tcp_transport.listen
   h3._tcp_transport.listen = function(opts)
@@ -122,9 +125,22 @@ local function run_inner()
     h3:stop()
     return nil, "dual-stack coverage mode should keep single ipv6 wildcard listener"
   end
-  if #h3.listen_addrs ~= 1 or h3.listen_addrs[1] ~= "/ip6/::/tcp/4301" then
+  if #h3.listen_addrs ~= 2 then
     h3:stop()
-    return nil, "dual-stack coverage mode should resolve to ipv6 wildcard listen address"
+    return nil, "dual-stack coverage mode should preserve both ipv4 and ipv6 listen addresses"
+  end
+  local saw_ip6 = false
+  local saw_ip4 = false
+  for _, addr in ipairs(h3.listen_addrs) do
+    if addr == "/ip6/::/tcp/4301" then
+      saw_ip6 = true
+    elseif addr == "/ip4/0.0.0.0/tcp/4301" then
+      saw_ip4 = true
+    end
+  end
+  if not saw_ip6 or not saw_ip4 then
+    h3:stop()
+    return nil, "dual-stack coverage mode should keep ip6 wildcard and ip4 wildcard targets"
   end
   h3:stop()
 

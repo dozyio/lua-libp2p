@@ -85,6 +85,20 @@ local function format_multiaddr(host, port)
   })
 end
 
+local function is_addr_in_use_error(err)
+  local text = string.upper(tostring(err or ""))
+  if text:find("EADDRINUSE", 1, true) ~= nil then
+    return true
+  end
+  if type(err) == "table" and type(err.context) == "table" and err.context.cause ~= nil then
+    local cause_text = string.upper(tostring(err.context.cause))
+    if cause_text:find("EADDRINUSE", 1, true) ~= nil then
+      return true
+    end
+  end
+  return false
+end
+
 local function build_timeout_timer(seconds, on_timeout)
   if type(seconds) ~= "number" or seconds <= 0 then
     return nil
@@ -182,7 +196,7 @@ local function configure_tcp_socket(tcp, opts)
   enable_tcp_keepalive(tcp, options.keepalive, options.keepalive_initial_delay)
 end
 
-local function bind_listener_socket(server, host, port)
+local function bind_listener_socket(server, host, port, require_ipv6_only)
   local is_ipv6 = parse_ipv6(host) ~= nil
   if is_ipv6 then
     local flags = nil
@@ -194,6 +208,19 @@ local function bind_listener_socket(server, host, port)
       if ok then
         return bind_ok, bind_err
       end
+      if require_ipv6_only then
+        return nil, error_mod.new("unsupported", "failed binding ipv6-only listener", {
+          host = host,
+          port = port,
+          cause = bind_ok,
+        })
+      end
+    end
+    if require_ipv6_only then
+      return nil, error_mod.new("unsupported", "ipv6-only listeners are not supported by this runtime", {
+        host = host,
+        port = port,
+      })
     end
   end
   return server:bind(host, port)
@@ -794,6 +821,21 @@ function NativeListener:multiaddr()
   return format_multiaddr(self._listen_host, self._listen_port)
 end
 
+function NativeListener:covers_multiaddr(target, listen_err)
+  if not is_addr_in_use_error(listen_err) then
+    return false
+  end
+  local parsed, parse_err = parse_multiaddr(target)
+  if not parsed then
+    log.debug("tcp listener coverage parse failed", {
+      target = tostring(target),
+      cause = tostring(parse_err),
+    })
+    return false
+  end
+  return parsed.host == "0.0.0.0" and self._listen_host == "::" and parsed.port == self._listen_port
+end
+
 function NativeListener:close()
   if self._closed then
     return true
@@ -859,7 +901,7 @@ function M.listen(target, opts)
     port = port,
   })
   local server = uv.new_tcp()
-  local ok, bind_err = bind_listener_socket(server, normalized_host, port)
+  local ok, bind_err = bind_listener_socket(server, normalized_host, port, options.require_ipv6_only)
   if not ok then
     log.debug("tcp listen failed", {
       host = normalized_host,
