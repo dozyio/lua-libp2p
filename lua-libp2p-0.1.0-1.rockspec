@@ -16,6 +16,7 @@ dependencies = {
   "luasodium >= 2.4",
   "luv >= 1.0",
   "luaossl >= 20250929",
+  "cqueues >= 20200726.54",
   "luasql-sqlite3 >= 2.6",
 }
 build = {
@@ -108,6 +109,8 @@ build = {
     ["lua_libp2p.upnp.nat"] = "lua_libp2p/upnp/nat.lua",
     ["lua_libp2p.upnp.ssdp"] = "lua_libp2p/upnp/ssdp.lua",
     ["lua_libp2p.connection_encrypter_noise.protocol"] = "lua_libp2p/connection_encrypter_noise/protocol.lua",
+    ["lua_libp2p.connection_encrypter_tls.protocol"] = "lua_libp2p/connection_encrypter_tls/protocol.lua",
+    ["lua_libp2p.connection_encrypter_tls.verification"] = "lua_libp2p/connection_encrypter_tls/verification.lua",
     ["lua_libp2p.muxer"] = "lua_libp2p/muxer/init.lua",
     ["lua_libp2p.muxer.yamux"] = "lua_libp2p/muxer/yamux.lua",
     ["lua_libp2p.protocol"] = "lua_libp2p/protocol/init.lua",

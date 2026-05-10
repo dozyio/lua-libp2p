@@ -7,11 +7,12 @@ local muxer_registry = require("lua_libp2p.muxer")
 local mss = require("lua_libp2p.multistream_select.protocol")
 local noise = require("lua_libp2p.connection_encrypter_noise.protocol")
 local plaintext = require("lua_libp2p.connection_encrypter_plaintext.protocol")
+local tls = require("lua_libp2p.connection_encrypter_tls.protocol")
 
 local M = {}
 
 local function default_security_protocols()
-  return { noise.PROTOCOL_ID }
+  return { noise.PROTOCOL_ID, tls.PROTOCOL_ID }
 end
 
 local function default_muxer_protocols()
@@ -20,6 +21,9 @@ end
 
 local function select_early_muxer(selected_security, muxer_protocols, sec_state, is_outbound)
   if selected_security ~= noise.PROTOCOL_ID then
+    if selected_security == tls.PROTOCOL_ID and type(sec_state) == "table" then
+      return sec_state.selected_muxer
+    end
     return nil
   end
   if type(sec_state) ~= "table" or type(sec_state.noise_extensions) ~= "table" then
@@ -151,6 +155,39 @@ local function run_security_handshake(raw_conn, is_outbound, selected_security, 
         remote_public_key = remote_peer and remote_peer.public_key,
         remote_key_type = remote_peer and remote_peer.type,
         noise_extensions = hs_state and hs_state.remote_extensions or nil,
+      }
+  end
+
+  if selected_security == tls.PROTOCOL_ID then
+    local secure_conn, hs_state, hs_err
+    if is_outbound then
+      secure_conn, hs_state, hs_err = tls.handshake_outbound(raw_conn, {
+        identity_keypair = options.local_keypair,
+        expected_remote_peer_id = options.expected_remote_peer_id,
+        muxer_protocols = options.muxer_protocols,
+        ctx = options.ctx,
+      })
+    else
+      secure_conn, hs_state, hs_err = tls.handshake_inbound(raw_conn, {
+        identity_keypair = options.local_keypair,
+        expected_remote_peer_id = options.expected_remote_peer_id,
+        muxer_protocols = options.muxer_protocols,
+        ctx = options.ctx,
+      })
+    end
+    if not secure_conn then
+      return nil, nil, hs_err
+    end
+
+    local remote_peer = hs_state and hs_state.remote_peer
+    return secure_conn,
+      {
+        security = selected_security,
+        remote_peer_id = remote_peer and remote_peer.id or nil,
+        remote_peer_id_bytes = remote_peer and remote_peer.bytes or nil,
+        remote_public_key = hs_state and hs_state.remote_public_key or nil,
+        remote_key_type = hs_state and hs_state.remote_key_type or nil,
+        selected_muxer = hs_state and hs_state.selected_muxer or nil,
       }
   end
 

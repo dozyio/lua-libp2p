@@ -335,7 +335,7 @@ function Host:new(config)
     or connection_manager.new(self_obj, cfg.dial_queue or cfg.connection_manager_options or {})
 
   if #self_obj.security_transports == 0 then
-    self_obj.security_transports = { "/noise" }
+    self_obj.security_transports = { "/noise", "/tls/1.0.0" }
   end
   if #self_obj.muxers == 0 then
     self_obj.muxers = { "/yamux/1.0.0" }

@@ -396,12 +396,22 @@ function M.sync_watchers(host)
 
   for target, item in pairs(active) do
     if host._luv_watchers[target] == nil then
-      if item.watchable and type(item.watchable.watch_luv_readable) == "function" then
-        local ok, unwatch_or_err = pcall(item.watchable.watch_luv_readable, item.watchable, function()
+      local watch_method = nil
+      if item.events == "w" and item.watchable and type(item.watchable.watch_luv_write) == "function" then
+        watch_method = item.watchable.watch_luv_write
+      elseif item.watchable and type(item.watchable.watch_luv_readable) == "function" then
+        watch_method = item.watchable.watch_luv_readable
+      end
+      if watch_method then
+        local ok, unwatch_or_err = pcall(watch_method, item.watchable, function()
           host._luv_ready[target] = true
           if type(host._wake_task_readers) == "function" then
             host:_wake_task_readers(item.watchable)
             host:_wake_task_readers(target)
+          end
+          if type(host._wake_task_writers) == "function" then
+            host:_wake_task_writers(item.watchable)
+            host:_wake_task_writers(target)
           end
         end)
         if not ok then

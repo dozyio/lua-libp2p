@@ -80,6 +80,8 @@ local function run()
     "lua_libp2p.transport_tcp.transport",
     "lua_libp2p.transport_tcp.luv",
     "lua_libp2p.transport_tcp.luv_native",
+    "lua_libp2p.connection_encrypter_tls.protocol",
+    "lua_libp2p.connection_encrypter_tls.verification",
     "lua_libp2p.nat_pmp.client",
     "lua_libp2p.nat_pmp.service",
     "lua_libp2p.pcp.client",
