@@ -31,10 +31,6 @@
   <li><a href="../index.html">Index</a></li>
 </ul>
 
-<h2>Contents</h2>
-<ul>
-<li><a href="#Functions">Functions</a></li>
-</ul>
 
 
 <h2>Modules</h2>
@@ -42,7 +38,7 @@
   <li><a href="../modules/lua_libp2p.html">lua_libp2p</a></li>
   <li><a href="../modules/lua_libp2p.address_manager.html">lua_libp2p.address_manager</a></li>
   <li><a href="../modules/lua_libp2p.autonat.html">lua_libp2p.autonat</a></li>
-  <li><strong>lua_libp2p.autonat.client</strong></li>
+  <li><a href="../modules/lua_libp2p.autonat.client.html">lua_libp2p.autonat.client</a></li>
   <li><a href="../modules/lua_libp2p.bootstrap.html">lua_libp2p.bootstrap</a></li>
   <li><a href="../modules/lua_libp2p.connection_encrypter_noise.protocol.html">lua_libp2p.connection_encrypter_noise.protocol</a></li>
   <li><a href="../modules/lua_libp2p.connection_encrypter_plaintext.protocol.html">lua_libp2p.connection_encrypter_plaintext.protocol</a></li>
@@ -66,7 +62,7 @@
   <li><a href="../modules/lua_libp2p.host.events.html">lua_libp2p.host.events</a></li>
   <li><a href="../modules/lua_libp2p.host.identify.html">lua_libp2p.host.identify</a></li>
   <li><a href="../modules/lua_libp2p.host.listeners.html">lua_libp2p.host.listeners</a></li>
-  <li><a href="../modules/lua_libp2p.host.perf.html">lua_libp2p.host.perf</a></li>
+  <li><strong>lua_libp2p.host.perf</strong></li>
   <li><a href="../modules/lua_libp2p.host.protocols.html">lua_libp2p.host.protocols</a></li>
   <li><a href="../modules/lua_libp2p.host.runtime_luv.html">lua_libp2p.host.runtime_luv</a></li>
   <li><a href="../modules/lua_libp2p.host.runtime_luv_native.html">lua_libp2p.host.runtime_luv_native</a></li>
@@ -146,344 +142,18 @@
 
 <div id="content">
 
-<h1>Module <code>lua_libp2p.autonat.client</code></h1>
-<p>AutoNAT v2 client/service.</p>
+<h1>Module <code>lua_libp2p.host.perf</code></h1>
+<p>Optional host performance counters.</p>
 <p>
 
 </p>
 
 
-<h2><a href="#Functions">Functions</a></h2>
-<table class="function_list">
-	<tr>
-	<td class="name" nowrap><a href="#Client:_discover">Client:_discover (opts)</a></td>
-	<td class="summary">Internal AutoNAT discovery/check execution.</td>
-	</tr>
-	<tr>
-	<td class="name" nowrap><a href="#Client:_discover_servers">Client:_discover_servers (limit, opts)</a></td>
-	<td class="summary">Select candidate AutoNAT servers from peerstore/discovery.</td>
-	</tr>
-	<tr>
-	<td class="name" nowrap><a href="#Client:check">Client:check (server[, opts])</a></td>
-	<td class="summary">Run a synchronous AutoNAT check against one server.</td>
-	</tr>
-	<tr>
-	<td class="name" nowrap><a href="#Client:start">Client:start ()</a></td>
-	<td class="summary">Start AutoNAT service handlers.</td>
-	</tr>
-	<tr>
-	<td class="name" nowrap><a href="#Client:start_check">Client:start_check (server[, opts])</a></td>
-	<td class="summary">Spawn an asynchronous AutoNAT check task.</td>
-	</tr>
-	<tr>
-	<td class="name" nowrap><a href="#Client:start_discovery">Client:start_discovery ([opts])</a></td>
-	<td class="summary">Run AutoNAT server discovery and checks.</td>
-	</tr>
-	<tr>
-	<td class="name" nowrap><a href="#Client:start_monitor">Client:start_monitor ([opts])</a></td>
-	<td class="summary">Start ongoing AutoNAT monitoring.</td>
-	</tr>
-	<tr>
-	<td class="name" nowrap><a href="#Client:stop">Client:stop ()</a></td>
-	<td class="summary">Stop AutoNAT service activity.</td>
-	</tr>
-	<tr>
-	<td class="name" nowrap><a href="#new">new (host[, opts])</a></td>
-	<td class="summary">Construct a new AutoNAT client/service instance.</td>
-	</tr>
-</table>
 
 <br/>
 <br/>
 
 
-    <h2 class="section-header "><a name="Functions"></a>Functions</h2>
-
-    <dl class="function">
-    <dt>
-    <a name = "Client:_discover"></a>
-    <strong>Client:_discover (opts)</strong>
-    </dt>
-    <dd>
-    Internal AutoNAT discovery/check execution.
- <code>opts.max_autonat_servers</code>, <code>opts.target_autonat_responses</code>, and
- <code>opts.stop_on_first_reachable</code> shape check strategy.
- <code>opts.discovery_timeout_seconds</code>, <code>opts.check_timeout</code>, <code>opts.drain_seconds</code>
- control timing.
-
-
-    <h3>Parameters:</h3>
-    <ul>
-        <li><span class="parameter">opts</span>
-
-
-
-        </li>
-    </ul>
-
-
-
-
-
-</dd>
-    <dt>
-    <a name = "Client:_discover_servers"></a>
-    <strong>Client:_discover_servers (limit, opts)</strong>
-    </dt>
-    <dd>
-    Select candidate AutoNAT servers from peerstore/discovery.
- <code>opts.checked_peers</code> tracks cooldown state by peer id.
- <code>opts.checked_peer_cooldown_seconds</code> suppresses recently checked peers.
- <code>opts.required_addr_proto</code> filters by <code>ip4</code>/<code>ip6</code> preference.
-
-
-    <h3>Parameters:</h3>
-    <ul>
-        <li><span class="parameter">limit</span>
-
-
-
-        </li>
-        <li><span class="parameter">opts</span>
-
-
-
-        </li>
-    </ul>
-
-
-
-
-
-</dd>
-    <dt>
-    <a name = "Client:check"></a>
-    <strong>Client:check (server[, opts])</strong>
-    </dt>
-    <dd>
-    Run a synchronous AutoNAT check against one server.
- <code>opts</code> may include <code>stream_opts</code>, <code>timeout</code>, <code>poll_interval</code>, <code>nonce</code>,
- <code>addrs</code>, <code>allow_private_addrs</code>, and <code>allow_relay_addrs</code>.
-
-
-    <h3>Parameters:</h3>
-    <ul>
-        <li><span class="parameter">server</span>
-            <span class="types"><a class="type" href="https://www.lua.org/manual/5.4/manual.html#6.4">string</a> or <a class="type" href="https://www.lua.org/manual/5.4/manual.html#6.6">table</a></span>
-         Server peer target.
-        </li>
-        <li><span class="parameter">opts</span>
-            <span class="types"><a class="type" href="https://www.lua.org/manual/5.4/manual.html#6.6">table</a></span>
-         Check options.
-         (<em>optional</em>)
-        </li>
-    </ul>
-
-    <h3>Returns:</h3>
-    <ol>
-        <li>
-           <span class="types"><a class="type" href="https://www.lua.org/manual/5.4/manual.html#6.6">table</a> or <span class="type">nil</span></span>
-        result</li>
-        <li>
-           <span class="types"><a class="type" href="https://www.lua.org/manual/5.4/manual.html#6.6">table</a></span>
-        err</li>
-    </ol>
-
-
-
-
-</dd>
-    <dt>
-    <a name = "Client:start"></a>
-    <strong>Client:start ()</strong>
-    </dt>
-    <dd>
-    Start AutoNAT service handlers.
-
-
-
-    <h3>Returns:</h3>
-    <ol>
-        <li>
-           <span class="types"><span class="type">true</span> or <span class="type">nil</span></span>
-        ok</li>
-        <li>
-           <span class="types"><a class="type" href="https://www.lua.org/manual/5.4/manual.html#6.6">table</a></span>
-        err</li>
-    </ol>
-
-
-
-
-</dd>
-    <dt>
-    <a name = "Client:start_check"></a>
-    <strong>Client:start_check (server[, opts])</strong>
-    </dt>
-    <dd>
-    Spawn an asynchronous AutoNAT check task.
-
-
-    <h3>Parameters:</h3>
-    <ul>
-        <li><span class="parameter">server</span>
-            <span class="types"><a class="type" href="https://www.lua.org/manual/5.4/manual.html#6.4">string</a> or <a class="type" href="https://www.lua.org/manual/5.4/manual.html#6.6">table</a></span>
-         Server peer target.
-        </li>
-        <li><span class="parameter">opts</span>
-            <span class="types"><a class="type" href="https://www.lua.org/manual/5.4/manual.html#6.6">table</a></span>
-         Same options as <a href="../modules/lua_libp2p.autonat.client.html#Client:check">check</a>.
- <code>opts.stream_opts.ctx</code> is injected automatically when omitted.
-         (<em>optional</em>)
-        </li>
-    </ul>
-
-    <h3>Returns:</h3>
-    <ol>
-        <li>
-           <span class="types"><a class="type" href="https://www.lua.org/manual/5.4/manual.html#6.6">table</a> or <span class="type">nil</span></span>
-        task</li>
-        <li>
-           <span class="types"><a class="type" href="https://www.lua.org/manual/5.4/manual.html#6.6">table</a></span>
-        err</li>
-    </ol>
-
-
-
-
-</dd>
-    <dt>
-    <a name = "Client:start_discovery"></a>
-    <strong>Client:start_discovery ([opts])</strong>
-    </dt>
-    <dd>
-    Run AutoNAT server discovery and checks.
- <code>opts</code> may include discovery limits/timeouts and check strategy knobs
- such as <code>max_autonat_servers</code>, <code>target_autonat_responses</code>,
- <code>check_timeout</code>, <code>stop_on_first_reachable</code>, and <code>drain_seconds</code>.
-
-
-    <h3>Parameters:</h3>
-    <ul>
-        <li><span class="parameter">opts</span>
-            <span class="types"><a class="type" href="https://www.lua.org/manual/5.4/manual.html#6.6">table</a></span>
-         Discovery options.
-         (<em>optional</em>)
-        </li>
-    </ul>
-
-    <h3>Returns:</h3>
-    <ol>
-        <li>
-           <span class="types"><a class="type" href="https://www.lua.org/manual/5.4/manual.html#6.6">table</a> or <span class="type">nil</span></span>
-        task</li>
-        <li>
-           <span class="types"><a class="type" href="https://www.lua.org/manual/5.4/manual.html#6.6">table</a></span>
-        err</li>
-    </ol>
-
-
-
-
-</dd>
-    <dt>
-    <a name = "Client:start_monitor"></a>
-    <strong>Client:start_monitor ([opts])</strong>
-    </dt>
-    <dd>
-    Start ongoing AutoNAT monitoring.
- <code>opts</code> may include monitor cadence: <code>retry_interval_seconds</code>,
- <code>healthy_interval_seconds</code>, <code>min_success_rounds</code>, and per-round
- discovery/check options used by <a href="../modules/lua_libp2p.autonat.client.html#Client:start_discovery">start_discovery</a>.
-
-
-    <h3>Parameters:</h3>
-    <ul>
-        <li><span class="parameter">opts</span>
-            <span class="types"><a class="type" href="https://www.lua.org/manual/5.4/manual.html#6.6">table</a></span>
-         Monitor options.
-         (<em>optional</em>)
-        </li>
-    </ul>
-
-    <h3>Returns:</h3>
-    <ol>
-        <li>
-           <span class="types"><a class="type" href="https://www.lua.org/manual/5.4/manual.html#6.6">table</a> or <span class="type">nil</span></span>
-        task</li>
-        <li>
-           <span class="types"><a class="type" href="https://www.lua.org/manual/5.4/manual.html#6.6">table</a></span>
-        err</li>
-    </ol>
-
-
-
-
-</dd>
-    <dt>
-    <a name = "Client:stop"></a>
-    <strong>Client:stop ()</strong>
-    </dt>
-    <dd>
-    Stop AutoNAT service activity.
-
-
-
-    <h3>Returns:</h3>
-    <ol>
-
-           <span class="types"><span class="type">true</span></span>
-
-
-
-    </ol>
-
-
-
-
-</dd>
-    <dt>
-    <a name = "new"></a>
-    <strong>new (host[, opts])</strong>
-    </dt>
-    <dd>
-    Construct a new AutoNAT client/service instance.
- <code>opts</code> may include protocol limits and behavior flags such as
- <code>max_message_size</code>, <code>allow_dial_data</code>, <code>max_dial_data_bytes</code>,
- <code>dial_data_chunk_size</code>, and <code>monitor_on_start</code>.
- Additional monitor options: <code>monitor_start_opts</code> / <code>monitor_opts</code>.
-
-
-    <h3>Parameters:</h3>
-    <ul>
-        <li><span class="parameter">host</span>
-            <span class="types"><a class="type" href="https://www.lua.org/manual/5.4/manual.html#6.6">table</a></span>
-         Host instance.
-        </li>
-        <li><span class="parameter">opts</span>
-            <span class="types"><a class="type" href="https://www.lua.org/manual/5.4/manual.html#6.6">table</a></span>
-
-
-
-         (<em>optional</em>)
-        </li>
-    </ul>
-
-    <h3>Returns:</h3>
-    <ol>
-        <li>
-           <span class="types"><a class="type" href="https://www.lua.org/manual/5.4/manual.html#6.6">table</a> or <span class="type">nil</span></span>
-        client</li>
-        <li>
-           <span class="types"><a class="type" href="https://www.lua.org/manual/5.4/manual.html#6.6">table</a></span>
-        err</li>
-    </ol>
-
-
-
-
-</dd>
-</dl>
 
 
 </div> <!-- id="content" -->
