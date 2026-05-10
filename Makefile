@@ -31,7 +31,7 @@ docs:
 	ldoc .
 
 test:
-	lua tests/run.lua
+	LIBP2P_LOG='*=warn' lua tests/run.lua
 
 bench:
 	lua tests/benchmarks/run.lua

@@ -1049,11 +1049,17 @@ function M.listen(target, opts)
     pcall(function()
       server:close()
     end)
-    log.error("tcp listen failed", {
+    local log_fields = {
       host = normalized_host,
       port = port,
       cause = tostring(listen_err),
-    })
+    }
+    if is_addr_in_use_error(listen_err) then
+      log_fields.expected_dualstack_overlap = true
+      log.debug("tcp listen failed", log_fields)
+    else
+      log.error("tcp listen failed", log_fields)
+    end
     return nil, error_mod.new("io", "failed starting native luv listener", {
       cause = listen_err,
     })
