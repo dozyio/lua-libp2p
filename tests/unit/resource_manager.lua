@@ -2,7 +2,7 @@ local resource_manager = require("lua_libp2p.resource_manager")
 
 local function expect_default_limits()
   local defaults = resource_manager.default_limits()
-  if defaults.connections ~= 128 or defaults.connections_inbound ~= 64 then
+  if defaults.connections ~= 1024 or defaults.connections_inbound ~= 800 then
     return nil, "unexpected default connection limits"
   end
   if defaults.streams ~= 2048 or defaults.streams_inbound ~= 1024 then
@@ -17,7 +17,7 @@ local function expect_default_limits()
 
   local rm = resource_manager.new()
   local stats = rm:stats()
-  if stats.limits.connections ~= 128 or stats.limits.protocol.default.streams_inbound ~= 512 then
+  if stats.limits.connections ~= 1024 or stats.limits.protocol.default.streams_inbound ~= 512 then
     return nil, "expected resource manager to use default limits"
   end
   if stats.limits.protocol_peer.default.streams_inbound ~= 64 then

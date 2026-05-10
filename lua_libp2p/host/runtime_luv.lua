@@ -24,6 +24,15 @@ local function sleep_seconds(seconds)
   end
 end
 
+local function debug_perf_add(host, key, elapsed_seconds)
+  local perf = type(host) == "table" and rawget(host, "_debug_perf") or nil
+  if type(perf) ~= "table" then
+    return
+  end
+  perf[key .. "_calls"] = (perf[key .. "_calls"] or 0) + 1
+  perf[key .. "_ms"] = (perf[key .. "_ms"] or 0) + (elapsed_seconds * 1000)
+end
+
 local function map_size(map)
   local n = 0
   for _ in pairs(map or {}) do
@@ -254,7 +263,13 @@ function M.poll_once(host, timeout)
     return nil, error_mod.new("input", "host table is required")
   end
 
+  local perf = rawget(host, "_debug_perf")
+  local phase_started = perf and now_seconds() or nil
   local sync_ok, sync_err = M.sync_watchers(host)
+  if phase_started then
+    debug_perf_add(host, "poll_sync_watchers", now_seconds() - phase_started)
+    phase_started = now_seconds()
+  end
   if not sync_ok then
     return nil, sync_err
   end
@@ -276,10 +291,18 @@ function M.poll_once(host, timeout)
     end
     sleep_seconds(math.min(0.001, math.max(0, deadline - now_seconds())))
   until false
+  if phase_started then
+    debug_perf_add(host, "poll_uv_wait", now_seconds() - phase_started)
+    phase_started = now_seconds()
+  end
 
   local ready_map = host._luv_ready
   host._luv_ready = {}
-  return host:_process_runtime_events(timeout, ready_map)
+  local ok, err = host:_process_runtime_events(timeout, ready_map)
+  if phase_started then
+    debug_perf_add(host, "poll_process_events", now_seconds() - phase_started)
+  end
+  return ok, err
 end
 
 function M.close_watchers(host)

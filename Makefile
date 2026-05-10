@@ -1,4 +1,4 @@
-.PHONY: deps lint-deps lint docs-deps docs test check
+.PHONY: deps lint-deps lint docs-deps docs test bench check
 
 deps:
 	luarocks make lua-libp2p-0.1.0-1.rockspec
@@ -25,6 +25,9 @@ docs:
 
 test:
 	lua tests/run.lua
+
+bench:
+	lua tests/benchmarks/run.lua
 
 check: test
 

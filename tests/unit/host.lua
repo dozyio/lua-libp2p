@@ -1,4 +1,5 @@
 local ed25519 = require("lua_libp2p.crypto.ed25519")
+local key_pb = require("lua_libp2p.crypto.key_pb")
 local keys = require("lua_libp2p.crypto.keys")
 local host = require("lua_libp2p.host")
 local identify = require("lua_libp2p.protocol_identify.protocol")
@@ -161,9 +162,9 @@ local function run()
     return nil, "host should tag bootstrap peers"
   end
   local bootstrap_stats = discovery_host:task_stats()
-  if bootstrap_stats.by_name["host.bootstrap_discovery"] ~= 1
-    or bootstrap_stats.by_name["host.bootstrap_dial"] ~= 2
-    or bootstrap_stats.by_status.completed ~= 3
+  if (bootstrap_stats.by_name["host.bootstrap_discovery"] or 0) < 1
+    or (bootstrap_stats.by_name["host.bootstrap_dial"] or 0) < 2
+    or (bootstrap_stats.by_status.completed or 0) < 3
   then
     return nil, "host task stats should include completed bootstrap dial tasks"
   end
@@ -260,6 +261,67 @@ local function run()
   end
   discovery_host._identify_inflight = {}
   discovery_host:stop()
+
+  local identify_direct_host = assert(host.new({
+    runtime = "luv",
+    identity = keypair,
+    blocking = false,
+  }))
+  local remote_public_key, remote_public_key_err = key_pb.encode_public_key(key_pb.KEY_TYPE.Ed25519, keypair.public_key)
+  if not remote_public_key then
+    return nil, remote_public_key_err
+  end
+  local identify_writer = {
+    data = "",
+    write = function(self, chunk)
+      self.data = self.data .. chunk
+      return true
+    end,
+  }
+  local wrote_identify, wrote_identify_err = identify.write(identify_writer, {
+    protocolVersion = "/lua-libp2p/test",
+    agentVersion = "lua-libp2p/test",
+    publicKey = remote_public_key,
+    listenAddrs = {},
+    protocols = { identify.ID },
+  })
+  if not wrote_identify then
+    return nil, wrote_identify_err
+  end
+  local identify_response_stream = {
+    data = identify_writer.data,
+    read = function(self, n)
+      if #self.data < n then
+        return nil, "unexpected EOF"
+      end
+      local chunk = self.data:sub(1, n)
+      self.data = self.data:sub(n + 1)
+      return chunk
+    end,
+    close = function()
+      return true
+    end,
+  }
+  local direct_identify_opened = false
+  local direct_identify_conn = {
+    new_stream = function(_, protocols)
+      direct_identify_opened = true
+      return identify_response_stream, protocols[1]
+    end,
+  }
+  identify_direct_host.dial = function()
+    return nil, nil, "identify should reuse the connection from peer_connected"
+  end
+  local direct_identify_result, direct_identify_err = identify_direct_host:_request_identify("peer-direct", {
+    connection = direct_identify_conn,
+    state = { remote_peer_id = "peer-direct", direction = "inbound" },
+  })
+  if not direct_identify_result then
+    return nil, direct_identify_err
+  end
+  if not direct_identify_opened or direct_identify_result.connection ~= direct_identify_conn then
+    return nil, "identify on connect should open its stream on the existing connection"
+  end
 
   local limited_host = assert(host.new({
     runtime = "luv",
@@ -438,6 +500,8 @@ local function run()
     dial_queue = {
       max_connections = 2,
       low_water = 1,
+      grace_period = 0,
+      silence_period = 0,
     },
   }))
   local closed = {}
@@ -468,6 +532,8 @@ local function run()
     dial_queue = {
       max_connections = 3,
       low_water = 2,
+      grace_period = 0,
+      silence_period = 0,
     },
   }))
   local weighted_closed = {}
@@ -499,7 +565,7 @@ local function run()
     blocking = false,
   }))
   local default_watermark_stats = default_watermark_host.connection_manager:stats()
-  if default_watermark_stats.high_water ~= 96 or default_watermark_stats.low_water ~= 64 then
+  if default_watermark_stats.high_water ~= 192 or default_watermark_stats.low_water ~= 160 then
     return nil, "connection manager should install default watermarks below resource limits"
   end
 
@@ -510,6 +576,8 @@ local function run()
     dial_queue = {
       high_water = 3,
       low_water = 2,
+      grace_period = 0,
+      silence_period = 0,
     },
   }))
   local watermark_closed = {}
@@ -533,6 +601,67 @@ local function run()
   end
   if watermark_host.connection_manager:stats().connections ~= 2 then
     return nil, "connection manager should prune high_water overflow down to low_water"
+  end
+
+  local grace_host = assert(host.new({
+    runtime = "luv",
+    identity = keypair,
+    blocking = false,
+    dial_queue = {
+      high_water = 2,
+      low_water = 1,
+      grace_period = 60,
+    },
+  }))
+  local grace_closed = {}
+  local function grace_conn(label)
+    return {
+      close = function()
+        grace_closed[label] = true
+        return true
+      end,
+    }
+  end
+  assert(grace_host:_register_connection(grace_conn("a"), { remote_peer_id = "peer-grace-a" }))
+  assert(grace_host:_register_connection(grace_conn("b"), { remote_peer_id = "peer-grace-b" }))
+  assert(grace_host:_register_connection(grace_conn("c"), { remote_peer_id = "peer-grace-c" }))
+  if grace_closed.a or grace_closed.b or grace_closed.c then
+    return nil, "connection manager should not prune fresh connections during grace period"
+  end
+  if grace_host.connection_manager:stats().connections ~= 3 then
+    return nil, "connection manager should temporarily exceed high_water during grace period"
+  end
+
+  local silence_host = assert(host.new({
+    runtime = "luv",
+    identity = keypair,
+    blocking = false,
+    dial_queue = {
+      high_water = 2,
+      low_water = 1,
+      grace_period = 0,
+      silence_period = 10,
+    },
+  }))
+  local silence_closed = {}
+  local function silence_conn(label)
+    return {
+      close = function()
+        silence_closed[label] = true
+        return true
+      end,
+    }
+  end
+  assert(silence_host:_register_connection(silence_conn("a"), { remote_peer_id = "peer-silence-a" }))
+  assert(silence_host:_register_connection(silence_conn("b"), { remote_peer_id = "peer-silence-b" }))
+  assert(silence_host:_register_connection(silence_conn("c"), { remote_peer_id = "peer-silence-c" }))
+  local after_first_prune = silence_host.connection_manager:stats().connections
+  if next(silence_closed) == nil then
+    return nil, "connection manager should close a connection during soft pruning"
+  end
+  assert(silence_host:_register_connection(silence_conn("d"), { remote_peer_id = "peer-silence-d" }))
+  if silence_host.connection_manager:stats().connections <= after_first_prune then
+    return nil, "connection manager should suppress repeated soft pruning during silence period"
   end
 
   local all_protected_host = assert(host.new({

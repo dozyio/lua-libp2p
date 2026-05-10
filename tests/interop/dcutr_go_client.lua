@@ -28,7 +28,13 @@ local host, host_err = host_mod.new({
   blocking = false,
   services = {
     identify = identify_service,
-    dcutr = { module = dcutr_service, config = { auto_on_relay_connection = false } },
+    dcutr = {
+      module = dcutr_service,
+      config = {
+        auto_on_relay_connection = false,
+        allow_private_obs_addrs = true,
+      },
+    },
   },
 })
 if not host then

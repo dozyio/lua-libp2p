@@ -205,7 +205,7 @@ local function router_candidates_v6(neighbors)
       add_candidate(entry.address, entry.ifname, "ndp_global_router")
     end
   end
-  for iid, list in pairs(by_iid) do
+  for _, list in pairs(by_iid) do
     local has_link_local = false
     local has_global = false
     local ifname = nil

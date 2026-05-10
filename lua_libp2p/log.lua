@@ -55,6 +55,14 @@ local function level_name_for(level)
   return nil
 end
 
+local function copy_table(input)
+  local out = {}
+  for k, v in pairs(input or {}) do
+    out[k] = v
+  end
+  return out
+end
+
 local function configure_from_spec(spec)
   local text = trim(spec)
   if text == "" then
@@ -148,6 +156,33 @@ function M.reset()
   current_level = LEVELS.info
   subsystem_levels = nil
   default_subsystem_level = nil
+  return true
+end
+
+--- Capture current logging configuration for later restore.
+-- @treturn table snapshot
+function M.snapshot()
+  return {
+    current_level = current_level,
+    subsystem_levels = copy_table(subsystem_levels),
+    default_subsystem_level = default_subsystem_level,
+  }
+end
+
+--- Restore logging configuration from a prior snapshot.
+-- @tparam table snapshot
+-- @treturn true|nil ok
+-- @treturn[opt] string err
+function M.restore(snapshot)
+  if type(snapshot) ~= "table" then
+    return nil, "invalid log snapshot"
+  end
+  current_level = tonumber(snapshot.current_level) or LEVELS.info
+  subsystem_levels = nil
+  if type(snapshot.subsystem_levels) == "table" then
+    subsystem_levels = copy_table(snapshot.subsystem_levels)
+  end
+  default_subsystem_level = snapshot.default_subsystem_level
   return true
 end
 

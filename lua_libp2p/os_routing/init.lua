@@ -10,7 +10,7 @@ local M = {}
 
 local function detect_platform()
   local ok_jit, jit_mod = pcall(function()
-    return jit
+    return _G.jit
   end)
   if ok_jit and jit_mod and type(jit_mod.os) == "string" then
     local os_name = jit_mod.os:lower()

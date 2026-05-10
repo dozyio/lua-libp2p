@@ -45,6 +45,44 @@ local function run()
     return nil, "protocol changes should emit self peer update"
   end
 
+  local running = assert(host_mod.new({
+    identity = assert(ed25519.generate_keypair()),
+    runtime = "luv",
+    listen_addrs = { "/ip4/127.0.0.1/tcp/0" },
+    announce_addrs = { "/ip4/203.0.113.10/tcp/4001" },
+    blocking = false,
+  }))
+  local started, start_err = running:start()
+  if not started then
+    return nil, start_err
+  end
+  local first_listener = running._listeners and running._listeners[1]
+  if not first_listener then
+    running:close()
+    return nil, "expected running listener"
+  end
+  local bind_calls = 0
+  local original_bind = running._bind_listeners
+  running._bind_listeners = function(self, ...)
+    bind_calls = bind_calls + 1
+    return original_bind(self, ...)
+  end
+  running.address_manager:set_announce_addrs({ "/ip4/203.0.113.11/tcp/4001" })
+  local update_ok, update_err = running:_emit_self_peer_update_if_changed()
+  if not update_ok then
+    running:close()
+    return nil, update_err
+  end
+  if bind_calls ~= 0 then
+    running:close()
+    return nil, "advertised address update should not rebind listeners"
+  end
+  if running._listeners[1] ~= first_listener then
+    running:close()
+    return nil, "advertised address update should keep existing listener object"
+  end
+  running:close()
+
   return true
 end
 

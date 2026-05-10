@@ -64,6 +64,42 @@ local function identify_listen_addrs(message)
   return out
 end
 
+local function open_identify_stream_on_connection(host, conn, state, protocols, opts)
+  if not conn or type(conn.new_stream) ~= "function" then
+    return nil, nil, nil, error_mod.new("input", "identify request requires a reusable connection")
+  end
+  if host:_connection_is_limited(state) then
+    local allowed, allow_err = host:_protocols_allowed_on_limited_connection(protocols, opts)
+    if not allowed then
+      return nil, nil, nil, allow_err
+    end
+  end
+
+  local stream_scope, resource_err = host:_open_stream_resource({ state = state }, "outbound")
+  if resource_err then
+    return nil, nil, nil, resource_err
+  end
+
+  local stream, selected, stream_err = conn:new_stream(protocols)
+  if not stream then
+    host:_close_stream_resource(stream_scope)
+    return nil, nil, nil, stream_err
+  end
+
+  local set_ok, set_err = host:_set_stream_resource_protocol(stream_scope, selected)
+  if not set_ok then
+    if type(stream.reset_now) == "function" then
+      pcall(function() stream:reset_now() end)
+    elseif type(stream.close) == "function" then
+      pcall(function() stream:close() end)
+    end
+    host:_close_stream_resource(stream_scope)
+    return nil, nil, nil, set_err
+  end
+
+  return host:_wrap_stream_resource(stream, stream_scope), selected, conn, state
+end
+
 function M.init(host)
   host._identify_inflight = {}
 end
@@ -131,10 +167,22 @@ function M.install(Host)
     if type(peer_id) ~= "string" or peer_id == "" then
       return nil, error_mod.new("input", "identify request requires peer id")
     end
+    local options = opts or {}
 
     local attempted_protocols = { identify.ID }
     local known_protocols = self.peerstore and self.peerstore:get_protocols(peer_id) or {}
-    local stream, selected, conn, state_or_err = self:new_stream(peer_id, attempted_protocols, opts)
+    local stream, selected, conn, state_or_err
+    if options.connection and type(options.connection.new_stream) == "function" then
+      stream, selected, conn, state_or_err = open_identify_stream_on_connection(
+        self,
+        options.connection,
+        options.state,
+        attempted_protocols,
+        options
+      )
+    else
+      stream, selected, conn, state_or_err = self:new_stream(peer_id, attempted_protocols, options)
+    end
     if not stream then
       log.debug("identify request stream open failed", {
         peer_id = peer_id,
@@ -215,10 +263,11 @@ function M.install(Host)
     }
   end
 
-  function Host:_schedule_identify_for_peer(peer_id)
+  function Host:_schedule_identify_for_peer(peer_id, opts)
     if type(peer_id) ~= "string" or peer_id == "" then
       return true
     end
+    local options = opts or {}
     if self._identify_inflight[peer_id] then
       return true
     end
@@ -235,7 +284,11 @@ function M.install(Host)
         inflight = map_count(self._identify_inflight),
       })
       local call_ok, result, identify_err = pcall(function()
-        return self:_request_identify(pid, { ctx = ctx })
+        return self:_request_identify(pid, {
+          ctx = ctx,
+          connection = options.connection,
+          state = options.state,
+        })
       end)
       if not call_ok then
         local panic = result

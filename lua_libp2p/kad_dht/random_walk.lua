@@ -7,6 +7,23 @@ local query = require("lua_libp2p.kad_dht.query")
 
 local M = {}
 
+local function now_seconds()
+  local ok_socket, socket = pcall(require, "socket")
+  if ok_socket and type(socket.gettime) == "function" then
+    return socket.gettime()
+  end
+  return os.time()
+end
+
+local function debug_perf_add(dht, key, elapsed_seconds)
+  local perf = dht and dht.host and rawget(dht.host, "_debug_perf") or nil
+  if type(perf) ~= "table" then
+    return
+  end
+  perf[key .. "_calls"] = (perf[key .. "_calls"] or 0) + 1
+  perf[key .. "_ms"] = (perf[key .. "_ms"] or 0) + (elapsed_seconds * 1000)
+end
+
 local function is_capacity_error(err)
   return error_mod.is_error(err) and err.kind == "capacity"
 end
@@ -35,6 +52,7 @@ function M.run(dht, opts)
 
   local initial_peers = dht.routing_table:all_peers()
   if options.legacy_walker ~= true then
+    local phase_started = dht.host and rawget(dht.host, "_debug_perf") and now_seconds() or nil
     local seeds = {}
     local initial_peer_ids = {}
     for _, entry in ipairs(initial_peers) do
@@ -56,6 +74,9 @@ function M.run(dht, opts)
         seeds[#seeds + 1] = { peer_id = entry.peer_id }
       end
     end
+    if phase_started then
+      debug_perf_add(dht, "kad_random_walk_seed_build", now_seconds() - phase_started)
+    end
     local closest, lookup = dht:_get_closest_peers(target_key, {
       peers = seeds,
       alpha = alpha,
@@ -72,6 +93,7 @@ function M.run(dht, opts)
     report.discovered = #(lookup.closest_peers or {})
     report.termination = lookup.termination
     report.active_peak = lookup.active_peak
+    phase_started = dht.host and rawget(dht.host, "_debug_perf") and now_seconds() or nil
     for _, peer in ipairs(lookup.queried_peers or {}) do
       if initial_peer_ids[peer.peer_id] and dht:get_local_peer(peer.peer_id) then goto continue end
       initial_peer_ids[peer.peer_id] = true
@@ -86,6 +108,9 @@ function M.run(dht, opts)
         report.errors[#report.errors + 1] = add_err
       end
       ::continue::
+    end
+    if phase_started then
+      debug_perf_add(dht, "kad_random_walk_apply_results", now_seconds() - phase_started)
     end
     return report
   end

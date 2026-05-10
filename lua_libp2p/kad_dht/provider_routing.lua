@@ -114,10 +114,7 @@ function M.handle_add_provider(dht, req)
     end
   end
 
-  local closer, closer_err = dht:_closest_peer_records(key, dht.k)
-  if not closer then
-    return nil, closer_err
-  end
+  -- ADD_PROVIDER has no response payload; avoid building unused closer peers.
   return nil
 end
 
@@ -207,6 +204,7 @@ function M.find_providers(dht, key, opts)
   local providers = {}
   local seed_peers = options.peers
   if not seed_peers then
+    local lookup_err
     seed_peers, lookup_err = seed_candidates_from_routing_table(dht, key, dht.k)
     if not seed_peers then
       return nil, lookup_err

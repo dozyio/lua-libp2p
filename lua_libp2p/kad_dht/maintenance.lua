@@ -6,13 +6,15 @@ local log = require("lua_libp2p.log").subsystem("kad_dht")
 local M = {}
 
 M.DEFAULT_ENABLED = false
-M.DEFAULT_INTERVAL_SECONDS = 30
-M.DEFAULT_MIN_RECHECK_SECONDS = 60
+M.DEFAULT_INTERVAL_SECONDS = 10 * 60
+M.DEFAULT_MIN_RECHECK_SECONDS = 10 * 60
 M.DEFAULT_MAX_CHECKS = 10
-M.DEFAULT_WALK_EVERY = 4
-M.DEFAULT_MAX_FAILED_CHECKS_BEFORE_EVICT = 2
+M.DEFAULT_WALK_EVERY = 1
+-- Go parity: after the grace window, a single failed liveness/protocol check
+-- evicts the peer from the routing table.
+M.DEFAULT_MAX_FAILED_CHECKS_BEFORE_EVICT = 1
 M.DEFAULT_WALK_TIMEOUT = 20
-M.DEFAULT_PROTOCOL_CHECK_TIMEOUT = 4
+M.DEFAULT_PROTOCOL_CHECK_TIMEOUT = 10
 
 local function emit_event(host, name, payload)
   if host and type(host.emit) == "function" then

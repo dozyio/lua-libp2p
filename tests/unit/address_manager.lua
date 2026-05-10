@@ -107,6 +107,28 @@ local function run()
     return nil, "unverified UPnP refresh should not downgrade verified mapping"
   end
 
+  local announced_wildcard = address_manager.new({
+    listen_addrs = {
+      "/ip4/0.0.0.0/tcp/4001",
+      "/ip6/::/tcp/4001",
+    },
+    announce_addrs = {
+      "/ip4/203.0.113.10/tcp/4001",
+      "/ip6/2001:db8::10/tcp/4001",
+    },
+  })
+  announced_wildcard:set_listen_addrs({
+    "/ip4/0.0.0.0/tcp/4001",
+    "/ip6/::/tcp/4001",
+  })
+  advertised = announced_wildcard:get_advertise_addrs()
+  if #advertised ~= 2
+    or advertised[1] ~= "/ip4/203.0.113.10/tcp/4001"
+    or advertised[2] ~= "/ip6/2001:db8::10/tcp/4001"
+  then
+    return nil, "explicit announce addrs should stay stable across wildcard listen recompute"
+  end
+
   return true
 end
 

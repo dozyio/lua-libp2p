@@ -674,7 +674,33 @@ function M.is_private_addr(input)
   end
   if host.protocol == "ip6" then
     local value = string.lower(tostring(host.value or ""))
-    return value == "::1" or value:match("^fc") ~= nil or value:match("^fd") ~= nil or value:match("^fe8") ~= nil or value:match("^fe9") ~= nil or value:match("^fea") ~= nil or value:match("^feb") ~= nil
+    if value == "::" or value == "::1" then
+      return true
+    end
+    local groups = parse_ip6_groups(value)
+    if groups then
+      local all_zero = true
+      for i = 1, 8 do
+        if groups[i] ~= 0 then
+          all_zero = false
+          break
+        end
+      end
+      if all_zero then
+        return true
+      end
+      local loopback = true
+      for i = 1, 7 do
+        if groups[i] ~= 0 then
+          loopback = false
+          break
+        end
+      end
+      if loopback and groups[8] == 1 then
+        return true
+      end
+    end
+    return value:match("^fc") ~= nil or value:match("^fd") ~= nil or value:match("^fe8") ~= nil or value:match("^fe9") ~= nil or value:match("^fea") ~= nil or value:match("^feb") ~= nil
   end
   local dns_name = string.lower(tostring(host.value or ""))
   return dns_name == "localhost" or dns_name:match("%.localhost$") ~= nil or dns_name:match("%.local$") ~= nil

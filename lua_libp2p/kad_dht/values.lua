@@ -355,6 +355,7 @@ function M.find_value(dht, key, opts)
   local seen_records = {}
   local seed_peers = options.peers
   if not seed_peers then
+    local lookup_err
     seed_peers, lookup_err = seed_candidates_from_routing_table(dht, key, dht.k)
     if not seed_peers then
       return nil, lookup_err

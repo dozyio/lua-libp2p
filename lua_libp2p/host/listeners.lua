@@ -40,6 +40,18 @@ local function rewrite_tcp_port(addr, port)
   return "/" .. tostring(host_component.protocol) .. "/" .. tostring(host_component.value) .. "/tcp/" .. tostring(port)
 end
 
+local function has_ipv6_wildcard_listener(bound_addrs, port)
+  for _, addr in ipairs(bound_addrs or {}) do
+    local parsed = multiaddr.parse(addr)
+    local endpoint = parsed and multiaddr.to_tcp_endpoint(parsed) or nil
+    local host_proto = parsed and parsed.components and parsed.components[1] and parsed.components[1].protocol or nil
+    if host_proto == "ip6" and endpoint and endpoint.host == "::" and endpoint.port == port then
+      return true
+    end
+  end
+  return false
+end
+
 local function verify_bound_targets(targets, bound_addrs)
   local bound = {}
   for _, addr in ipairs(bound_addrs or {}) do
@@ -164,6 +176,8 @@ function M.install(Host)
         nodelay = self._tcp_options and self._tcp_options.nodelay,
         keepalive = self._tcp_options and self._tcp_options.keepalive,
         keepalive_initial_delay = self._tcp_options and self._tcp_options.keepalive_initial_delay,
+        listen_backlog = self._tcp_options and self._tcp_options.listen_backlog,
+        accept_batch = self._tcp_options and self._tcp_options.accept_batch,
         require_ipv6_only = not has_ip4_targets,
       })
       if not listener then

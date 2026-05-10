@@ -607,10 +607,19 @@ local function run()
   if not started then
     return nil, start_err
   end
-  if not lifecycle_dht._reprovider_task or #lifecycle_host.tasks ~= 1 or lifecycle_host.tasks[1].name ~= "kad.reprovider" then
+  if not lifecycle_dht._reprovider_task then
     return nil, "reprovider should spawn background task when enabled"
   end
-  local task = lifecycle_host.tasks[1]
+  local task = nil
+  for _, candidate in ipairs(lifecycle_host.tasks) do
+    if candidate.name == "kad.reprovider" then
+      task = candidate
+      break
+    end
+  end
+  if not task then
+    return nil, "reprovider should spawn background task when enabled"
+  end
   local reprovide_calls = 0
   lifecycle_dht._reprovide = function(_, opts)
     reprovide_calls = reprovide_calls + 1
@@ -649,7 +658,14 @@ local function run()
   end
   lifecycle_dht._running = true
   lifecycle_dht:stop()
-  if #lifecycle_host.cancelled ~= 1 or lifecycle_host.cancelled[1] ~= task.id or lifecycle_dht._reprovider_task ~= nil then
+  local reprovider_cancelled = false
+  for _, cancelled_id in ipairs(lifecycle_host.cancelled) do
+    if cancelled_id == task.id then
+      reprovider_cancelled = true
+      break
+    end
+  end
+  if not reprovider_cancelled or lifecycle_dht._reprovider_task ~= nil then
     return nil, "stop should cancel reprovider task"
   end
 

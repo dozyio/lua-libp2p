@@ -9,22 +9,50 @@ local DEFAULT_MAX_PARALLEL_DIALS = 100
 local DEFAULT_MAX_DIAL_QUEUE_LENGTH = 500
 local DEFAULT_MAX_PEER_ADDRS_TO_DIAL = 3
 local DEFAULT_ADDRESS_DIAL_TIMEOUT = 6
-local DEFAULT_HIGH_WATER = 96
-local DEFAULT_LOW_WATER = 64
+local DEFAULT_HIGH_WATER = 192
+local DEFAULT_LOW_WATER = 160
+local DEFAULT_GRACE_PERIOD = 60
+local DEFAULT_SILENCE_PERIOD = 10
 
 local ConnectionManager = {}
 ConnectionManager.__index = ConnectionManager
 
+local function now_seconds()
+  local ok_socket, socket = pcall(require, "socket")
+  if ok_socket and type(socket.gettime) == "function" then
+    return socket.gettime()
+  end
+  return os.time()
+end
+
 local function target_key(target)
   if type(target) == "table" then
+    local addr = type(target.addr) == "string" and target.addr or nil
+    if addr and multiaddr.is_relay_addr(addr) then
+      local relay, relay_err = multiaddr.relay_info(addr)
+      if relay then
+        return "relay:" .. tostring(relay.relay_peer_id or "") .. "->" .. tostring(relay.destination_peer_id or target.peer_id or "")
+      end
+      return "relay_addr:" .. addr .. ":" .. tostring(relay_err)
+    end
     if type(target.peer_id) == "string" and target.peer_id ~= "" then
       return "peer:" .. target.peer_id
     end
-    if type(target.addr) == "string" and target.addr ~= "" then
-      return "addr:" .. target.addr
+    if addr and addr ~= "" then
+      return "addr:" .. addr
     end
   elseif type(target) == "string" and target ~= "" then
-    return "target:" .. target
+    if target:sub(1, 1) == "/" then
+      if multiaddr.is_relay_addr(target) then
+        local relay, relay_err = multiaddr.relay_info(target)
+        if relay then
+          return "relay:" .. tostring(relay.relay_peer_id or "") .. "->" .. tostring(relay.destination_peer_id or "")
+        end
+        return "relay_addr:" .. target .. ":" .. tostring(relay_err)
+      end
+      return "addr:" .. target
+    end
+    return "peer:" .. target
   end
   return nil
 end
@@ -60,7 +88,7 @@ end
 -- `max_parallel_dials`, `max_dial_queue_length`, `max_peer_addrs_to_dial`,
 -- `address_dial_timeout`, `dial_timeout`, `max_connections`,
 -- `max_inbound_connections`, `max_outbound_connections`,
--- `max_connections_per_peer`, `low_water`, and `high_water`.
+-- `max_connections_per_peer`, `low_water`, `high_water`, `grace_period`, and `silence_period`.
 -- @tparam table host Host instance.
 -- @tparam[opt] table opts
 -- @treturn table manager
@@ -79,6 +107,9 @@ function M.new(host, opts)
     max_connections_per_peer = options.max_connections_per_peer,
     low_water = options.low_water == nil and DEFAULT_LOW_WATER or options.low_water,
     high_water = options.high_water or options.max_connections or DEFAULT_HIGH_WATER,
+    grace_period = options.grace_period == nil and DEFAULT_GRACE_PERIOD or options.grace_period,
+    silence_period = options.silence_period == nil and DEFAULT_SILENCE_PERIOD or options.silence_period,
+    last_prune_at = nil,
     active_dials = 0,
     queue = {},
     pending_by_key = {},
@@ -120,6 +151,8 @@ function ConnectionManager:stats()
     outbound_connections = self:connection_count("outbound"),
     high_water = self.high_water,
     low_water = self.low_water,
+    grace_period = self.grace_period,
+    silence_period = self.silence_period,
   }
 end
 
@@ -462,14 +495,29 @@ function ConnectionManager:prune_if_needed(force, opts)
   if not high or (not force and current <= high) or (force and current < high) then
     return true
   end
+  local now = now_seconds()
+  if not force and self.silence_period and self.silence_period > 0 and self.last_prune_at then
+    if (now - self.last_prune_at) < self.silence_period then
+      return true
+    end
+  end
   local low = options.low or self.low_water or math.max(high - 1, 0)
+  local cutoff = nil
+  if not force and self.grace_period and self.grace_period > 0 then
+    cutoff = now - self.grace_period
+  end
+  local pruned_any = false
   while self:connection_count(direction) > low do
     local candidate = nil
     local candidate_value = nil
     for _, entry in pairs(self.connections_by_id) do
       local peer_id = entry.state and entry.state.remote_peer_id
       local entry_direction = entry.state and entry.state.direction or "unknown"
-      if (not direction or entry_direction == direction) and not (peer_id and self.protected_peers[peer_id]) then
+      local old_enough = true
+      if cutoff then
+        old_enough = (entry.opened_at or 0) <= cutoff
+      end
+      if old_enough and (not direction or entry_direction == direction) and not (peer_id and self.protected_peers[peer_id]) then
         local value = self:peer_value(peer_id)
         if not candidate or value < candidate_value or (value == candidate_value and (entry.opened_at or 0) < (candidate.opened_at or 0)) then
           candidate = entry
@@ -478,21 +526,30 @@ function ConnectionManager:prune_if_needed(force, opts)
       end
     end
     if not candidate then
-      return nil, error_mod.new("resource", "connection limit reached and no prunable connections available", {
-        high_water = high,
-        low_water = low,
-      })
+      if cutoff then
+        return true
+      else
+        return nil, error_mod.new("resource", "connection limit reached and no prunable connections available", {
+          high_water = high,
+          low_water = low,
+        })
+      end
+    else
+      if candidate.conn and type(candidate.conn.close) == "function" then
+        pcall(function()
+          candidate.conn:close()
+        end)
+      end
+      local ok, err = self.host:_unregister_connection(nil, candidate, error_mod.new("resource", "connection pruned"))
+      if not ok then
+        return nil, err
+      end
+      self.pruned = self.pruned + 1
+      pruned_any = true
     end
-    if candidate.conn and type(candidate.conn.close) == "function" then
-      pcall(function()
-        candidate.conn:close()
-      end)
-    end
-    local ok, err = self.host:_unregister_connection(nil, candidate, error_mod.new("resource", "connection pruned"))
-    if not ok then
-      return nil, err
-    end
-    self.pruned = self.pruned + 1
+  end
+  if not force and pruned_any then
+    self.last_prune_at = now
   end
   return true
 end

@@ -1,6 +1,7 @@
 --- Multistream-select negotiation protocol.
 -- @module lua_libp2p.multistream_select.protocol
 local error_mod = require("lua_libp2p.error")
+local log = require("lua_libp2p.log").subsystem("multistream")
 local varint = require("lua_libp2p.multiformats.varint")
 
 local M = {}
@@ -134,42 +135,89 @@ function M.select(conn, protocol_ids)
     return nil, error_mod.new("input", "protocol_ids must be non-empty")
   end
 
+  log.debug("multistream outbound select started", {
+    protocols = table.concat(protocols, ","),
+  })
+
   local ok, err = M.write_frame(conn, M.PROTOCOL_ID)
   if not ok then
+    log.debug("multistream outbound write header failed", {
+      cause = tostring(err),
+    })
     return nil, err
   end
 
   local remote_header, header_err = M.read_frame(conn)
   if not remote_header then
+    log.debug("multistream outbound read header failed", {
+      cause = tostring(header_err),
+    })
     return nil, header_err
   end
+  log.debug("multistream outbound header received", {
+    protocol = remote_header,
+  })
   if remote_header ~= M.PROTOCOL_ID then
-    return nil, error_mod.new("protocol", "unexpected multistream header", { received = remote_header })
+    local unexpected_err = error_mod.new("protocol", "unexpected multistream header", { received = remote_header })
+    log.debug("multistream outbound unexpected header", {
+      received = remote_header,
+      cause = tostring(unexpected_err),
+    })
+    return nil, unexpected_err
   end
 
   for _, protocol_id in ipairs(protocols) do
     ok, err = M.write_frame(conn, protocol_id)
     if not ok then
+      log.debug("multistream outbound write protocol failed", {
+        protocol = protocol_id,
+        cause = tostring(err),
+      })
       return nil, err
     end
+    log.debug("multistream outbound protocol proposed", {
+      protocol = protocol_id,
+    })
 
     local response, response_err = M.read_frame(conn)
     if not response then
+      log.debug("multistream outbound read response failed", {
+        protocol = protocol_id,
+        cause = tostring(response_err),
+      })
       return nil, response_err
     end
+    log.debug("multistream outbound response received", {
+      protocol = protocol_id,
+      response = response,
+    })
 
     if response == protocol_id then
+      log.debug("multistream outbound protocol selected", {
+        protocol = protocol_id,
+      })
       return protocol_id
     end
     if response ~= M.NA then
-      return nil, error_mod.new("protocol", "unexpected multistream response", {
+      local unexpected_err = error_mod.new("protocol", "unexpected multistream response", {
         protocol = protocol_id,
         response = response,
       })
+      log.debug("multistream outbound unexpected response", {
+        protocol = protocol_id,
+        response = response,
+        cause = tostring(unexpected_err),
+      })
+      return nil, unexpected_err
     end
   end
 
-  return nil, error_mod.new("unsupported", "no common protocol found")
+  local unsupported_err = error_mod.new("unsupported", "no common protocol found")
+  log.debug("multistream outbound select failed", {
+    protocols = table.concat(protocols, ","),
+    cause = tostring(unsupported_err),
+  })
+  return nil, unsupported_err
 end
 
 local Router = {}
@@ -206,15 +254,25 @@ end
 function Router:negotiate(conn)
   local first, first_err = M.read_frame(conn)
   if not first then
+    log.debug("multistream inbound read first frame failed", {
+      cause = tostring(first_err),
+    })
     return nil, nil, nil, first_err
   end
+  log.debug("multistream inbound first frame received", {
+    frame = first,
+  })
 
   local requested
   if first == M.PROTOCOL_ID then
     local ok, err = M.write_frame(conn, M.PROTOCOL_ID)
     if not ok then
+      log.debug("multistream inbound write header failed", {
+        cause = tostring(err),
+      })
       return nil, nil, nil, err
     end
+    log.debug("multistream inbound header acknowledged")
   else
     requested = first
   end
@@ -224,9 +282,15 @@ function Router:negotiate(conn)
       local request_err
       requested, request_err = M.read_frame(conn)
       if not requested then
+        log.debug("multistream inbound read protocol failed", {
+          cause = tostring(request_err),
+        })
         return nil, nil, nil, request_err
       end
     end
+    log.debug("multistream inbound protocol requested", {
+      protocol = requested,
+    })
 
     local record = self._handlers[requested]
     local handler = record and record.handler or nil
@@ -234,15 +298,29 @@ function Router:negotiate(conn)
     if handler then
       ok, err = M.write_frame(conn, requested)
       if not ok then
+        log.debug("multistream inbound write selected protocol failed", {
+          protocol = requested,
+          cause = tostring(err),
+        })
         return nil, nil, nil, err
       end
+      log.debug("multistream inbound protocol selected", {
+        protocol = requested,
+      })
       return requested, handler, record.options
     end
 
     ok, err = M.write_frame(conn, M.NA)
     if not ok then
+      log.debug("multistream inbound write na failed", {
+        protocol = requested,
+        cause = tostring(err),
+      })
       return nil, nil, nil, err
     end
+    log.debug("multistream inbound protocol unsupported", {
+      protocol = requested,
+    })
 
     requested = nil
   end

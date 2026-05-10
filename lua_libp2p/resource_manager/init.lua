@@ -39,10 +39,10 @@ local function merge_limits(base, overrides)
 end
 
 local DEFAULT_LIMITS = {
-  connections = 128,
-  connections_inbound = 64,
-  connections_outbound = 128,
-  transient_connections = 64,
+  connections = 1024,
+  connections_inbound = 800,
+  connections_outbound = 1024,
+  transient_connections = 256,
 
   streams = 2048,
   streams_inbound = 1024,
