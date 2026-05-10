@@ -592,6 +592,20 @@ local function run()
   assert(weighted_host.connection_manager:tag_peer("peer-low", "test", 1))
   assert(weighted_host.connection_manager:tag_peer("peer-mid", "test", 10))
   assert(weighted_host.connection_manager:tag_peer("peer-high", "test", 100))
+  if weighted_host.connection_manager:peer_value("peer-mid") ~= 10 then
+    return nil, "connection manager should report peer tag value"
+  end
+  assert(weighted_host.connection_manager:untag_peer("peer-mid", "test"))
+  if weighted_host.connection_manager:peer_value("peer-mid") ~= 0 then
+    return nil, "connection manager should remove a specific peer tag"
+  end
+  assert(weighted_host.connection_manager:tag_peer("peer-mid", "test", 10))
+  assert(weighted_host.connection_manager:tag_peer("peer-mid", "bonus", 2))
+  assert(weighted_host.connection_manager:untag_peer("peer-mid"))
+  if weighted_host.connection_manager:peer_value("peer-mid") ~= 0 then
+    return nil, "connection manager should clear all peer tags"
+  end
+  assert(weighted_host.connection_manager:tag_peer("peer-mid", "test", 10))
   assert(weighted_host:_register_connection(weighted_conn("low"), { remote_peer_id = "peer-low" }))
   assert(weighted_host:_register_connection(weighted_conn("mid"), { remote_peer_id = "peer-mid" }))
   assert(weighted_host:_register_connection(weighted_conn("high"), { remote_peer_id = "peer-high" }))
