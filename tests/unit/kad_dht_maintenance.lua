@@ -69,7 +69,9 @@ local function run()
     local_peer_id = "local",
     hash_function = fake_hash,
     maintenance_enabled = true,
-    maintenance_interval_seconds = 0,
+    maintenance_interval_seconds = 600,
+    maintenance_startup_retry_seconds = 5,
+    maintenance_startup_retry_max_seconds = 30,
     maintenance_walk_every = 1,
   })
   if not dht then
@@ -106,15 +108,11 @@ local function run()
   if not dht._maintenance_task or dht._maintenance_task.id ~= spawned[1].id then
     return nil, "expected dht to track maintenance task"
   end
-
   local maintenance_fn = spawned[1].fn
-  local slept = false
+  local sleeps = {}
   local ok, loop_err = maintenance_fn({
-    sleep = function(_, _)
-      if slept then
-        return true
-      end
-      slept = true
+    sleep = function(_, seconds)
+      sleeps[#sleeps + 1] = seconds
       dht._running = false
       return true
     end,
@@ -125,8 +123,73 @@ local function run()
   if refresh_calls == 0 then
     return nil, "expected maintenance loop to run refresh_once"
   end
+  if walk_calls ~= 0 then
+    return nil, "maintenance should skip random walk while routing table is empty"
+  end
+  if sleeps[1] ~= 5 then
+    return nil, "expected startup retry interval before first successful walk"
+  end
+
+  dht._maintenance_running = true
+  dht._running = true
+  local suppressed, suppressed_err = dht:add_peer("peer-a", { skip_kad_protocol_filter = true })
+  dht._maintenance_running = false
+  if not suppressed then
+    return nil, suppressed_err
+  end
+  if #spawned ~= 1 then
+    return nil, "maintenance trigger should not spawn while maintenance is running"
+  end
+
+  dht._running = true
+  local triggered, trigger_err = dht:add_peer("peer-b", { skip_kad_protocol_filter = true })
+  if not triggered then
+    return nil, trigger_err
+  end
+  if #spawned ~= 1 then
+    return nil, "maintenance trigger should only run when the first routing-table peer is added"
+  end
+
+  local trigger_dht, trigger_dht_err = kad_dht.new(host, {
+    local_peer_id = "local",
+    hash_function = fake_hash,
+    maintenance_enabled = true,
+  })
+  if not trigger_dht then
+    return nil, trigger_dht_err
+  end
+  trigger_dht._running = true
+  trigger_dht.refresh_once = dht.refresh_once
+  trigger_dht.random_walk = dht.random_walk
+  local trigger_peer_added, trigger_peer_err = trigger_dht:add_peer("peer-a", { skip_kad_protocol_filter = true })
+  if not trigger_peer_added then
+    return nil, trigger_peer_err
+  end
+  if #spawned ~= 2 or spawned[2].name ~= "kad.maintenance.trigger" then
+    return nil, "expected first routing-table peer to trigger maintenance"
+  end
+  local trigger_ok, trigger_run_err = spawned[2].fn({})
+  if not trigger_ok then
+    return nil, trigger_run_err
+  end
   if walk_calls == 0 then
-    return nil, "expected maintenance loop to trigger random walk"
+    return nil, "expected triggered maintenance to run random walk after first peer"
+  end
+
+  dht._running = true
+  sleeps = {}
+  ok, loop_err = maintenance_fn({
+    sleep = function(_, seconds)
+      sleeps[#sleeps + 1] = seconds
+      dht._running = false
+      return true
+    end,
+  })
+  if not ok then
+    return nil, loop_err
+  end
+  if sleeps[1] ~= 600 then
+    return nil, "expected normal interval after successful startup walk"
   end
 
   local saw_refresh_event = false
@@ -149,9 +212,77 @@ local function run()
   if not stopped then
     return nil, stop_err
   end
-  if cancelled_task_id ~= spawned[1].id then
+  if spawned[1].status ~= "cancelled" then
     return nil, "expected maintenance task cancellation on stop"
   end
+  if cancelled_task_id ~= spawned[1].id then
+    return nil, "expected stop to cancel tracked maintenance task"
+  end
+  trigger_dht:stop()
+
+  local backoff_dht, backoff_dht_err = kad_dht.new(host, {
+    local_peer_id = "local",
+    hash_function = fake_hash,
+    maintenance_enabled = true,
+    maintenance_interval_seconds = 600,
+    maintenance_startup_retry_seconds = 5,
+    maintenance_startup_retry_max_seconds = 30,
+    maintenance_walk_every = 1,
+  })
+  if not backoff_dht then
+    return nil, backoff_dht_err
+  end
+  backoff_dht.refresh_once = dht.refresh_once
+  local backoff_responses = 0
+  backoff_dht.random_walk = function(_, _)
+    return {
+      result = function()
+        return { queried = 1, responses = backoff_responses, added = 0, discovered = 0 }
+      end,
+    }
+  end
+  local backoff_peer_added, backoff_peer_err = backoff_dht:add_peer("peer-a", { skip_kad_protocol_filter = true })
+  if not backoff_peer_added then
+    return nil, backoff_peer_err
+  end
+  local backoff_started, backoff_start_err = backoff_dht:start()
+  if not backoff_started then
+    return nil, backoff_start_err
+  end
+  local backoff_task = spawned[#spawned]
+  local backoff_sleeps = {}
+  ok, loop_err = backoff_task.fn({
+    sleep = function(_, seconds)
+      backoff_sleeps[#backoff_sleeps + 1] = seconds
+      if #backoff_sleeps == 4 then
+        backoff_dht._running = false
+      end
+      return true
+    end,
+  })
+  if not ok then
+    return nil, loop_err
+  end
+  if table.concat(backoff_sleeps, ",") ~= "5,10,20,30" then
+    return nil, "expected startup maintenance backoff to double and cap at 30 seconds"
+  end
+  backoff_responses = 1
+  backoff_dht._running = true
+  backoff_sleeps = {}
+  ok, loop_err = backoff_task.fn({
+    sleep = function(_, seconds)
+      backoff_sleeps[#backoff_sleeps + 1] = seconds
+      backoff_dht._running = false
+      return true
+    end,
+  })
+  if not ok then
+    return nil, loop_err
+  end
+  if backoff_sleeps[1] ~= 600 then
+    return nil, "expected maintenance to use normal interval after successful startup walk"
+  end
+  backoff_dht:stop()
 
   local dht_disabled, disabled_err = kad_dht.new(host, {
     local_peer_id = "local",

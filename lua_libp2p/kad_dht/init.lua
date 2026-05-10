@@ -36,6 +36,8 @@ M.DEFAULT_MAX_CONCURRENT_QUERIES = 32
 M.DEFAULT_ADDRESS_FILTER = "public"
 M.DEFAULT_MAINTENANCE_ENABLED = maintenance.DEFAULT_ENABLED
 M.DEFAULT_MAINTENANCE_INTERVAL_SECONDS = maintenance.DEFAULT_INTERVAL_SECONDS
+M.DEFAULT_MAINTENANCE_STARTUP_RETRY_SECONDS = maintenance.DEFAULT_STARTUP_RETRY_SECONDS
+M.DEFAULT_MAINTENANCE_STARTUP_RETRY_MAX_SECONDS = maintenance.DEFAULT_STARTUP_RETRY_MAX_SECONDS
 M.DEFAULT_MAINTENANCE_MIN_RECHECK_SECONDS = maintenance.DEFAULT_MIN_RECHECK_SECONDS
 M.DEFAULT_MAINTENANCE_MAX_CHECKS = maintenance.DEFAULT_MAX_CHECKS
 M.DEFAULT_MAINTENANCE_WALK_EVERY = maintenance.DEFAULT_WALK_EVERY
@@ -160,52 +162,6 @@ function DHT:start()
   return true
 end
 
-function DHT:on_host_started()
-  if not (self.host and type(self.host.spawn_task) == "function") then
-    return true
-  end
-  if self._startup_walk_task then
-    return true
-  end
-
-  local task, task_err = self.host:spawn_task("kad.startup_bootstrap_walk", function(ctx)
-    local bootstrap_report, bootstrap_err = self:_bootstrap({
-      ignore_discovery_errors = true,
-      ignore_add_errors = true,
-      protocol_check_opts = {
-        timeout = self._maintenance_protocol_check_timeout,
-        stream_opts = { ctx = ctx },
-      },
-      dial_opts = { ctx = ctx },
-    })
-    if not bootstrap_report and bootstrap_err then
-      log.debug("kad dht startup bootstrap failed", {
-        cause = tostring(bootstrap_err),
-      })
-      return true
-    end
-
-    if #(self.routing_table:all_peers() or {}) < 1 then
-      return true
-    end
-
-    local walk_op = self:random_walk({
-      alpha = self.alpha,
-      disjoint_paths = self.disjoint_paths,
-      find_node_opts = { ctx = ctx },
-    })
-    if walk_op and type(walk_op.result) == "function" then
-      walk_op:result({ ctx = ctx, timeout = self._maintenance_walk_timeout })
-    end
-    return true
-  end, { service = "kad_dht" })
-  if not task then
-    return nil, task_err
-  end
-  self._startup_walk_task = task
-  return true
-end
-
 function DHT:_register_handler()
   if self._handler_registered then
     return true
@@ -299,10 +255,6 @@ function DHT:stop()
     end
   end
   self:_unregister_handler()
-  if self._startup_walk_task and self.host and type(self.host.cancel_task) == "function" then
-    self.host:cancel_task(self._startup_walk_task.id)
-  end
-  self._startup_walk_task = nil
   maintenance.stop(self)
   reprovider.stop(self)
   self._running = false
@@ -514,6 +466,7 @@ function DHT:add_peer(peer_id, opts)
       return nil, error_mod.new("filtered", "peer rejected by diversity filter", { peer_id = peer_id })
     end
   end
+  local had_routing_peers = #(self.routing_table:all_peers() or {}) > 0
   local added, err = self.routing_table:try_add_peer(peer_id, options)
   if added and type(peer_id) == "string" and peer_id ~= "" then
     local now = os.time()
@@ -524,6 +477,9 @@ function DHT:add_peer(peer_id, opts)
     log.debug("kad dht peer added", {
       peer_id = peer_id,
     })
+    if not had_routing_peers then
+      maintenance.trigger(self)
+    end
   elseif err then
     log.debug("kad dht peer rejected", {
       peer_id = tostring(peer_id),
@@ -2036,7 +1992,7 @@ function M.new(host, opts)
   local mode = options.mode == "auto" and "client" or (options.mode or "client")
   local maintenance_enabled
   if options.maintenance_enabled == nil then
-    maintenance_enabled = true
+    maintenance_enabled = M.DEFAULT_MAINTENANCE_ENABLED
   else
     maintenance_enabled = options.maintenance_enabled == true
   end
@@ -2074,6 +2030,11 @@ function M.new(host, opts)
     _auto_server_mode = options.auto_server_mode == true or options.mode == "auto",
     _maintenance_enabled = maintenance_enabled,
     _maintenance_interval_seconds = options.maintenance_interval_seconds or M.DEFAULT_MAINTENANCE_INTERVAL_SECONDS,
+    _maintenance_startup_retry_seconds = options.maintenance_startup_retry_seconds or M.DEFAULT_MAINTENANCE_STARTUP_RETRY_SECONDS,
+    _maintenance_startup_retry_max_seconds = options.maintenance_startup_retry_max_seconds or M.DEFAULT_MAINTENANCE_STARTUP_RETRY_MAX_SECONDS,
+    _maintenance_startup_retry_current_seconds = options.maintenance_startup_retry_seconds or M.DEFAULT_MAINTENANCE_STARTUP_RETRY_SECONDS,
+    _maintenance_established = false,
+    _maintenance_running = false,
     _maintenance_min_recheck_seconds = options.maintenance_min_recheck_seconds or M.DEFAULT_MAINTENANCE_MIN_RECHECK_SECONDS,
     _maintenance_max_checks = options.maintenance_max_checks or M.DEFAULT_MAINTENANCE_MAX_CHECKS,
     _maintenance_walk_every = options.maintenance_walk_every or M.DEFAULT_MAINTENANCE_WALK_EVERY,
@@ -2081,7 +2042,7 @@ function M.new(host, opts)
     _maintenance_protocol_check_timeout = options.maintenance_protocol_check_timeout or maintenance.DEFAULT_PROTOCOL_CHECK_TIMEOUT,
     _max_failed_checks_before_evict = options.max_failed_checks_before_evict or M.DEFAULT_MAX_FAILED_CHECKS_BEFORE_EVICT,
     _maintenance_task = nil,
-    _startup_walk_task = nil,
+    _maintenance_trigger_task = nil,
     _reprovider_enabled = options.reprovider_enabled == true or M.DEFAULT_REPROVIDER_ENABLED,
     _reprovider_interval_seconds = options.reprovider_interval_seconds or M.DEFAULT_REPROVIDER_INTERVAL_SECONDS,
     _reprovider_initial_delay_seconds = options.reprovider_initial_delay_seconds or M.DEFAULT_REPROVIDER_INITIAL_DELAY_SECONDS,
