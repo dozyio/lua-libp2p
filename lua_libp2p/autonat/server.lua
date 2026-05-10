@@ -31,6 +31,21 @@ local function prune_recent(entries, now, window_seconds)
   return out
 end
 
+local function random_between(min_value, max_value)
+  local min_n = math.floor(tonumber(min_value) or 0)
+  local max_n = math.floor(tonumber(max_value) or 0)
+  if min_n < 0 then
+    min_n = 0
+  end
+  if max_n < min_n then
+    max_n = min_n
+  end
+  if max_n == min_n then
+    return min_n
+  end
+  return math.random(min_n, max_n)
+end
+
 local function host_part(addr)
   local parsed = multiaddr.parse(addr)
   if not parsed or type(parsed.components) ~= "table" then
@@ -282,7 +297,12 @@ function Server:_serve_v1(stream, ctx)
     if type(addr) == "table" then
       addr = multiaddr.format(addr)
     end
-    if addr and not multiaddr.is_private_addr(addr) and (not remote_addr or same_host(addr, remote_addr)) then
+    if
+      addr
+      and not multiaddr.is_private_addr(addr)
+      and not multiaddr.is_relay_addr(addr)
+      and (not remote_addr or same_host(addr, remote_addr))
+    then
       addrs[#addrs + 1] = addr
     end
   end
@@ -405,7 +425,7 @@ function Server:_serve_v2(stream, ctx)
     if type(addr) == "table" then
       addr = multiaddr.format(addr)
     end
-    if addr and not multiaddr.is_private_addr(addr) then
+    if addr and not multiaddr.is_private_addr(addr) and not multiaddr.is_relay_addr(addr) then
       local dialable = true
       if type(self.host.is_dialable_addr) == "function" then
         dialable = self.host:is_dialable_addr(addr) == true
@@ -434,10 +454,12 @@ function Server:_serve_v2(stream, ctx)
 
   local requires_dial_data = (not remote_addr) or (not same_host(selected_addr, remote_addr))
   if requires_dial_data then
+    local requested_dial_data_bytes = random_between(self.dial_data_min_bytes, self.dial_data_max_bytes)
     log.debug("autonat v2 dial-data required", {
       peer_id = requester_peer,
       selected_addr = selected_addr,
       remote_addr = remote_addr,
+      requested_bytes = requested_dial_data_bytes,
     })
     if not self:_limiter_allow_dial_data() then
       log.debug("autonat v2 dial-data rate limited", { peer_id = requester_peer })
@@ -455,7 +477,7 @@ function Server:_serve_v2(stream, ctx)
     local asked, asked_err = autonat_v2.write_message(stream, {
       dialDataRequest = {
         addrIdx = selected_idx,
-        numBytes = self.dial_data_bytes,
+        numBytes = requested_dial_data_bytes,
       },
     })
     if not asked then
@@ -463,7 +485,7 @@ function Server:_serve_v2(stream, ctx)
       return nil, asked_err
     end
     local received = 0
-    while received < self.dial_data_bytes do
+    while received < requested_dial_data_bytes do
       local message, read_err = autonat_v2.read_message(stream, {
         max_message_size = self.max_message_size,
       })
@@ -476,6 +498,16 @@ function Server:_serve_v2(stream, ctx)
         return nil, error_mod.new("protocol", "expected dialDataResponse")
       end
       received = received + #message.dialDataResponse.data
+    end
+
+    local wait_max = tonumber(self.amplification_dial_wait_max_seconds) or 0
+    if wait_max > 0 then
+      local sleep_for = math.random() * wait_max
+      if ctx and type(ctx.sleep) == "function" then
+        ctx:sleep(sleep_for)
+      elseif self.host and type(self.host.sleep) == "function" then
+        self.host:sleep(sleep_for)
+      end
     end
   end
 
@@ -552,11 +584,15 @@ end
 
 --- Construct a new AutoNAT server instance.
 -- `opts` supports protocol toggles (`enable_v1`, `enable_v2`),
--- timeout/message sizing (`timeout`, `max_message_size`, `dial_data_bytes`), and
+-- timeout/message sizing (`timeout`, `max_message_size`),
 -- rate-limiting controls:
 -- `rate_limit_window_seconds`, `max_requests_per_window`,
 -- `max_requests_per_peer_per_window`, `max_dial_data_requests_per_window`,
 -- and `max_concurrent_per_peer`.
+-- Anti-amplification controls:
+-- `dial_data_min_bytes`, `dial_data_max_bytes`,
+-- optional legacy alias `dial_data_bytes`, and
+-- `amplification_dial_wait_max_seconds`.
 function M.new(host, opts)
   if type(host) ~= "table" then
     return nil, error_mod.new("input", "autonat server requires host")
@@ -568,7 +604,9 @@ function M.new(host, opts)
     enable_v2 = options.enable_v2 ~= false,
     timeout = options.timeout or 10,
     max_message_size = options.max_message_size or autonat_v2.MAX_MESSAGE_SIZE,
-    dial_data_bytes = options.dial_data_bytes or 30 * 1024,
+    dial_data_min_bytes = options.dial_data_min_bytes or options.dial_data_bytes or 30 * 1024,
+    dial_data_max_bytes = options.dial_data_max_bytes or options.dial_data_bytes or 100 * 1024,
+    amplification_dial_wait_max_seconds = options.amplification_dial_wait_max_seconds or 0,
     rate_limit_window_seconds = options.rate_limit_window_seconds or 60,
     max_requests_per_window = options.max_requests_per_window or 60,
     max_requests_per_peer_per_window = options.max_requests_per_peer_per_window or 12,

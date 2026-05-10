@@ -180,8 +180,12 @@ local h = assert(host.new({
         max_dial_data_requests_per_window = 12,
         max_concurrent_per_peer = 2,
 
-        -- v2 amplification challenge floor
-        dial_data_bytes = 30 * 1024,
+        -- v2 amplification challenge size (Go-like randomized range)
+        dial_data_min_bytes = 30 * 1024,
+        dial_data_max_bytes = 100 * 1024,
+
+        -- optional randomized delay before dial-back
+        amplification_dial_wait_max_seconds = 3,
       },
     },
   },
@@ -191,7 +195,8 @@ local h = assert(host.new({
 Notes:
 - Increase `max_requests_per_window` only if host resource limits and bandwidth are sized for it.
 - Keep `max_concurrent_per_peer` low to reduce burst abuse.
-- Raising `dial_data_bytes` improves abuse resistance but increases legitimate client cost.
+- Raising `dial_data_min_bytes` / `dial_data_max_bytes` improves abuse resistance but increases legitimate client cost.
+- Setting `amplification_dial_wait_max_seconds` above zero adds jitter before callback attempts.
 - Runnable example: `lua examples/autonat_server_hardened.lua` (optional args: `listen_multiaddr` and `key_path`).
 
 UPnP NAT status:

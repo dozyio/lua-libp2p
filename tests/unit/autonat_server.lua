@@ -256,6 +256,62 @@ local function run()
     return nil, "autonat server should rate limit v2 requests per peer"
   end
 
+  local ranged_host = {
+    _handlers = {},
+    handle = host.handle,
+    unhandle = host.unhandle,
+    is_dialable_addr = host.is_dialable_addr,
+    dial = host.dial,
+    new_stream = host.new_stream,
+  }
+  local ranged = assert(autonat_server.new(ranged_host, {
+    enable_v1 = false,
+    enable_v2 = true,
+    dial_data_min_bytes = 4096,
+    dial_data_max_bytes = 4096,
+    amplification_dial_wait_max_seconds = 0,
+  }))
+  assert(ranged:start())
+
+  local v2_range_stream = stream_from_v2_messages({
+    {
+      dialRequest = {
+        addrs = { addr_bytes },
+        nonce = 90,
+      },
+    },
+    {
+      dialDataResponse = {
+        data = string.rep("x", 4096),
+      },
+    },
+  })
+  ok, err = ranged_host._handlers[autonat_v2.DIAL_REQUEST_ID](v2_range_stream, {
+    state = {
+      remote_peer_id = "12D3KooWDialDataRange",
+      remote_addr = "/ip4/198.51.100.20/tcp/49155",
+    },
+  })
+  if not ok then
+    return nil, err
+  end
+
+  local range_out = table.concat(v2_range_stream.writes)
+  local range_pos = 1
+  local first_msg = assert(autonat_v2.read_message({
+    read = function(_, n)
+      if range_pos > #range_out then
+        return nil, "eof"
+      end
+      local chunk = range_out:sub(range_pos, range_pos + n - 1)
+      range_pos = range_pos + #chunk
+      return chunk
+    end,
+  }))
+  if not first_msg.dialDataRequest or first_msg.dialDataRequest.numBytes ~= 4096 then
+    return nil, "autonat server should request dial data within configured range"
+  end
+
   return true
 end
 
