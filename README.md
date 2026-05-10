@@ -51,7 +51,7 @@ This repo currently includes:
 - `lua_libp2p/multiformats`: varint, multibase, multihash, cid helpers
 - `lua_libp2p/multiaddr.lua`: multiaddr parsing/formatting/utilities
 - `lua_libp2p/dnsaddr.lua`: dnsaddr resolution abstraction utilities (resolver-injected)
-- `lua_libp2p/autonat`: AutoNAT v2 client service
+- `lua_libp2p/autonat`: AutoNAT v2 client service and AutoNAT v1/v2 server service
 - `lua_libp2p/upnp`: SSDP discovery, UPnP IGD SOAP client, and UPnP NAT service
 - `lua_libp2p/bootstrap.lua`: default bootstrap peer list and bootstrapper helpers
 - `lua_libp2p/address_manager.lua`: advertised address selection and relay address tracking
@@ -152,13 +152,47 @@ Address manager status:
 - Observed addrs from identify are collected but are not advertised by default.
 - Relayed `/p2p-circuit` addrs are advertised only while an AutoRelay reservation is active.
 
-AutoNAT v2 client status:
+AutoNAT status:
 - `services = { autonat = { module = require("lua_libp2p.autonat.client") } }` installs the client-side `/libp2p/autonat/2/dial-back` handler.
 - `host.autonat:check(server, { addrs = { ... } })` opens `/libp2p/autonat/2/dial-request` to an AutoNAT v2 server.
 - Dial-back nonce verification is tracked per request; the client responds with `DialBackResponse OK` for matching pending nonces.
 - Anti-amplification `DialDataRequest` is supported with configurable byte caps.
 - Results are stored on the address manager when available and emitted via `autonat:address:checked`, `autonat:address:reachable`, `autonat:address:unreachable`, and `autonat:request:failed` events.
-- AutoNAT v2 server mode is not implemented.
+- `services = { autonat_server = { module = require("lua_libp2p.autonat.server") } }` enables a combined server for `/libp2p/autonat/1.0.0` and `/libp2p/autonat/2/dial-request`.
+
+AutoNAT server hardening profile (public relay/operator nodes):
+
+```lua
+local host = require("lua_libp2p.host")
+
+local h = assert(host.new({
+  services = {
+    autonat_server = {
+      module = require("lua_libp2p.autonat.server"),
+      config = {
+        enable_v1 = true,
+        enable_v2 = true,
+
+        -- Go-like default shape: per-minute rolling windows
+        rate_limit_window_seconds = 60,
+        max_requests_per_window = 60,
+        max_requests_per_peer_per_window = 12,
+        max_dial_data_requests_per_window = 12,
+        max_concurrent_per_peer = 2,
+
+        -- v2 amplification challenge floor
+        dial_data_bytes = 30 * 1024,
+      },
+    },
+  },
+}))
+```
+
+Notes:
+- Increase `max_requests_per_window` only if host resource limits and bandwidth are sized for it.
+- Keep `max_concurrent_per_peer` low to reduce burst abuse.
+- Raising `dial_data_bytes` improves abuse resistance but increases legitimate client cost.
+- Runnable example: `lua examples/autonat_server_hardened.lua` (optional args: `listen_multiaddr` and `key_path`).
 
 UPnP NAT status:
 - `services = { upnp_nat = { module = require("lua_libp2p.upnp.nat") } }` enables SSDP gateway discovery and UPnP IGD SOAP port mapping.

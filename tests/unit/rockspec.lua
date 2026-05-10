@@ -19,6 +19,9 @@ local function run()
   local modules = env.build.modules
   local required = {
     "lua_libp2p.address_manager",
+    "lua_libp2p.autonat",
+    "lua_libp2p.autonat.client",
+    "lua_libp2p.autonat.server",
     "lua_libp2p.bootstrap",
     "lua_libp2p.connection_manager",
     "lua_libp2p.datastore",
@@ -65,6 +68,8 @@ local function run()
     "lua_libp2p.util.tables",
     "lua_libp2p.transport_circuit_relay_v2.protocol",
     "lua_libp2p.protocol_identify.protocol",
+    "lua_libp2p.protocol.autonat_v1",
+    "lua_libp2p.protocol.autonat_v2",
     "lua_libp2p.protocol_ping.protocol",
     "lua_libp2p.protocol_perf.protocol",
     "lua_libp2p.transport_circuit_relay_v2.autorelay",
