@@ -36,11 +36,6 @@ test:
 bench:
 	lua tests/benchmarks/run.lua
 
-check: test
-
-test-luv-native:
-	lua tests/run.lua
-
 interop-yamux-go:
 	addr_file=$$(mktemp); err_file=$$(mktemp); \
 	( cd tests/interop/go_yamux_echo && go run . ) > $$addr_file 2> $$err_file & pid=$$!; \
