@@ -68,7 +68,14 @@ local function run()
       return nil, nil, nil, nil, "unexpected identify protocol selection"
     end
     local stream = new_buffer_conn(payload)
-    return stream, identify.ID, { close = function() return true end }, { remote_peer_id = "peer-a" }
+    return stream,
+      identify.ID,
+      {
+        close = function()
+          return true
+        end,
+      },
+      { remote_peer_id = "peer-a" }
   end
 
   local result, req_err = host.services.identify:identify("peer-a")

@@ -6,7 +6,6 @@ local D = {}
 -- We track these explicitly so future parser changes can be made deliberately.
 -- Each case documents current Lua behavior and expected go behavior.
 --
-D.cases = {
-}
+D.cases = {}
 
 return D

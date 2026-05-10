@@ -7,9 +7,7 @@ local upgrader = require("lua_libp2p.network.upgrader")
 local M = {}
 
 function M.is_native_host(host)
-  return host._runtime == "luv"
-    and host._tcp_transport
-    and host._tcp_transport.BACKEND == "luv-native"
+  return host._runtime == "luv" and host._tcp_transport and host._tcp_transport.BACKEND == "luv-native"
 end
 
 function M.pending_raw(entry)
@@ -124,12 +122,14 @@ function M.resume_inbound_upgrade(host, pending_entry, is_nonfatal_stream_error)
         if raw_conn and type(raw_conn.set_context) == "function" then
           raw_conn:set_context(ctx)
         end
-        local upgrade_result = { pcall(upgrader.upgrade_inbound, raw_conn, {
-          local_keypair = host.identity,
-          security_protocols = host.security_transports,
-          muxer_protocols = host.muxers,
-          ctx = ctx,
-        }) }
+        local upgrade_result = {
+          pcall(upgrader.upgrade_inbound, raw_conn, {
+            local_keypair = host.identity,
+            security_protocols = host.security_transports,
+            muxer_protocols = host.muxers,
+            ctx = ctx,
+          }),
+        }
         if raw_conn and type(raw_conn.set_context) == "function" then
           raw_conn:set_context(nil)
         end
@@ -280,7 +280,8 @@ function M.process_connection(host, entry, router, is_nonfatal_stream_error)
     if conn and type(conn.close) == "function" then
       conn:close()
     end
-    if type(host._unregister_connection) == "function"
+    if
+      type(host._unregister_connection) == "function"
       and host._connections_by_id
       and host._connections_by_id[entry.id] == entry
     then
@@ -379,20 +380,29 @@ function M.process_connection(host, entry, router, is_nonfatal_stream_error)
     local stream_scope, resource_err = host:_open_stream_resource(entry, "inbound", protocol_id)
     if resource_err then
       if type(stream.reset_now) == "function" then
-        pcall(function() stream:reset_now() end)
+        pcall(function()
+          stream:reset_now()
+        end)
       elseif type(stream.close) == "function" then
-        pcall(function() stream:close() end)
+        pcall(function()
+          stream:close()
+        end)
       end
       return nil, resource_err
     end
     stream = host:_wrap_stream_resource(stream, stream_scope)
-    if host:_connection_is_limited(entry.state)
+    if
+      host:_connection_is_limited(entry.state)
       and not host:_protocol_allowed_on_limited_connection(protocol_id, handler_options)
     then
       if type(stream.reset_now) == "function" then
-        pcall(function() stream:reset_now() end)
+        pcall(function()
+          stream:reset_now()
+        end)
       elseif type(stream.close) == "function" then
-        pcall(function() stream:close() end)
+        pcall(function()
+          stream:close()
+        end)
       end
       return true
     end
@@ -484,15 +494,18 @@ function M.start_connection_pump_task(host, entry, is_nonfatal_stream_error)
   end
   task.on_finished = function(host_obj, finished_task)
     local finished_err = finished_task.error or finished_task.status
-    if (finished_task.status == "failed" or finished_task.status == "cancelled")
-      and is_terminal_connection_error(finished_err) then
+    if
+      (finished_task.status == "failed" or finished_task.status == "cancelled")
+      and is_terminal_connection_error(finished_err)
+    then
       if type(host_obj._bump_debug_counter) == "function" then
         host_obj:_bump_debug_counter("connection_pump_terminal")
       end
       if type(conn.close) == "function" then
         conn:close()
       end
-      if type(host_obj._unregister_connection) == "function"
+      if
+        type(host_obj._unregister_connection) == "function"
         and host_obj._connections_by_id
         and host_obj._connections_by_id[entry.id] == entry
       then

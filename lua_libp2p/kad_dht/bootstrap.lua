@@ -17,7 +17,9 @@ function M.default_peer_discovery(opts)
     dialable_only = options.dialable_only,
     ignore_resolve_errors = options.ignore_resolve_errors,
   })
-  if not bootstrap_source then return nil, bootstrap_err end
+  if not bootstrap_source then
+    return nil, bootstrap_err
+  end
   return discovery.new({ sources = { bootstrap_source } })
 end
 
@@ -31,13 +33,17 @@ function M.resolve_bootstrap_addrs(addrs, opts)
     dnsaddr_resolver = options.dnsaddr_resolver,
     ignore_resolve_errors = options.ignore_resolve_errors,
   })
-  if not bootstrap_source then return nil, bootstrap_err end
+  if not bootstrap_source then
+    return nil, bootstrap_err
+  end
   local peers, peers_err = bootstrap_source:discover({
     dialable_only = false,
     ignore_resolve_errors = options.ignore_resolve_errors,
     dnsaddr_resolver = options.dnsaddr_resolver,
   })
-  if not peers then return nil, peers_err end
+  if not peers then
+    return nil, peers_err
+  end
   local out = {}
   for _, peer in ipairs(peers) do
     if type(peer.addrs) == "table" and type(peer.addrs[1]) == "string" then
@@ -49,10 +55,14 @@ end
 
 local function extract_peer_id_from_multiaddr(addr)
   local parsed = multiaddr.parse(addr)
-  if not parsed then return nil end
+  if not parsed then
+    return nil
+  end
   for i = #parsed.components, 1, -1 do
     local c = parsed.components[i]
-    if c.protocol == "p2p" and c.value then return c.value end
+    if c.protocol == "p2p" and c.value then
+      return c.value
+    end
   end
   return nil
 end
@@ -68,14 +78,18 @@ function M.bootstrap_targets(dht, opts)
       ignore_resolve_errors = options.ignore_resolve_errors,
       dialable_only = true,
     })
-    if not discoverer then return nil, discover_err end
+    if not discoverer then
+      return nil, discover_err
+    end
   end
   local peers, peers_err = discoverer:discover({
     dnsaddr_resolver = options.dnsaddr_resolver or dht._dnsaddr_resolver,
     ignore_source_errors = options.ignore_resolve_errors,
     dialable_only = true,
   })
-  if not peers then return nil, peers_err end
+  if not peers then
+    return nil, peers_err
+  end
   local out = {}
   for _, peer in ipairs(peers) do
     if type(peer.addrs) == "table" and type(peer.addrs[1]) == "string" then
@@ -106,7 +120,9 @@ function M.bootstrap(dht, opts)
     ignore_source_errors = options.ignore_discovery_errors,
     dialable_only = true,
   })
-  if not candidates then return nil, discover_err end
+  if not candidates then
+    return nil, discover_err
+  end
   log.debug("kad dht bootstrap started", {
     candidates = #candidates,
     require_protocol = options.require_protocol ~= false,
@@ -127,7 +143,9 @@ function M.bootstrap(dht, opts)
         goto continue_addrs
       end
       local key = tostring(peer_id or "") .. "|" .. tostring(addr)
-      if seen[key] then goto continue_addrs end
+      if seen[key] then
+        goto continue_addrs
+      end
       seen[key] = true
       result.attempted = result.attempted + 1
       log.debug("kad dht bootstrap dial attempt", {
@@ -139,12 +157,17 @@ function M.bootstrap(dht, opts)
       if conn then
         result.connected = result.connected + 1
         local discovered_peer = peer_id
-        if not discovered_peer and state and state.remote_peer_id then discovered_peer = state.remote_peer_id end
-        if not discovered_peer then discovered_peer = extract_peer_id_from_multiaddr(addr) end
+        if not discovered_peer and state and state.remote_peer_id then
+          discovered_peer = state.remote_peer_id
+        end
+        if not discovered_peer then
+          discovered_peer = extract_peer_id_from_multiaddr(addr)
+        end
         if discovered_peer then
           local require_protocol = options.require_protocol ~= false
           if require_protocol then
-            local supported, supported_err = dht:_supports_kad_protocol(discovered_peer or addr, options.protocol_check_opts)
+            local supported, supported_err =
+              dht:_supports_kad_protocol(discovered_peer or addr, options.protocol_check_opts)
             if not supported then
               log.debug("kad dht bootstrap protocol check failed", {
                 peer_id = discovered_peer,
@@ -152,11 +175,12 @@ function M.bootstrap(dht, opts)
                 cause = tostring(supported_err),
               })
               result.failed = result.failed + 1
-              result.errors[#result.errors + 1] = error_mod.wrap("protocol", "peer does not support kad-dht protocol", supported_err, {
-                peer_id = discovered_peer,
-                addr = addr,
-                protocol_id = dht.protocol_id,
-              })
+              result.errors[#result.errors + 1] =
+                error_mod.wrap("protocol", "peer does not support kad-dht protocol", supported_err, {
+                  peer_id = discovered_peer,
+                  addr = addr,
+                  protocol_id = dht.protocol_id,
+                })
               goto continue_addrs
             end
           end
@@ -196,16 +220,24 @@ function M.bootstrap(dht, opts)
           addr = addr,
           cause = tostring(dial_err),
         })
-        if options.fail_fast then return nil, dial_err end
+        if options.fail_fast then
+          return nil, dial_err
+        end
       end
 
-      if type(options.max_success) == "number" and options.max_success > 0 and result.connected >= options.max_success then
+      if
+        type(options.max_success) == "number"
+        and options.max_success > 0
+        and result.connected >= options.max_success
+      then
         log.debug("kad dht bootstrap completed", result)
         return result
       end
       if yield then
         local yield_ok, yield_err = yield()
-        if yield_ok == nil and yield_err then return nil, yield_err end
+        if yield_ok == nil and yield_err then
+          return nil, yield_err
+        end
       end
       ::continue_addrs::
     end

@@ -62,7 +62,9 @@ local function sorted_table_keys(tbl)
   end
   table.sort(keys, function(a, b)
     local ta, tb = type(a), type(b)
-    if ta ~= tb then return ta < tb end
+    if ta ~= tb then
+      return ta < tb
+    end
     return tostring(a) < tostring(b)
   end)
   return keys
@@ -143,16 +145,27 @@ end
 
 function Store:get(key)
   local ok, key_err = datastore.validate_key(key)
-  if not ok then return nil, key_err end
-  local cursor, query_err = exec(self._conn, "SELECT value, expires_at FROM " .. self._table .. " WHERE key = " .. sql_string(key) .. " LIMIT 1")
-  if not cursor then return nil, query_err end
+  if not ok then
+    return nil, key_err
+  end
+  local cursor, query_err = exec(
+    self._conn,
+    "SELECT value, expires_at FROM " .. self._table .. " WHERE key = " .. sql_string(key) .. " LIMIT 1"
+  )
+  if not cursor then
+    return nil, query_err
+  end
   local row = cursor:fetch({}, "a")
   cursor_close(cursor)
-  if not row or row.value == nil then return nil end
+  if not row or row.value == nil then
+    return nil
+  end
   local expires_at = tonumber(row.expires_at)
   if expires_at and expires_at <= os.time() then
     local _, delete_err = exec(self._conn, "DELETE FROM " .. self._table .. " WHERE key = " .. sql_string(key))
-    if delete_err then return nil, delete_err end
+    if delete_err then
+      return nil, delete_err
+    end
     return nil
   end
   return decode_from_store(row.value)
@@ -160,42 +173,74 @@ end
 
 function Store:put(key, value, opts)
   local ok, key_err = datastore.validate_key(key)
-  if not ok then return nil, key_err end
-  if value == nil then return nil, error_mod.new("input", "datastore value cannot be nil") end
+  if not ok then
+    return nil, key_err
+  end
+  if value == nil then
+    return nil, error_mod.new("input", "datastore value cannot be nil")
+  end
   local expires_at, ttl_err = ttl_deadline(opts)
-  if ttl_err then return nil, ttl_err end
+  if ttl_err then
+    return nil, ttl_err
+  end
   local encoded, encode_err = encode_for_store(value)
-  if not encoded then return nil, encode_err end
+  if not encoded then
+    return nil, encode_err
+  end
   local expires_sql = expires_at and tostring(expires_at) or "NULL"
-  local sql = "REPLACE INTO " .. self._table .. " (key, value, expires_at, updated_at) VALUES ("
-    .. sql_string(key) .. ", " .. blob_literal(encoded) .. ", " .. expires_sql .. ", " .. tostring(os.time()) .. ")"
+  local sql = "REPLACE INTO "
+    .. self._table
+    .. " (key, value, expires_at, updated_at) VALUES ("
+    .. sql_string(key)
+    .. ", "
+    .. blob_literal(encoded)
+    .. ", "
+    .. expires_sql
+    .. ", "
+    .. tostring(os.time())
+    .. ")"
   local result, put_err = exec(self._conn, sql)
-  if not result then return nil, put_err end
+  if not result then
+    return nil, put_err
+  end
   return true
 end
 
 function Store:delete(key)
   local ok, key_err = datastore.validate_key(key)
-  if not ok then return nil, key_err end
-  local cursor, query_err = exec(self._conn, "SELECT 1 AS present FROM " .. self._table .. " WHERE key = " .. sql_string(key) .. " LIMIT 1")
-  if not cursor then return nil, query_err end
+  if not ok then
+    return nil, key_err
+  end
+  local cursor, query_err =
+    exec(self._conn, "SELECT 1 AS present FROM " .. self._table .. " WHERE key = " .. sql_string(key) .. " LIMIT 1")
+  if not cursor then
+    return nil, query_err
+  end
   local row = cursor:fetch({}, "a")
   cursor_close(cursor)
   local existed = row ~= nil and row.present ~= nil
   local result, delete_err = exec(self._conn, "DELETE FROM " .. self._table .. " WHERE key = " .. sql_string(key))
-  if not result then return nil, delete_err end
+  if not result then
+    return nil, delete_err
+  end
   return existed
 end
 
 function Store:list(prefix)
   local ok, key_err = datastore.validate_key(prefix)
-  if not ok then return nil, key_err end
+  if not ok then
+    return nil, key_err
+  end
   local cursor, query_err = exec(self._conn, "SELECT key, expires_at FROM " .. self._table .. " ORDER BY key")
-  if not cursor then return nil, query_err end
+  if not cursor then
+    return nil, query_err
+  end
   local keys = {}
   while true do
     local row = cursor:fetch({}, "a")
-    if not row or row.key == nil then break end
+    if not row or row.key == nil then
+      break
+    end
     local key = row.key
     local expires_at = tonumber(row.expires_at)
     if expires_at and expires_at <= os.time() then
@@ -209,8 +254,12 @@ function Store:list(prefix)
 end
 
 function Store:close()
-  if self._conn then self._conn:close() end
-  if self._env then self._env:close() end
+  if self._conn then
+    self._conn:close()
+  end
+  if self._env then
+    self._env:close()
+  end
   self._conn = nil
   self._env = nil
   return true
@@ -223,21 +272,31 @@ function M.new(opts)
     return nil, error_mod.new("input", "sqlite datastore path is required")
   end
   local table_name, table_err = sql_ident(options.table_name or "kv")
-  if not table_name then return nil, table_err end
+  if not table_name then
+    return nil, table_err
+  end
   local ok, sqlite_or_err = pcall(require, "luasql.sqlite3")
   if not ok then
     return nil, error_mod.new("dependency", "luasql.sqlite3 is not available", { cause = sqlite_or_err })
   end
   local env, env_err = sqlite_or_err.sqlite3()
-  if not env then return nil, error_mod.new("io", "failed to create sqlite environment", { cause = env_err }) end
+  if not env then
+    return nil, error_mod.new("io", "failed to create sqlite environment", { cause = env_err })
+  end
   local conn, conn_err = env:connect(path)
   if not conn then
     env:close()
     return nil, error_mod.new("io", "failed to open sqlite datastore", { cause = conn_err, path = path })
   end
-  local create_ok, create_err = exec(conn, "CREATE TABLE IF NOT EXISTS " .. table_name .. " (key TEXT PRIMARY KEY, value BLOB NOT NULL, expires_at INTEGER NULL, updated_at INTEGER NOT NULL)")
+  local create_ok, create_err = exec(
+    conn,
+    "CREATE TABLE IF NOT EXISTS "
+      .. table_name
+      .. " (key TEXT PRIMARY KEY, value BLOB NOT NULL, expires_at INTEGER NULL, updated_at INTEGER NOT NULL)"
+  )
   if not create_ok then
-    conn:close(); env:close()
+    conn:close()
+    env:close()
     return nil, create_err
   end
   return setmetatable({ _env = env, _conn = conn, _table = table_name }, Store)

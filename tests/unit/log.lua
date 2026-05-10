@@ -12,31 +12,55 @@ local function run()
   log.reset()
 
   local ok, err = assert_enabled("info", { subsystem = "host" }, true, "info should be enabled by default")
-  if not ok then return nil, err end
+  if not ok then
+    return nil, err
+  end
   ok, err = assert_enabled("debug", { subsystem = "host" }, false, "debug should be disabled by default")
-  if not ok then return nil, err end
+  if not ok then
+    return nil, err
+  end
 
   ok, err = log.configure("kad_dht,host")
-  if not ok then return nil, err end
+  if not ok then
+    return nil, err
+  end
   ok, err = assert_enabled("debug", { subsystem = "kad_dht" }, true, "named subsystem should enable debug logs")
-  if not ok then return nil, err end
+  if not ok then
+    return nil, err
+  end
   ok, err = assert_enabled("debug", { subsystem = "identify" }, false, "unnamed subsystem should be filtered")
-  if not ok then return nil, err end
+  if not ok then
+    return nil, err
+  end
   ok, err = assert_enabled("error", {}, false, "missing subsystem should be filtered when subsystem filter is active")
-  if not ok then return nil, err end
+  if not ok then
+    return nil, err
+  end
 
   ok, err = log.configure("kad_dht=debug,host=info,*=warn")
-  if not ok then return nil, err end
+  if not ok then
+    return nil, err
+  end
   ok, err = assert_enabled("debug", { subsystem = "kad_dht" }, true, "per-subsystem debug level should apply")
-  if not ok then return nil, err end
+  if not ok then
+    return nil, err
+  end
   ok, err = assert_enabled("debug", { subsystem = "host" }, false, "per-subsystem info level should suppress debug")
-  if not ok then return nil, err end
+  if not ok then
+    return nil, err
+  end
   ok, err = assert_enabled("info", { subsystem = "host" }, true, "per-subsystem info level should emit info")
-  if not ok then return nil, err end
+  if not ok then
+    return nil, err
+  end
   ok, err = assert_enabled("info", { subsystem = "identify" }, false, "fallback warn level should suppress info")
-  if not ok then return nil, err end
+  if not ok then
+    return nil, err
+  end
   ok, err = assert_enabled("warn", { subsystem = "identify" }, true, "fallback warn level should emit warn")
-  if not ok then return nil, err end
+  if not ok then
+    return nil, err
+  end
 
   local kad_log = log.subsystem("kad_dht")
   local kad_enabled, kad_enabled_err = kad_log.enabled("debug")
@@ -49,9 +73,13 @@ local function run()
   end
 
   ok, err = log.configure("debug")
-  if not ok then return nil, err end
+  if not ok then
+    return nil, err
+  end
   ok, err = assert_enabled("debug", { subsystem = "any" }, true, "level-only config should set global level")
-  if not ok then return nil, err end
+  if not ok then
+    return nil, err
+  end
 
   local bad, bad_err = log.configure("host=trace")
   if bad ~= nil or bad_err ~= "invalid log level" then

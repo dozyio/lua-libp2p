@@ -41,14 +41,22 @@ function M.run(dht, opts)
 
   local target_key = options.target_key or dht.local_peer_id
   local target_bytes, target_err = protocol.peer_bytes(target_key)
-  if not target_bytes then return nil, target_err end
+  if not target_bytes then
+    return nil, target_err
+  end
   local target_hash, hash_err = dht.routing_table:_hash(target_bytes)
-  if not target_hash then return nil, hash_err end
+  if not target_hash then
+    return nil, hash_err
+  end
 
   local alpha = options.alpha or dht.alpha
-  if type(alpha) ~= "number" or alpha <= 0 then return nil, error_mod.new("input", "alpha must be > 0") end
+  if type(alpha) ~= "number" or alpha <= 0 then
+    return nil, error_mod.new("input", "alpha must be > 0")
+  end
   local disjoint_paths = options.disjoint_paths or dht.disjoint_paths
-  if type(disjoint_paths) ~= "number" or disjoint_paths <= 0 then return nil, error_mod.new("input", "disjoint_paths must be > 0") end
+  if type(disjoint_paths) ~= "number" or disjoint_paths <= 0 then
+    return nil, error_mod.new("input", "disjoint_paths must be > 0")
+  end
 
   local initial_peers = dht.routing_table:all_peers()
   if options.legacy_walker ~= true then
@@ -59,10 +67,11 @@ function M.run(dht, opts)
       initial_peer_ids[entry.peer_id] = true
       local addrs = {}
       if dht.host and dht.host.peerstore then
-        local filtered, filtered_err = dht:_dialable_tcp_addrs(dht:_filter_addrs(dht.host.peerstore:get_addrs(entry.peer_id), {
-          peer_id = entry.peer_id,
-          purpose = "random_walk_seed",
-        }))
+        local filtered, filtered_err =
+          dht:_dialable_tcp_addrs(dht:_filter_addrs(dht.host.peerstore:get_addrs(entry.peer_id), {
+            peer_id = entry.peer_id,
+            purpose = "random_walk_seed",
+          }))
         if not filtered then
           return nil, filtered_err
         end
@@ -85,7 +94,9 @@ function M.run(dht, opts)
       scheduler_task = options.scheduler_task,
       ctx = options.ctx,
     })
-    if not closest then return nil, lookup end
+    if not closest then
+      return nil, lookup
+    end
     report.queried = lookup.queried or 0
     report.responses = lookup.responses or 0
     report.failed = lookup.failed or 0
@@ -95,10 +106,18 @@ function M.run(dht, opts)
     report.active_peak = lookup.active_peak
     phase_started = dht.host and rawget(dht.host, "_debug_perf") and now_seconds() or nil
     for _, peer in ipairs(lookup.queried_peers or {}) do
-      if initial_peer_ids[peer.peer_id] and dht:get_local_peer(peer.peer_id) then goto continue end
+      if initial_peer_ids[peer.peer_id] and dht:get_local_peer(peer.peer_id) then
+        goto continue
+      end
       initial_peer_ids[peer.peer_id] = true
-      if dht:get_local_peer(peer.peer_id) then report.added = report.added + 1; goto continue end
-      if not dht:_peerstore_supports_kad(peer.peer_id) then report.skipped = report.skipped + 1; goto continue end
+      if dht:get_local_peer(peer.peer_id) then
+        report.added = report.added + 1
+        goto continue
+      end
+      if not dht:_peerstore_supports_kad(peer.peer_id) then
+        report.skipped = report.skipped + 1
+        goto continue
+      end
       local added, add_err = dht:add_peer(peer.peer_id, { allow_replace = options.allow_replace })
       if added then
         report.added = report.added + 1
@@ -116,27 +135,43 @@ function M.run(dht, opts)
   end
 
   local paths = {}
-  for i = 1, disjoint_paths do paths[i] = {} end
+  for i = 1, disjoint_paths do
+    paths[i] = {}
+  end
   local queued = {}
   local queried_peers = {}
   local next_seed_path = 1
   local function enqueue(path_index, peer, referrer_distance)
-    if not peer or not peer.peer_id or peer.peer_id == dht.local_peer_id then return end
-    if queued[peer.peer_id] or queried_peers[peer.peer_id] then return end
+    if not peer or not peer.peer_id or peer.peer_id == dht.local_peer_id then
+      return
+    end
+    if queued[peer.peer_id] or queried_peers[peer.peer_id] then
+      return
+    end
     if peer.addrs ~= nil and type(peer.addrs) == "table" then
-      local filtered, filtered_err = dht:_dialable_tcp_addrs(dht:_filter_addrs(peer.addrs, { peer_id = peer.peer_id, purpose = "random_walk_enqueue" }))
+      local filtered, filtered_err = dht:_dialable_tcp_addrs(
+        dht:_filter_addrs(peer.addrs, { peer_id = peer.peer_id, purpose = "random_walk_enqueue" })
+      )
       if not filtered then
-        if not options.ignore_add_errors then report.errors[#report.errors + 1] = filtered_err end
+        if not options.ignore_add_errors then
+          report.errors[#report.errors + 1] = filtered_err
+        end
         return
       end
-      if #filtered == 0 then return end
+      if #filtered == 0 then
+        return
+      end
     end
     local distance, distance_err = dht:_distance_to_target(peer.peer_id, target_hash)
     if not distance then
-      if not options.ignore_add_errors then report.errors[#report.errors + 1] = distance_err end
+      if not options.ignore_add_errors then
+        report.errors[#report.errors + 1] = distance_err
+      end
       return
     end
-    if referrer_distance and query.compare_distance(distance, referrer_distance) >= 0 then return end
+    if referrer_distance and query.compare_distance(distance, referrer_distance) >= 0 then
+      return
+    end
     peer._distance = distance
     queued[peer.peer_id] = true
     paths[path_index][#paths[path_index] + 1] = peer
@@ -156,27 +191,39 @@ function M.run(dht, opts)
         active = true
         table.sort(queue_items, function(a, b)
           local cmp = query.compare_distance(a._distance, b._distance)
-          if cmp == 0 then return a.peer_id < b.peer_id end
+          if cmp == 0 then
+            return a.peer_id < b.peer_id
+          end
           return cmp < 0
         end)
         local batch = {}
-        for _ = 1, math.min(alpha, #queue_items) do batch[#batch + 1] = table.remove(queue_items, 1) end
+        for _ = 1, math.min(alpha, #queue_items) do
+          batch[#batch + 1] = table.remove(queue_items, 1)
+        end
         for _, entry in ipairs(batch) do
           queued[entry.peer_id] = nil
-          if queried_peers[entry.peer_id] then goto continue_queries end
+          if queried_peers[entry.peer_id] then
+            goto continue_queries
+          end
           queried_peers[entry.peer_id] = true
           report.queried = report.queried + 1
           local query_target = entry
-          if not entry.addr and not entry.addrs then query_target = entry.peer_id end
+          if not entry.addr and not entry.addrs then
+            query_target = entry.peer_id
+          end
           local closest, closest_err = dht:_find_node(query_target, target_key, options.find_node_opts)
           if yield then
             local yield_ok, yield_err = yield()
-            if yield_ok == nil and yield_err then return nil, yield_err end
+            if yield_ok == nil and yield_err then
+              return nil, yield_err
+            end
           end
           if not closest then
             report.failed = report.failed + 1
             report.errors[#report.errors + 1] = closest_err
-            if options.fail_fast then return nil, closest_err end
+            if options.fail_fast then
+              return nil, closest_err
+            end
             goto continue_queries
           end
           report.responses = report.responses + 1
@@ -216,15 +263,21 @@ function M.spawn(dht, opts)
   local options = opts or {}
   local task, task_err = dht.host:spawn_task("kad.random_walk", function(ctx)
     local task_opts = {}
-    for k, v in pairs(options) do task_opts[k] = v end
+    for k, v in pairs(options) do
+      task_opts[k] = v
+    end
     task_opts.scheduler_task = true
     task_opts.ctx = task_opts.ctx or ctx
-    task_opts.yield = task_opts.yield or function() return ctx:checkpoint() end
+    task_opts.yield = task_opts.yield or function()
+      return ctx:checkpoint()
+    end
     task_opts.find_node_opts = task_opts.find_node_opts or {}
     task_opts.find_node_opts.ctx = task_opts.find_node_opts.ctx or ctx
     return dht:_random_walk(task_opts)
   end, { service = "kad_dht" })
-  if not task then return nil, task_err end
+  if not task then
+    return nil, task_err
+  end
   return operation.new(dht.host, task)
 end
 

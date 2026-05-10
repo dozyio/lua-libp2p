@@ -77,11 +77,8 @@ function Client:reserve(target, opts)
     return nil, error_mod.new("state", "relay client requires host:new_stream")
   end
 
-  local stream, selected, conn, state_or_err = self.host:new_stream(
-    relay_dial_target(relay_target),
-    { relay_proto.HOP_ID },
-    options.stream_opts
-  )
+  local stream, selected, conn, state_or_err =
+    self.host:new_stream(relay_dial_target(relay_target), { relay_proto.HOP_ID }, options.stream_opts)
   if not stream then
     return nil, state_or_err
   end

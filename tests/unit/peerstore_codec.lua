@@ -54,7 +54,8 @@ local function run()
   if not decoded then
     return nil, decode_err
   end
-  if decoded.peer_id ~= record.peer_id
+  if
+    decoded.peer_id ~= record.peer_id
     or decoded.metadata.agent ~= "test"
     or decoded.metadata.score ~= 1.5
     or decoded.metadata.active ~= true

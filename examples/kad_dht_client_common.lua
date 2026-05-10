@@ -206,7 +206,8 @@ function M.new_client(opts)
   if opts.persist_peerstore then
     local has_sqlite = pcall(require, "luasql.sqlite3")
     if not has_sqlite then
-      return nil, "--persist-peerstore requires luasql-sqlite3; install deps with `make deps` or `luarocks install luasql-sqlite3`"
+      return nil,
+        "--persist-peerstore requires luasql-sqlite3; install deps with `make deps` or `luarocks install luasql-sqlite3`"
     end
     local datastore_err
     ps_datastore, datastore_err = sqlite_datastore.new({ path = opts.peerstore_path })
@@ -251,13 +252,17 @@ function M.new_client(opts)
     accept_timeout = 0.05,
   })
   if not host then
-    if ps_datastore then ps_datastore:close() end
+    if ps_datastore then
+      ps_datastore:close()
+    end
     return nil, host_err
   end
 
   local started, start_err = host:start()
   if not started then
-    if ps_datastore then ps_datastore:close() end
+    if ps_datastore then
+      ps_datastore:close()
+    end
     return nil, start_err
   end
 
@@ -269,17 +274,29 @@ function M.new_client(opts)
   })
   if not bootstrapped then
     host:stop()
-    if ps_datastore then ps_datastore:close() end
+    if ps_datastore then
+      ps_datastore:close()
+    end
     return nil, dht_bootstrap_err
   end
-  io.stdout:write("dht bootstrap: connected=" .. tostring(bootstrapped.connected) .. " added=" .. tostring(bootstrapped.added) .. " failed=" .. tostring(bootstrapped.failed) .. "\n")
+  io.stdout:write(
+    "dht bootstrap: connected="
+      .. tostring(bootstrapped.connected)
+      .. " added="
+      .. tostring(bootstrapped.added)
+      .. " failed="
+      .. tostring(bootstrapped.failed)
+      .. "\n"
+  )
 
   local seeded, bootstrap_err = M.wait_for_routing_table(host, dht, {
     timeout = opts.bootstrap_timeout or 30,
   })
   if not seeded then
     host:stop()
-    if ps_datastore then ps_datastore:close() end
+    if ps_datastore then
+      ps_datastore:close()
+    end
     return nil, bootstrap_err
   end
 

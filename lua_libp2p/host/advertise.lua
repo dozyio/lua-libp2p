@@ -66,7 +66,8 @@ function M.install(Host)
   function Host:_emit_self_peer_update_if_changed()
     local addrs = self:get_multiaddrs_raw()
     local protocols = self:_list_protocol_handlers()
-    if self._last_advertised_addrs
+    if
+      self._last_advertised_addrs
       and self._last_advertised_protocols
       and list_equal(self._last_advertised_addrs, addrs)
       and list_equal(self._last_advertised_protocols, protocols)

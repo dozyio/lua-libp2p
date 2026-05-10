@@ -344,10 +344,11 @@ function M.read(conn)
     return nil, len_err
   end
   if length > M.MAX_MESSAGE_SIZE then
-    return nil, error_mod.new("decode", "identify message too large", {
-      max = M.MAX_MESSAGE_SIZE,
-      got = length,
-    })
+    return nil,
+      error_mod.new("decode", "identify message too large", {
+        max = M.MAX_MESSAGE_SIZE,
+        got = length,
+      })
   end
 
   local payload, payload_err = read_exact(conn, length)

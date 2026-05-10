@@ -37,13 +37,15 @@ end
 
 local function print_result(name, iterations, elapsed)
   local per_iter_ms = iterations > 0 and (elapsed * 1000 / iterations) or 0
-  io.stdout:write(string.format(
-    "  %-34s iterations=%d total_ms=%.2f per_iter_ms=%.4f\n",
-    name,
-    iterations,
-    elapsed * 1000,
-    per_iter_ms
-  ))
+  io.stdout:write(
+    string.format(
+      "  %-34s iterations=%d total_ms=%.2f per_iter_ms=%.4f\n",
+      name,
+      iterations,
+      elapsed * 1000,
+      per_iter_ms
+    )
+  )
 end
 
 local function new_host(peer_count, addrs_per_peer)
@@ -245,7 +247,9 @@ local function bench_peer_record_filtering()
     local nearest = assert(dht:find_closest_peers("target", 22))
     local peers = {}
     for _, entry in ipairs(nearest) do
-      if #peers >= 20 then break end
+      if #peers >= 20 then
+        break
+      end
       local record = cached_peer_record(entry.peer_id, "response")
       if #record.addrs > 0 then
         peers[#peers + 1] = {

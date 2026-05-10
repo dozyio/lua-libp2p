@@ -261,10 +261,11 @@ function M.verify(envelope, domain, expected_peer_id)
     return nil, expected_err
   end
   if expected_bytes and expected_bytes ~= pid.bytes then
-    return nil, error_mod.new("verify", "envelope signer did not match expected peer", {
-      expected = peerid.to_base58(expected_bytes),
-      received = pid.id,
-    })
+    return nil,
+      error_mod.new("verify", "envelope signer did not match expected peer", {
+        expected = peerid.to_base58(expected_bytes),
+        received = pid.id,
+      })
   end
 
   local signing_input, input_err = M.signature_input(domain, envelope.payload_type or "", envelope.payload)
@@ -272,7 +273,12 @@ function M.verify(envelope, domain, expected_peer_id)
     return nil, input_err
   end
 
-  local ok, verify_err = keys.verify_signature({ data = decoded_key.data, type = decoded_key.type }, signing_input, envelope.signature, decoded_key.type)
+  local ok, verify_err = keys.verify_signature(
+    { data = decoded_key.data, type = decoded_key.type },
+    signing_input,
+    envelope.signature,
+    decoded_key.type
+  )
   if verify_err then
     return nil, verify_err
   end

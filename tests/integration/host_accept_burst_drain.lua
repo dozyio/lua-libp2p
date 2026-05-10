@@ -6,13 +6,17 @@ local ok_socket, socket = pcall(require, "socket")
 
 local function close_host(h)
   if h then
-    pcall(function() h:close() end)
+    pcall(function()
+      h:close()
+    end)
   end
 end
 
 local function close_sockets(sockets)
   for _, sock in ipairs(sockets or {}) do
-    pcall(function() sock:close() end)
+    pcall(function()
+      sock:close()
+    end)
   end
 end
 
@@ -122,14 +126,15 @@ local function run()
   if expected < math.min(burst, 64) then
     close_sockets(sockets)
     close_host(server)
-    return nil, string.format(
-      "too few listener accepts delivered: expected at least %d, got %d callbacks=%d pending=%d failed=%d",
-      math.min(burst, 64),
-      listener_accepted,
-      listener_callbacks,
-      listener_pending,
-      listener_failed
-    )
+    return nil,
+      string.format(
+        "too few listener accepts delivered: expected at least %d, got %d callbacks=%d pending=%d failed=%d",
+        math.min(burst, 64),
+        listener_accepted,
+        listener_callbacks,
+        listener_pending,
+        listener_failed
+      )
   end
 
   local deadline = socket.gettime() + 2
@@ -159,15 +164,16 @@ local function run()
 
   close_host(server)
   if accepted < expected then
-    return nil, string.format(
-      "expected burst accept drain >= %d, got %d listener_callbacks=%d listener_accepted=%d listener_pending=%d listener_failed=%d",
-      expected,
-      accepted,
-      listener_callbacks,
-      listener_accepted,
-      listener_pending,
-      listener_failed
-    )
+    return nil,
+      string.format(
+        "expected burst accept drain >= %d, got %d listener_callbacks=%d listener_accepted=%d listener_pending=%d listener_failed=%d",
+        expected,
+        accepted,
+        listener_callbacks,
+        listener_accepted,
+        listener_pending,
+        listener_failed
+      )
   end
   return true
 end

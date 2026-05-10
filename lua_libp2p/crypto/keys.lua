@@ -49,18 +49,62 @@ local function secp256k1_public_key_to_pem(public_key)
     return nil, error_mod.new("input", "secp256k1 public key bytes are required")
   end
   if #public_key == 33 and (public_key:byte(1) == 0x02 or public_key:byte(1) == 0x03) then
-    return bytes_to_pem(string.char(
-      0x30, 0x36, 0x30, 0x10, 0x06, 0x07, 0x2a, 0x86,
-      0x48, 0xce, 0x3d, 0x02, 0x01, 0x06, 0x05, 0x2b,
-      0x81, 0x04, 0x00, 0x0a, 0x03, 0x22, 0x00
-    ) .. public_key)
+    return bytes_to_pem(
+      string.char(
+        0x30,
+        0x36,
+        0x30,
+        0x10,
+        0x06,
+        0x07,
+        0x2a,
+        0x86,
+        0x48,
+        0xce,
+        0x3d,
+        0x02,
+        0x01,
+        0x06,
+        0x05,
+        0x2b,
+        0x81,
+        0x04,
+        0x00,
+        0x0a,
+        0x03,
+        0x22,
+        0x00
+      ) .. public_key
+    )
   end
   if #public_key == 65 and public_key:byte(1) == 0x04 then
-    return bytes_to_pem(string.char(
-      0x30, 0x56, 0x30, 0x10, 0x06, 0x07, 0x2a, 0x86,
-      0x48, 0xce, 0x3d, 0x02, 0x01, 0x06, 0x05, 0x2b,
-      0x81, 0x04, 0x00, 0x0a, 0x03, 0x42, 0x00
-    ) .. public_key)
+    return bytes_to_pem(
+      string.char(
+        0x30,
+        0x56,
+        0x30,
+        0x10,
+        0x06,
+        0x07,
+        0x2a,
+        0x86,
+        0x48,
+        0xce,
+        0x3d,
+        0x02,
+        0x01,
+        0x06,
+        0x05,
+        0x2b,
+        0x81,
+        0x04,
+        0x00,
+        0x0a,
+        0x03,
+        0x42,
+        0x00
+      ) .. public_key
+    )
   end
   return nil, error_mod.new("input", "secp256k1 public key must be compressed or uncompressed EC point bytes")
 end
@@ -196,14 +240,21 @@ function M.verify_signature(public_key, message, signature, key_type)
     return verify_digest_signature(public_key_bytes(public_key), message, signature, "ecdsa")
   end
   if kt == key_pb.KEY_TYPE.Secp256k1 or kt == "secp256k1" then
-    return verify_digest_signature(public_key_bytes(public_key), message, signature, "secp256k1", secp256k1_public_key_to_pem)
+    return verify_digest_signature(
+      public_key_bytes(public_key),
+      message,
+      signature,
+      "secp256k1",
+      secp256k1_public_key_to_pem
+    )
   end
 
-  return nil, error_mod.new("unsupported", "unsupported public key type for signature verification", {
-    received_key_type = kt,
-    received_key_type_name = key_pb.type_name(kt),
-    supported = { "ed25519", "rsa", "ecdsa", "secp256k1" },
-  })
+  return nil,
+    error_mod.new("unsupported", "unsupported public key type for signature verification", {
+      received_key_type = kt,
+      received_key_type_name = key_pb.type_name(kt),
+      supported = { "ed25519", "rsa", "ecdsa", "secp256k1" },
+    })
 end
 
 function M.public_key_proto(identity)
@@ -288,7 +339,8 @@ function M.generate_keypair(key_type, opts)
   if not public_der then
     return nil, error_mod.new("io", "failed to export " .. name .. " public key")
   end
-  local code = name == "rsa" and key_pb.KEY_TYPE.RSA or (name == "ecdsa" and key_pb.KEY_TYPE.ECDSA or key_pb.KEY_TYPE.Secp256k1)
+  local code = name == "rsa" and key_pb.KEY_TYPE.RSA
+    or (name == "ecdsa" and key_pb.KEY_TYPE.ECDSA or key_pb.KEY_TYPE.Secp256k1)
   local public_proto, proto_err = key_pb.encode_public_key(code, public_der)
   if not public_proto then
     return nil, proto_err
@@ -307,7 +359,12 @@ function M.sign(identity, message)
     return nil, error_mod.new("input", "signature message must be bytes")
   end
   local _, name = normalize_type(type(identity) == "table" and (identity.type or identity.key_type) or nil)
-  if not name and type(identity) == "table" and type(identity.public_key) == "string" and #identity.public_key == 32 then
+  if
+    not name
+    and type(identity) == "table"
+    and type(identity.public_key) == "string"
+    and #identity.public_key == 32
+  then
     name = "ed25519"
   end
   if name == "ed25519" then

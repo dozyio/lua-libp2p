@@ -18,14 +18,16 @@ end
 local function print_result(name, iterations, elapsed)
   local per_iter_ms = iterations > 0 and (elapsed * 1000 / iterations) or 0
   local per_sec = elapsed > 0 and (iterations / elapsed) or 0
-  io.stdout:write(string.format(
-    "  %-34s iterations=%d total_ms=%.2f per_iter_ms=%.4f ops_per_sec=%.1f\n",
-    name,
-    iterations,
-    elapsed * 1000,
-    per_iter_ms,
-    per_sec
-  ))
+  io.stdout:write(
+    string.format(
+      "  %-34s iterations=%d total_ms=%.2f per_iter_ms=%.4f ops_per_sec=%.1f\n",
+      name,
+      iterations,
+      elapsed * 1000,
+      per_iter_ms,
+      per_sec
+    )
+  )
 end
 
 local function new_identity()

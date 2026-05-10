@@ -24,7 +24,10 @@ local function run()
   end
 
   function host:is_dialable_addr(addr)
-    return addr:sub(1, 5) == "/ip4/" or addr:sub(1, 5) == "/ip6/" or addr:sub(1, 5) == "/dns/" or addr:sub(1, 6) == "/dns4/"
+    return addr:sub(1, 5) == "/ip4/"
+      or addr:sub(1, 5) == "/ip6/"
+      or addr:sub(1, 5) == "/dns/"
+      or addr:sub(1, 6) == "/dns4/"
       or addr:sub(1, 6) == "/dns6/"
   end
 

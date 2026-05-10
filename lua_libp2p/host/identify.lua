@@ -89,9 +89,13 @@ local function open_identify_stream_on_connection(host, conn, state, protocols, 
   local set_ok, set_err = host:_set_stream_resource_protocol(stream_scope, selected)
   if not set_ok then
     if type(stream.reset_now) == "function" then
-      pcall(function() stream:reset_now() end)
+      pcall(function()
+        stream:reset_now()
+      end)
     elseif type(stream.close) == "function" then
-      pcall(function() stream:close() end)
+      pcall(function()
+        stream:close()
+      end)
     end
     host:_close_stream_resource(stream_scope)
     return nil, nil, nil, set_err
@@ -113,7 +117,8 @@ function M.install(Host)
 
     local identify_opts = self._service_options.identify or {}
     local observed = nil
-    if identify_opts.include_observed ~= false
+    if
+      identify_opts.include_observed ~= false
       and ctx
       and ctx.connection
       and ctx.connection.raw
@@ -173,13 +178,8 @@ function M.install(Host)
     local known_protocols = self.peerstore and self.peerstore:get_protocols(peer_id) or {}
     local stream, selected, conn, state_or_err
     if options.connection and type(options.connection.new_stream) == "function" then
-      stream, selected, conn, state_or_err = open_identify_stream_on_connection(
-        self,
-        options.connection,
-        options.state,
-        attempted_protocols,
-        options
-      )
+      stream, selected, conn, state_or_err =
+        open_identify_stream_on_connection(self, options.connection, options.state, attempted_protocols, options)
     else
       stream, selected, conn, state_or_err = self:new_stream(peer_id, attempted_protocols, options)
     end

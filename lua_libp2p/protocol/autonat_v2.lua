@@ -248,9 +248,13 @@ end
 function M.encode_dial_data_request(message)
   local parts = {}
   local ok, err = append_varint(parts, 1, message.addrIdx)
-  if not ok then return nil, err end
+  if not ok then
+    return nil, err
+  end
   ok, err = append_varint(parts, 2, message.numBytes)
-  if not ok then return nil, err end
+  if not ok then
+    return nil, err
+  end
   return table.concat(parts)
 end
 
@@ -259,18 +263,28 @@ function M.decode_dial_data_request(payload)
   local i = 1
   while i <= #payload do
     local tag, next_i_or_err = varint.decode_u64(payload, i)
-    if not tag then return nil, next_i_or_err end
+    if not tag then
+      return nil, next_i_or_err
+    end
     i = next_i_or_err
     local field_no = math.floor(tag / 8)
     local wire = tag % 8
     if (field_no == 1 or field_no == 2) and wire == 0 then
       local value, after_or_err = varint.decode_u64(payload, i)
-      if not value then return nil, after_or_err end
-      if field_no == 1 then out.addrIdx = value else out.numBytes = value end
+      if not value then
+        return nil, after_or_err
+      end
+      if field_no == 1 then
+        out.addrIdx = value
+      else
+        out.numBytes = value
+      end
       i = after_or_err
     else
       local next_i, err = skip_unknown(payload, i, wire)
-      if not next_i then return nil, err end
+      if not next_i then
+        return nil, err
+      end
       i = next_i
     end
   end
@@ -280,11 +294,17 @@ end
 function M.encode_dial_response(message)
   local parts = {}
   local ok, err = append_varint(parts, 1, message.status)
-  if not ok then return nil, err end
+  if not ok then
+    return nil, err
+  end
   ok, err = append_varint(parts, 2, message.addrIdx)
-  if not ok then return nil, err end
+  if not ok then
+    return nil, err
+  end
   ok, err = append_varint(parts, 3, message.dialStatus)
-  if not ok then return nil, err end
+  if not ok then
+    return nil, err
+  end
   return table.concat(parts)
 end
 
@@ -293,18 +313,30 @@ function M.decode_dial_response(payload)
   local i = 1
   while i <= #payload do
     local tag, next_i_or_err = varint.decode_u64(payload, i)
-    if not tag then return nil, next_i_or_err end
+    if not tag then
+      return nil, next_i_or_err
+    end
     i = next_i_or_err
     local field_no = math.floor(tag / 8)
     local wire = tag % 8
     if (field_no == 1 or field_no == 2 or field_no == 3) and wire == 0 then
       local value, after_or_err = varint.decode_u64(payload, i)
-      if not value then return nil, after_or_err end
-      if field_no == 1 then out.status = value elseif field_no == 2 then out.addrIdx = value else out.dialStatus = value end
+      if not value then
+        return nil, after_or_err
+      end
+      if field_no == 1 then
+        out.status = value
+      elseif field_no == 2 then
+        out.addrIdx = value
+      else
+        out.dialStatus = value
+      end
       i = after_or_err
     else
       local next_i, err = skip_unknown(payload, i, wire)
-      if not next_i then return nil, err end
+      if not next_i then
+        return nil, err
+      end
       i = next_i
     end
   end
@@ -314,7 +346,9 @@ end
 function M.encode_dial_data_response(message)
   local parts = {}
   local ok, err = append_len(parts, 1, message.data or "")
-  if not ok then return nil, err end
+  if not ok then
+    return nil, err
+  end
   return table.concat(parts)
 end
 
@@ -323,19 +357,25 @@ function M.decode_dial_data_response(payload)
   local i = 1
   while i <= #payload do
     local tag, next_i_or_err = varint.decode_u64(payload, i)
-    if not tag then return nil, next_i_or_err end
+    if not tag then
+      return nil, next_i_or_err
+    end
     i = next_i_or_err
     local field_no = math.floor(tag / 8)
     local wire = tag % 8
     if field_no == 1 and wire == 2 then
       local length, after_len_or_err = varint.decode_u64(payload, i)
-      if not length then return nil, after_len_or_err end
+      if not length then
+        return nil, after_len_or_err
+      end
       i = after_len_or_err
       out.data = payload:sub(i, i + length - 1)
       i = i + length
     else
       local next_i, err = skip_unknown(payload, i, wire)
-      if not next_i then return nil, err end
+      if not next_i then
+        return nil, err
+      end
       i = next_i
     end
   end
@@ -345,7 +385,9 @@ end
 function M.encode_dial_back(message)
   local parts = {}
   local ok, err = append_fixed64(parts, 1, message.nonce)
-  if not ok then return nil, err end
+  if not ok then
+    return nil, err
+  end
   return table.concat(parts)
 end
 
@@ -354,18 +396,24 @@ function M.decode_dial_back(payload)
   local i = 1
   while i <= #payload do
     local tag, next_i_or_err = varint.decode_u64(payload, i)
-    if not tag then return nil, next_i_or_err end
+    if not tag then
+      return nil, next_i_or_err
+    end
     i = next_i_or_err
     local field_no = math.floor(tag / 8)
     local wire = tag % 8
     if field_no == 1 and wire == 1 then
       local decoded, decode_err = decode_fixed64(payload:sub(i, i + 7))
-      if not decoded then return nil, decode_err end
+      if not decoded then
+        return nil, decode_err
+      end
       out.nonce = decoded
       i = i + 8
     else
       local next_i, skip_err = skip_unknown(payload, i, wire)
-      if not next_i then return nil, skip_err end
+      if not next_i then
+        return nil, skip_err
+      end
       i = next_i
     end
   end
@@ -375,7 +423,9 @@ end
 function M.encode_dial_back_response(message)
   local parts = {}
   local ok, err = append_varint(parts, 1, message.status or M.DIAL_BACK_STATUS.OK)
-  if not ok then return nil, err end
+  if not ok then
+    return nil, err
+  end
   return table.concat(parts)
 end
 
@@ -384,18 +434,24 @@ function M.decode_dial_back_response(payload)
   local i = 1
   while i <= #payload do
     local tag, next_i_or_err = varint.decode_u64(payload, i)
-    if not tag then return nil, next_i_or_err end
+    if not tag then
+      return nil, next_i_or_err
+    end
     i = next_i_or_err
     local field_no = math.floor(tag / 8)
     local wire = tag % 8
     if field_no == 1 and wire == 0 then
       local value, after_or_err = varint.decode_u64(payload, i)
-      if not value then return nil, after_or_err end
+      if not value then
+        return nil, after_or_err
+      end
       out.status = value
       i = after_or_err
     else
       local next_i, err = skip_unknown(payload, i, wire)
-      if not next_i then return nil, err end
+      if not next_i then
+        return nil, err
+      end
       i = next_i
     end
   end
@@ -426,26 +482,34 @@ function M.decode_message(payload)
   local i = 1
   while i <= #payload do
     local tag, next_i_or_err = varint.decode_u64(payload, i)
-    if not tag then return nil, next_i_or_err end
+    if not tag then
+      return nil, next_i_or_err
+    end
     i = next_i_or_err
     local field_no = math.floor(tag / 8)
     local wire = tag % 8
     if wire == 2 then
       local length, after_len_or_err = varint.decode_u64(payload, i)
-      if not length then return nil, after_len_or_err end
+      if not length then
+        return nil, after_len_or_err
+      end
       i = after_len_or_err
       local value = payload:sub(i, i + length - 1)
       for name, spec in pairs(MESSAGE_FIELDS) do
         if spec.field == field_no then
           local decoded, err = spec.decode(value)
-          if not decoded then return nil, err end
+          if not decoded then
+            return nil, err
+          end
           return { [name] = decoded }
         end
       end
       i = i + length
     else
       local next_i, err = skip_unknown(payload, i, wire)
-      if not next_i then return nil, err end
+      if not next_i then
+        return nil, err
+      end
       i = next_i
     end
   end
@@ -454,9 +518,13 @@ end
 
 function M.write_message(stream, message)
   local payload, payload_err = M.encode_message(message)
-  if not payload then return nil, payload_err end
+  if not payload then
+    return nil, payload_err
+  end
   local len, len_err = varint.encode_u64(#payload)
-  if not len then return nil, len_err end
+  if not len then
+    return nil, len_err
+  end
   return stream:write(len .. payload)
 end
 
@@ -466,20 +534,28 @@ function M.read_message(stream, opts)
   local options = opts or {}
   local max = options.max_message_size or M.MAX_MESSAGE_SIZE
   local length, len_err = read_varint(stream)
-  if not length then return nil, len_err end
+  if not length then
+    return nil, len_err
+  end
   if length > max then
     return nil, error_mod.new("decode", "autonat message too large", { max = max, got = length })
   end
   local payload, payload_err = read_exact(stream, length)
-  if not payload then return nil, payload_err end
+  if not payload then
+    return nil, payload_err
+  end
   return M.decode_message(payload)
 end
 
 function M.write_dial_back(stream, message)
   local payload, payload_err = M.encode_dial_back(message)
-  if not payload then return nil, payload_err end
+  if not payload then
+    return nil, payload_err
+  end
   local len, len_err = varint.encode_u64(#payload)
-  if not len then return nil, len_err end
+  if not len then
+    return nil, len_err
+  end
   return stream:write(len .. payload)
 end
 
@@ -488,20 +564,28 @@ end
 function M.read_dial_back(stream, opts)
   local options = opts or {}
   local length, len_err = read_varint(stream)
-  if not length then return nil, len_err end
+  if not length then
+    return nil, len_err
+  end
   if length > (options.max_message_size or M.MAX_MESSAGE_SIZE) then
     return nil, error_mod.new("decode", "autonat dial-back message too large")
   end
   local payload, payload_err = read_exact(stream, length)
-  if not payload then return nil, payload_err end
+  if not payload then
+    return nil, payload_err
+  end
   return M.decode_dial_back(payload)
 end
 
 function M.write_dial_back_response(stream, message)
   local payload, payload_err = M.encode_dial_back_response(message or { status = M.DIAL_BACK_STATUS.OK })
-  if not payload then return nil, payload_err end
+  if not payload then
+    return nil, payload_err
+  end
   local len, len_err = varint.encode_u64(#payload)
-  if not len then return nil, len_err end
+  if not len then
+    return nil, len_err
+  end
   return stream:write(len .. payload)
 end
 
@@ -510,12 +594,16 @@ end
 function M.read_dial_back_response(stream, opts)
   local options = opts or {}
   local length, len_err = read_varint(stream)
-  if not length then return nil, len_err end
+  if not length then
+    return nil, len_err
+  end
   if length > (options.max_message_size or M.MAX_MESSAGE_SIZE) then
     return nil, error_mod.new("decode", "autonat dial-back response too large")
   end
   local payload, payload_err = read_exact(stream, length)
-  if not payload then return nil, payload_err end
+  if not payload then
+    return nil, payload_err
+  end
   return M.decode_dial_back_response(payload)
 end
 

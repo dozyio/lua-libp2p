@@ -23,7 +23,10 @@ local host, host_err = host_mod.new({
   services = {
     identify = { module = identify_service },
     ping = { module = ping_service },
-    kad_dht = { module = kad_dht_service, config = { mode = "client", alpha = 1, disjoint_paths = 1, address_filter = "all" } },
+    kad_dht = {
+      module = kad_dht_service,
+      config = { mode = "client", alpha = 1, disjoint_paths = 1, address_filter = "all" },
+    },
   },
   blocking = false,
   connect_timeout = 4,
@@ -52,7 +55,15 @@ local provide_result, provide_result_err = provide_op:result({ timeout = 8, poll
 if not provide_result or provide_result.succeeded ~= 1 then
   io.stderr:write(tostring(provide_result_err or "expected add provider to succeed") .. "\n")
   if provide_result then
-    io.stderr:write("attempted=" .. tostring(provide_result.attempted) .. " succeeded=" .. tostring(provide_result.succeeded) .. " failed=" .. tostring(provide_result.failed) .. "\n")
+    io.stderr:write(
+      "attempted="
+        .. tostring(provide_result.attempted)
+        .. " succeeded="
+        .. tostring(provide_result.succeeded)
+        .. " failed="
+        .. tostring(provide_result.failed)
+        .. "\n"
+    )
     for _, err in ipairs(provide_result.errors or {}) do
       io.stderr:write(tostring(err) .. "\n")
     end
@@ -60,7 +71,8 @@ if not provide_result or provide_result.succeeded ~= 1 then
   host:stop()
   os.exit(1)
 end
-local find_op, find_err = host.kad_dht:find_providers(key, { peers = { target }, limit = 1, alpha = 1, disjoint_paths = 1 })
+local find_op, find_err =
+  host.kad_dht:find_providers(key, { peers = { target }, limit = 1, alpha = 1, disjoint_paths = 1 })
 if not find_op then
   io.stderr:write(tostring(find_err) .. "\n")
   host:stop()

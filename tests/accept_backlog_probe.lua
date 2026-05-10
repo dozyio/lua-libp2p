@@ -63,15 +63,17 @@ for _ = 1, burst do
 end
 
 local elapsed = socket.gettime() - started
-io.stdout:write(string.format(
-  "accept_backlog_probe target=%s burst=%d connected=%d failed=%d connect_seconds=%.3f hold_seconds=%.3f\n",
-  target,
-  burst,
-  ok_count,
-  fail_count,
-  elapsed,
-  hold_seconds
-))
+io.stdout:write(
+  string.format(
+    "accept_backlog_probe target=%s burst=%d connected=%d failed=%d connect_seconds=%.3f hold_seconds=%.3f\n",
+    target,
+    burst,
+    ok_count,
+    fail_count,
+    elapsed,
+    hold_seconds
+  )
+)
 for err, count in pairs(fail_by_error) do
   io.stdout:write(string.format("  error %s=%d\n", err, count))
 end

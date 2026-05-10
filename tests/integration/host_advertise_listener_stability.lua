@@ -4,10 +4,14 @@ local ping_service = require("lua_libp2p.protocol_ping.service")
 
 local function close_hosts(a, b)
   if a then
-    pcall(function() a:close() end)
+    pcall(function()
+      a:close()
+    end)
   end
   if b then
-    pcall(function() b:close() end)
+    pcall(function()
+      b:close()
+    end)
   end
 end
 

@@ -335,11 +335,12 @@ function M.parse(text)
       if spec.validate then
         local ok, reason = spec.validate(value)
         if not ok then
-          return nil, error_mod.new("input", "invalid protocol value", {
-            protocol = protocol,
-            value = value,
-            reason = reason,
-          })
+          return nil,
+            error_mod.new("input", "invalid protocol value", {
+              protocol = protocol,
+              value = value,
+              reason = reason,
+            })
         end
       end
     end
@@ -384,11 +385,12 @@ function M.format(addr)
       if spec.validate then
         local ok, reason = spec.validate(component.value)
         if not ok then
-          return nil, error_mod.new("input", "invalid protocol value", {
-            protocol = protocol,
-            value = component.value,
-            reason = reason,
-          })
+          return nil,
+            error_mod.new("input", "invalid protocol value", {
+              protocol = protocol,
+              value = component.value,
+              reason = reason,
+            })
         end
       end
       out[#out + 1] = component.value
@@ -587,7 +589,8 @@ function M.to_tcp_endpoint(input)
   end
 
   local host_part = addr.components[1]
-  if host_part.protocol ~= "ip4"
+  if
+    host_part.protocol ~= "ip4"
     and host_part.protocol ~= "ip6"
     and host_part.protocol ~= "dns"
     and host_part.protocol ~= "dns4"
@@ -603,7 +606,13 @@ function M.to_tcp_endpoint(input)
       tcp_part = component
       break
     end
-    if component.protocol == "udp" or component.protocol == "quic" or component.protocol == "quic-v1" or component.protocol == "ws" or component.protocol == "wss" then
+    if
+      component.protocol == "udp"
+      or component.protocol == "quic"
+      or component.protocol == "quic-v1"
+      or component.protocol == "ws"
+      or component.protocol == "wss"
+    then
       return nil, error_mod.new("input", "unsupported tcp multiaddr transport", { protocol = component.protocol })
     end
   end
@@ -636,7 +645,13 @@ local function first_host_component(input)
     return nil
   end
   for _, component in ipairs(addr.components) do
-    if component.protocol == "ip4" or component.protocol == "ip6" or component.protocol == "dns" or component.protocol == "dns4" or component.protocol == "dns6" then
+    if
+      component.protocol == "ip4"
+      or component.protocol == "ip6"
+      or component.protocol == "dns"
+      or component.protocol == "dns4"
+      or component.protocol == "dns6"
+    then
       return component
     end
   end
@@ -700,7 +715,12 @@ function M.is_private_addr(input)
         return true
       end
     end
-    return value:match("^fc") ~= nil or value:match("^fd") ~= nil or value:match("^fe8") ~= nil or value:match("^fe9") ~= nil or value:match("^fea") ~= nil or value:match("^feb") ~= nil
+    return value:match("^fc") ~= nil
+      or value:match("^fd") ~= nil
+      or value:match("^fe8") ~= nil
+      or value:match("^fe9") ~= nil
+      or value:match("^fea") ~= nil
+      or value:match("^feb") ~= nil
   end
   local dns_name = string.lower(tostring(host.value or ""))
   return dns_name == "localhost" or dns_name:match("%.localhost$") ~= nil or dns_name:match("%.local$") ~= nil

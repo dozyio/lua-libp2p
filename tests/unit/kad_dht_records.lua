@@ -204,7 +204,11 @@ local function run()
   if not get_response then
     return nil, get_response_err
   end
-  if get_response.type ~= kad_protocol.MESSAGE_TYPE.GET_VALUE or not get_response.record or get_response.record.value ~= "record-value" then
+  if
+    get_response.type ~= kad_protocol.MESSAGE_TYPE.GET_VALUE
+    or not get_response.record
+    or get_response.record.value ~= "record-value"
+  then
     return nil, "GET_VALUE should return local value record"
   end
 
@@ -268,7 +272,8 @@ local function run()
   if not put_result then
     return nil, put_result_err
   end
-  if not rpc_request
+  if
+    not rpc_request
     or rpc_request.type ~= kad_protocol.MESSAGE_TYPE.PUT_VALUE
     or rpc_request.key ~= "record-key"
     or not rpc_request.record
@@ -370,7 +375,11 @@ local function run()
   end
   local cache_only_op = assert(put_dht:get("record-key", { use_network = false }))
   local cache_only_result = assert(cache_only_op:result({ timeout = 1 }))
-  if not cache_only_result.record or cache_only_result.record.value ~= "record-value" or cache_only_result.lookup.termination ~= "local_record" then
+  if
+    not cache_only_result.record
+    or cache_only_result.record.value ~= "record-value"
+    or cache_only_result.lookup.termination ~= "local_record"
+  then
     return nil, "value lookup use_network=false should return local cache hit"
   end
   local value_network_called = false
@@ -380,7 +389,8 @@ local function run()
   end
   local cache_miss_no_network_op = assert(put_dht:get("missing-key", { use_network = false }))
   local cache_miss_no_network = assert(cache_miss_no_network_op:result({ timeout = 1 }))
-  if value_network_called
+  if
+    value_network_called
     or cache_miss_no_network.record ~= nil
     or cache_miss_no_network.lookup.termination ~= "network_disabled"
   then
@@ -388,7 +398,8 @@ local function run()
   end
   local no_cache_no_network_op = assert(put_dht:get("record-key", { use_cache = false, use_network = false }))
   local no_cache_no_network = assert(no_cache_no_network_op:result({ timeout = 1 }))
-  if value_network_called
+  if
+    value_network_called
     or no_cache_no_network.record ~= nil
     or no_cache_no_network.lookup.termination ~= "network_disabled"
   then
@@ -398,7 +409,12 @@ local function run()
   for _, capability in ipairs(kad_dht.provides or {}) do
     capabilities[capability] = true
   end
-  if not capabilities.peer_routing or not capabilities.content_routing or not capabilities.value_routing or not capabilities.kad_dht then
+  if
+    not capabilities.peer_routing
+    or not capabilities.content_routing
+    or not capabilities.value_routing
+    or not capabilities.kad_dht
+  then
     return nil, "kad_dht should advertise peer/content/value routing capabilities"
   end
 
@@ -645,7 +661,11 @@ local function run()
   if not found_pk then
     return nil, found_pk_err
   end
-  if not found_pk.record or found_pk.record.value ~= synth_identity.public_key_proto or found_pk.lookup.termination ~= "local_record" then
+  if
+    not found_pk.record
+    or found_pk.record.value ~= synth_identity.public_key_proto
+    or found_pk.lookup.termination ~= "local_record"
+  then
     return nil, "find_value should short-circuit self /pk from local identity"
   end
   local network_lookup_called = false
@@ -783,7 +803,11 @@ local function run()
       os.remove(path)
       return nil, cache_only_err
     end
-    if not cache_only.record or cache_only.record.value ~= "record-value" or cache_only.lookup.termination ~= "local_record" then
+    if
+      not cache_only.record
+      or cache_only.record.value ~= "record-value"
+      or cache_only.lookup.termination ~= "local_record"
+    then
       reopened_store:close()
       os.remove(path)
       return nil, "sqlite-backed record store should reload values in a new dht"
@@ -836,7 +860,8 @@ local function run()
         return expired_now
       end,
     }))
-    local expired_lookup_op, expired_lookup_op_err = expired_reopened_dht:find_value("record-key", { use_network = false })
+    local expired_lookup_op, expired_lookup_op_err =
+      expired_reopened_dht:find_value("record-key", { use_network = false })
     if not expired_lookup_op then
       expired_reopened_store:close()
       os.remove(expired_path)

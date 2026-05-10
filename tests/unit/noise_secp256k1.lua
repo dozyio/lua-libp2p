@@ -19,7 +19,8 @@ local function run()
     return nil, proto_err
   end
 
-  local verified, verify_err = noise.verify_handshake_payload({ identity_key = public_proto, identity_sig = signature }, static_pub)
+  local verified, verify_err =
+    noise.verify_handshake_payload({ identity_key = public_proto, identity_sig = signature }, static_pub)
   if not verified then
     return nil, verify_err
   end

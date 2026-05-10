@@ -195,7 +195,10 @@ local function run()
   if not host.peerstore._merged.provider_a then
     return nil, "ADD_PROVIDER should merge provider addrs into peerstore"
   end
-  if not host.peerstore._merge_opts.provider_a or host.peerstore._merge_opts.provider_a.ttl ~= kad_dht.DEFAULT_PROVIDER_ADDR_TTL_SECONDS then
+  if
+    not host.peerstore._merge_opts.provider_a
+    or host.peerstore._merge_opts.provider_a.ttl ~= kad_dht.DEFAULT_PROVIDER_ADDR_TTL_SECONDS
+  then
     return nil, "ADD_PROVIDER should merge provider addrs with provider address ttl"
   end
 
@@ -214,7 +217,10 @@ local function run()
     },
   })
   assert(custom_ttl_dht:_handle_rpc(custom_ttl_stream))
-  if not custom_ttl_host.peerstore._merge_opts.provider_a or custom_ttl_host.peerstore._merge_opts.provider_a.ttl ~= 123 then
+  if
+    not custom_ttl_host.peerstore._merge_opts.provider_a
+    or custom_ttl_host.peerstore._merge_opts.provider_a.ttl ~= 123
+  then
     return nil, "provider_addr_ttl_seconds override should control peerstore provider addr ttl"
   end
 
@@ -319,7 +325,8 @@ local function run()
   if not add_result then
     return nil, add_result_err
   end
-  if not rpc_request
+  if
+    not rpc_request
     or rpc_request.type ~= kad_protocol.MESSAGE_TYPE.ADD_PROVIDER
     or rpc_request.key ~= CONTENT_KEY
     or #rpc_request.provider_peers ~= 1
@@ -498,7 +505,11 @@ local function run()
   if reprovide_report.attempted ~= 1 or reprovide_report.succeeded ~= 1 or reprovide_report.failed ~= 0 then
     return nil, "reprovide should report local provider re-announcements"
   end
-  if #reprovide_report.items ~= 1 or reprovide_report.items[1].key ~= CONTENT_KEY or reprovide_report.items[1].ok ~= true then
+  if
+    #reprovide_report.items ~= 1
+    or reprovide_report.items[1].key ~= CONTENT_KEY
+    or reprovide_report.items[1].ok ~= true
+  then
     return nil, "reprovide should include per-key item results"
   end
   if #reprovided ~= 1 or reprovided[1].key ~= CONTENT_KEY then
@@ -554,7 +565,12 @@ local function run()
     max_parallel = 2,
     ctx = parallel_ctx,
   }))
-  if parallel_report.attempted ~= 3 or parallel_report.succeeded ~= 3 or #parallel_host.spawned ~= 3 or #parallel_provided ~= 3 then
+  if
+    parallel_report.attempted ~= 3
+    or parallel_report.succeeded ~= 3
+    or #parallel_host.spawned ~= 3
+    or #parallel_provided ~= 3
+  then
     return nil, "reprovider_max_parallel should schedule item tasks when a task context is available"
   end
 
@@ -577,7 +593,8 @@ local function run()
   if #event_report.items ~= 2 or event_report.items[1].ok ~= true or event_report.items[2].ok ~= false then
     return nil, "reprovide should track success and failure item results"
   end
-  if #event_host.events ~= 2
+  if
+    #event_host.events ~= 2
     or event_host.events[1].name ~= "kad_dht:reprovide:item"
     or event_host.events[1].payload.key ~= "good-key"
     or event_host.events[1].payload.ok ~= true
@@ -649,7 +666,8 @@ local function run()
   if #sleeps ~= 1 or sleeps[1] ~= 0.5 then
     return nil, "reprovider should apply initial delay and jitter"
   end
-  if #lifecycle_host.events ~= 2
+  if
+    #lifecycle_host.events ~= 2
     or lifecycle_host.events[1].name ~= "kad_dht:reprovide:start"
     or lifecycle_host.events[1].payload.max_parallel ~= 4
     or lifecycle_host.events[2].name ~= "kad_dht:reprovide:complete"
@@ -714,7 +732,8 @@ local function run()
       os.remove(path)
       return nil, persisted_providers_err
     end
-    if #persisted_providers ~= 1
+    if
+      #persisted_providers ~= 1
       or persisted_providers[1].peer_id ~= "provider_a"
       or persisted_providers[1].addrs[1] ~= "/ip4/8.8.8.8/tcp/4001"
     then

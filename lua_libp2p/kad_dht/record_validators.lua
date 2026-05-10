@@ -39,10 +39,11 @@ function M.validate_pk(key, record)
     return nil, derive_err
   end
   if derived.id ~= expected_peer_id then
-    return nil, error_mod.new("protocol", "/pk record public key does not match peer id", {
-      expected = expected_peer_id,
-      got = derived.id,
-    })
+    return nil,
+      error_mod.new("protocol", "/pk record public key does not match peer id", {
+        expected = expected_peer_id,
+        got = derived.id,
+      })
   end
   return true
 end

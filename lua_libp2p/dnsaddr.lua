@@ -291,10 +291,11 @@ function M.resolve(addr, opts)
       return true
     end
     if depth > max_depth then
-      return nil, error_mod.new("decode", "dnsaddr recursion depth exceeded", {
-        max_depth = max_depth,
-        candidate = current,
-      })
+      return nil,
+        error_mod.new("decode", "dnsaddr recursion depth exceeded", {
+          max_depth = max_depth,
+          candidate = current,
+        })
     end
 
     local domain, domain_err = M.extract_domain(current)

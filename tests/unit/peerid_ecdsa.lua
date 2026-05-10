@@ -4,9 +4,8 @@ local peerid = require("lua_libp2p.peerid")
 local mime = require("mime")
 
 local function public_pem_to_der(pem)
-  local body = pem:gsub("%-%-%-%-%-BEGIN PUBLIC KEY%-%-%-%-%-", "")
-    :gsub("%-%-%-%-%-END PUBLIC KEY%-%-%-%-%-", "")
-    :gsub("%s+", "")
+  local body =
+    pem:gsub("%-%-%-%-%-BEGIN PUBLIC KEY%-%-%-%-%-", ""):gsub("%-%-%-%-%-END PUBLIC KEY%-%-%-%-%-", ""):gsub("%s+", "")
   return mime.unb64(body)
 end
 

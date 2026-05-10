@@ -23,7 +23,9 @@ local function split_csv(value)
   local out = {}
   for part in tostring(value or ""):gmatch("[^,]+") do
     local item = trim(part)
-    if item ~= "" then out[#out + 1] = item end
+    if item ~= "" then
+      out[#out + 1] = item
+    end
   end
   return out
 end
@@ -33,9 +35,13 @@ local function parse_level(value)
 end
 
 local function field_subsystem(fields)
-  if type(fields) ~= "table" then return nil end
+  if type(fields) ~= "table" then
+    return nil
+  end
   local subsystem = fields.subsystem
-  if type(subsystem) ~= "string" or subsystem == "" then return nil end
+  if type(subsystem) ~= "string" or subsystem == "" then
+    return nil
+  end
   return subsystem
 end
 
@@ -52,7 +58,9 @@ end
 
 local function level_name_for(level)
   for name, value in pairs(LEVELS) do
-    if value == level then return name end
+    if value == level then
+      return name
+    end
   end
   return nil
 end
@@ -100,7 +108,9 @@ end
 
 local function env(name)
   local ok, value = pcall(os.getenv, name)
-  if ok then return value end
+  if ok then
+    return value
+  end
   return nil
 end
 

@@ -56,7 +56,9 @@ function M.new(host)
       })
       local result, ping_err = ping.ping_once(stream)
       if type(stream.close) == "function" then
-        pcall(function() stream:close() end)
+        pcall(function()
+          stream:close()
+        end)
       end
       if not result then
         log.debug("ping outbound failed", {

@@ -34,7 +34,8 @@ local function is_non_retryable_error(err)
   if text == "" then
     return false
   end
-  if string.find(text, "no common protocol", 1, true)
+  if
+    string.find(text, "no common protocol", 1, true)
     or string.find(text, "unsupported", 1, true)
     or string.find(text, "protocol", 1, true)
     or string.find(text, "no non-relay observed addresses", 1, true)
@@ -63,7 +64,8 @@ local function unique_public_addrs(addrs)
   local out = {}
   local seen = {}
   for _, addr in ipairs(addrs or {}) do
-    if type(addr) == "string"
+    if
+      type(addr) == "string"
       and addr:sub(1, 1) == "/"
       and multiaddr.is_public_addr(addr)
       and not addr_has_proto(addr, "p2p-circuit")
@@ -230,7 +232,8 @@ local function default_obs_addrs(host, opts)
   local fallback = {}
   local fallback_seen = {}
   for _, addr in ipairs(out) do
-    if type(addr) == "string"
+    if
+      type(addr) == "string"
       and addr:sub(1, 1) == "/"
       and not fallback_seen[addr]
       and not addr_has_proto(addr, "p2p-circuit")
@@ -265,32 +268,33 @@ function M.new(host, opts)
     if not (host.peerstore and type(host.peerstore.get_addrs) == "function") then
       return {}
     end
-      local addrs = host.peerstore:get_addrs(peer_id) or {}
-      local candidates = filter_candidate_addrs(addrs, {
-        preferred_ip_proto = preferred_ip_proto_from_state(state),
-        max_candidates = options.max_candidate_addrs,
-      })
-      if #candidates > 0 or options.allow_private_candidate_addrs ~= true then
-        return candidates
-      end
-      local out = {}
-      local seen = {}
-      for _, addr in ipairs(addrs) do
-        if type(addr) == "string"
-          and addr:sub(1, 1) == "/"
-          and not seen[addr]
-          and not addr_has_proto(addr, "p2p-circuit")
-          and addr_has_proto(addr, "tcp")
-        then
-          seen[addr] = true
-          out[#out + 1] = addr
-          if #out >= (options.max_candidate_addrs or 8) then
-            break
-          end
+    local addrs = host.peerstore:get_addrs(peer_id) or {}
+    local candidates = filter_candidate_addrs(addrs, {
+      preferred_ip_proto = preferred_ip_proto_from_state(state),
+      max_candidates = options.max_candidate_addrs,
+    })
+    if #candidates > 0 or options.allow_private_candidate_addrs ~= true then
+      return candidates
+    end
+    local out = {}
+    local seen = {}
+    for _, addr in ipairs(addrs) do
+      if
+        type(addr) == "string"
+        and addr:sub(1, 1) == "/"
+        and not seen[addr]
+        and not addr_has_proto(addr, "p2p-circuit")
+        and addr_has_proto(addr, "tcp")
+      then
+        seen[addr] = true
+        out[#out + 1] = addr
+        if #out >= (options.max_candidate_addrs or 8) then
+          break
         end
       end
-      return out
     end
+    return out
+  end
 
   function svc:_try_start_pending(peer_id, task_ctx)
     local pending = svc._pending_auto[peer_id]
@@ -443,7 +447,11 @@ function M.new(host, opts)
       return true
     end
     local entry_state = entry.state or {}
-    if type(expected_peer_id) == "string" and expected_peer_id ~= "" and entry_state.remote_peer_id ~= expected_peer_id then
+    if
+      type(expected_peer_id) == "string"
+      and expected_peer_id ~= ""
+      and entry_state.remote_peer_id ~= expected_peer_id
+    then
       return true
     end
     local relay_state = entry_state.relay or {}
@@ -542,10 +550,11 @@ function M.new(host, opts)
         addr = addr,
         cause = tostring(dial_err or "limited connection"),
       })
-      errors[#errors + 1] = dial_err or error_mod.new("state", "direct dial returned limited connection", {
-        peer_id = target_peer_id,
-        addr = addr,
-      })
+      errors[#errors + 1] = dial_err
+        or error_mod.new("state", "direct dial returned limited connection", {
+          peer_id = target_peer_id,
+          addr = addr,
+        })
     end
     return nil, errors
   end
@@ -562,7 +571,8 @@ function M.new(host, opts)
     if #candidates == 0 and options.allow_private_candidate_addrs == true then
       local seen = {}
       for _, addr in ipairs(peer_addrs) do
-        if type(addr) == "string"
+        if
+          type(addr) == "string"
           and addr:sub(1, 1) == "/"
           and not seen[addr]
           and not addr_has_proto(addr, "p2p-circuit")
@@ -682,10 +692,11 @@ function M.new(host, opts)
         candidate_addrs = #remote_addrs,
         errors = #(dial_errs or {}),
       })
-      return nil, error_mod.new("io", "dcutr direct dial attempts failed", {
-        peer_id = remote_peer_id,
-        errors = dial_errs,
-      })
+      return nil,
+        error_mod.new("io", "dcutr direct dial attempts failed", {
+          peer_id = remote_peer_id,
+          errors = dial_errs,
+        })
     end
     svc:_schedule_relay_close(ctx and ctx.state, "inbound_upgrade_success", ctx, remote_peer_id)
     svc:_mark_direct_preferred(remote_peer_id)
@@ -801,12 +812,14 @@ function M.new(host, opts)
           state_or_err = run_opts.state
         end
       else
-        local opened = { host:new_stream(target, { dcutr.ID }, {
-          timeout = run_opts.timeout,
-          io_timeout = run_opts.io_timeout,
-          ctx = run_opts.ctx,
-          allow_limited_connection = true,
-        }) }
+        local opened = {
+          host:new_stream(target, { dcutr.ID }, {
+            timeout = run_opts.timeout,
+            io_timeout = run_opts.io_timeout,
+            ctx = run_opts.ctx,
+            allow_limited_connection = true,
+          }),
+        }
         stream, selected, state_or_err = opened[1], opened[2], opened[4]
       end
       if not stream then
@@ -946,7 +959,9 @@ function M.new(host, opts)
         ctx = run_opts.ctx,
       })
       if type(stream.close) == "function" then
-        pcall(function() stream:close() end)
+        pcall(function()
+          stream:close()
+        end)
       end
       if not dial_result then
         log.debug("dcutr outbound direct dials failed", {

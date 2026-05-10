@@ -20,12 +20,15 @@ local function run()
   if not request:find("M%-SEARCH %* HTTP/1%.1") or not request:find("ST: upnp:rootdevice", 1, true) then
     return nil, "ssdp should build M-SEARCH request"
   end
-  local service = assert(igd.parse_descriptor([[<?xml version="1.0"?>
+  local service = assert(igd.parse_descriptor(
+    [[<?xml version="1.0"?>
 <root><device><serviceList><service>
 <serviceType>urn:schemas-upnp-org:service:WANIPConnection:1</serviceType>
 <controlURL>/upnp/control/WANIPConn1</controlURL>
 <SCPDURL>/wanipconnSCPD.xml</SCPDURL>
-</service></serviceList></device></root>]], "http://192.168.1.1:1900/rootDesc.xml"))
+</service></serviceList></device></root>]],
+    "http://192.168.1.1:1900/rootDesc.xml"
+  ))
   if service.control_url ~= "http://192.168.1.1:1900/upnp/control/WANIPConn1" then
     return nil, "igd should resolve relative control URL"
   end
@@ -192,7 +195,8 @@ local function run()
       removed_event = event.payload
     end
   end
-  if not removed_event
+  if
+    not removed_event
     or removed_event.external_addr ~= ext
     or removed_event.replacement_addr ~= replacement
     or removed_event.reason ~= "external_address_changed"

@@ -85,7 +85,8 @@ function M.install(Host)
   -- `opts.allow_limited_connection=true` allows limited relay state results.
   function Host:_dial_relay_raw(addr, destination_peer_id, opts)
     opts = opts or {}
-    if not opts.ctx
+    if
+      not opts.ctx
       and not opts._internal_task_ctx
       and type(self.spawn_task) == "function"
       and type(self.run_until_task) == "function"
@@ -122,7 +123,8 @@ function M.install(Host)
       relay_addr = info.relay_addr,
     })
 
-    local stream, selected, relay_conn, relay_state_or_err = self:new_stream(info.relay_addr, { relay_proto.HOP_ID }, opts)
+    local stream, selected, relay_conn, relay_state_or_err =
+      self:new_stream(info.relay_addr, { relay_proto.HOP_ID }, opts)
     if not stream then
       log.debug("host relay dial stream failed", {
         relay_peer_id = info.relay_peer_id,
@@ -155,16 +157,17 @@ function M.install(Host)
       protocol = selected,
       limit_kind = relay_proto.classify_limit(response.limit),
     })
-    return stream, {
-      relay_peer_id = info.relay_peer_id,
-      relay_addr = info.relay_addr,
-      destination_peer_id = target_peer_id,
-      protocol = selected,
-      relay_connection = relay_conn,
-      relay_state = relay_state_or_err,
-      limit = response.limit,
-      limit_kind = relay_proto.classify_limit(response.limit),
-    }
+    return stream,
+      {
+        relay_peer_id = info.relay_peer_id,
+        relay_addr = info.relay_addr,
+        destination_peer_id = target_peer_id,
+        protocol = selected,
+        relay_connection = relay_conn,
+        relay_state = relay_state_or_err,
+        limit = response.limit,
+        limit_kind = relay_proto.classify_limit(response.limit),
+      }
   end
 
   --- Dial peer/address directly (non-relay-specialized path).
@@ -339,7 +342,8 @@ function M.install(Host)
   function Host:dial(peer_or_addr, opts)
     local options = opts or {}
     log.debug("host dial requested", {
-      target = type(peer_or_addr) == "table" and (peer_or_addr.peer_id or peer_or_addr.addr or peer_or_addr.multiaddr) or peer_or_addr,
+      target = type(peer_or_addr) == "table" and (peer_or_addr.peer_id or peer_or_addr.addr or peer_or_addr.multiaddr)
+        or peer_or_addr,
       bypass_connection_manager = options.bypass_connection_manager == true,
       force = options.force == true,
     })
@@ -364,7 +368,9 @@ function M.install(Host)
       local conn, state, dial_err = self:dial(peer_or_addr, dial_opts)
       if not conn then
         log.debug("host stream dial failed", {
-          target = type(peer_or_addr) == "table" and (peer_or_addr.peer_id or peer_or_addr.addr or peer_or_addr.multiaddr) or peer_or_addr,
+          target = type(peer_or_addr) == "table"
+              and (peer_or_addr.peer_id or peer_or_addr.addr or peer_or_addr.multiaddr)
+            or peer_or_addr,
           protocols = table.concat(protocols or {}, ","),
           cause = tostring(dial_err),
         })
@@ -404,9 +410,13 @@ function M.install(Host)
       local set_ok, set_err = self:_set_stream_resource_protocol(stream_scope, selected)
       if not set_ok then
         if type(stream.reset_now) == "function" then
-          pcall(function() stream:reset_now() end)
+          pcall(function()
+            stream:reset_now()
+          end)
         elseif type(stream.close) == "function" then
-          pcall(function() stream:close() end)
+          pcall(function()
+            stream:close()
+          end)
         end
         self:_close_stream_resource(stream_scope)
         log.debug("host stream resource protocol failed", {
@@ -441,7 +451,8 @@ function M.install(Host)
     end
 
     log.debug("host stream open requested", {
-      target = type(peer_or_addr) == "table" and (peer_or_addr.peer_id or peer_or_addr.addr or peer_or_addr.multiaddr) or peer_or_addr,
+      target = type(peer_or_addr) == "table" and (peer_or_addr.peer_id or peer_or_addr.addr or peer_or_addr.multiaddr)
+        or peer_or_addr,
       protocols = table.concat(protocols or {}, ","),
       allow_limited_connection = stream_opts.allow_limited_connection == true,
     })

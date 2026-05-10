@@ -91,7 +91,6 @@ local function run()
     return true
   end
 
-
   function host:handle(protocol_id, handler)
     handled_protocol = protocol_id
     registered_handler = handler
@@ -186,7 +185,10 @@ local function run()
   if not custom_dht then
     return nil, custom_dht_err
   end
-  local custom_addrs = custom_dht:_filter_addrs({ "/ip4/8.8.8.8/tcp/4001", "/ip4/8.8.8.8/tcp/4002" }, { purpose = "test" })
+  local custom_addrs = custom_dht:_filter_addrs(
+    { "/ip4/8.8.8.8/tcp/4001", "/ip4/8.8.8.8/tcp/4002" },
+    { purpose = "test" }
+  )
   if #custom_addrs ~= 1 or custom_addrs[1] ~= "/ip4/8.8.8.8/tcp/4001" or not custom_seen then
     return nil, "custom address filter should be applied with context"
   end
@@ -198,7 +200,11 @@ local function run()
     "/dns4/bootstrap.libp2p.io/tcp/4001",
     "/dns6/bootstrap.libp2p.io/tcp/4001",
   })
-  if #ip4_only ~= 2 or ip4_only[1] ~= "/ip4/8.8.8.8/tcp/4001" or ip4_only[2] ~= "/dns4/bootstrap.libp2p.io/tcp/4001" then
+  if
+    #ip4_only ~= 2
+    or ip4_only[1] ~= "/ip4/8.8.8.8/tcp/4001"
+    or ip4_only[2] ~= "/dns4/bootstrap.libp2p.io/tcp/4001"
+  then
     return nil, "dialable address filter should keep only ipv4-compatible addrs for ipv4-only listeners"
   end
 
@@ -209,7 +215,11 @@ local function run()
     "/dns4/bootstrap.libp2p.io/tcp/4001",
     "/dns6/bootstrap.libp2p.io/tcp/4001",
   })
-  if #ip6_only ~= 2 or ip6_only[1] ~= "/ip6/2001:db8::1/tcp/4001" or ip6_only[2] ~= "/dns6/bootstrap.libp2p.io/tcp/4001" then
+  if
+    #ip6_only ~= 2
+    or ip6_only[1] ~= "/ip6/2001:db8::1/tcp/4001"
+    or ip6_only[2] ~= "/dns6/bootstrap.libp2p.io/tcp/4001"
+  then
     return nil, "dialable address filter should keep only ipv6-compatible addrs for ipv6-only listeners"
   end
 
@@ -330,7 +340,8 @@ local function run()
   if auto_dht:get_mode() ~= "server" then
     return nil, "get_mode should return current auto server mode"
   end
-  if #auto_mode_events ~= 1
+  if
+    #auto_mode_events ~= 1
     or auto_mode_events[1].old_mode ~= "client"
     or auto_mode_events[1].mode ~= "server"
     or auto_mode_events[1].reason ~= "public_self_address"
@@ -345,7 +356,8 @@ local function run()
   if auto_dht.mode ~= "client" or auto_unhandled_protocol ~= kad_dht.PROTOCOL_ID then
     return nil, "auto-mode dht should switch back to client without public direct address"
   end
-  if #auto_mode_events ~= 2
+  if
+    #auto_mode_events ~= 2
     or auto_mode_events[2].old_mode ~= "server"
     or auto_mode_events[2].mode ~= "client"
     or auto_mode_events[2].reason ~= "no_public_self_address"
@@ -511,7 +523,8 @@ local function run()
     return nil, "find_value should return first found record"
   end
 
-  local found_providers, find_providers_err = dht:_find_providers(CONTENT_KEY, { peers = { { peer_id = "peer-a", addr = "peer-a" } } })
+  local found_providers, find_providers_err =
+    dht:_find_providers(CONTENT_KEY, { peers = { { peer_id = "peer-a", addr = "peer-a" } } })
   if not found_providers then
     return nil, find_providers_err
   end
@@ -519,7 +532,8 @@ local function run()
     return nil, "find_providers should return discovered providers"
   end
 
-  local closest_peers, closest_lookup = dht:_get_closest_peers("target", { peers = { { peer_id = "peer-a", addr = "peer-a" } }, count = 2 })
+  local closest_peers, closest_lookup =
+    dht:_get_closest_peers("target", { peers = { { peer_id = "peer-a", addr = "peer-a" } }, count = 2 })
   if not closest_peers then
     return nil, closest_lookup
   end
@@ -543,7 +557,9 @@ local function run()
       return { n = select("#", ...), ... }
     end
     local ctx = {
-      checkpoint = function() return true end,
+      checkpoint = function()
+        return true
+      end,
       await_task = function(_, child)
         return table.unpack(child.results, 1, child.results.n)
       end,
@@ -587,7 +603,11 @@ local function run()
   end
 
   local cached_peer_report = assert(dht:_find_peer_network("peer-a"))
-  if not cached_peer_report.peer or cached_peer_report.peer.peer_id ~= "peer-a" or cached_peer_report.lookup.termination ~= "local_peer" then
+  if
+    not cached_peer_report.peer
+    or cached_peer_report.peer.peer_id ~= "peer-a"
+    or cached_peer_report.lookup.termination ~= "local_peer"
+  then
     return nil, "find_peer_network should use local routing cache by default"
   end
   local network_peer_called = false
@@ -607,7 +627,8 @@ local function run()
   end
   local network_peer_op = assert(op_dht:find_peer("peer-a", { use_cache = false }))
   local network_peer_report = assert(network_peer_op:result({ timeout = 1 }))
-  if not network_peer_called
+  if
+    not network_peer_called
     or not network_peer_report.peer
     or network_peer_report.peer.peer_id ~= "peer-a"
     or network_peer_report.lookup.termination ~= "network_peer"
@@ -617,7 +638,8 @@ local function run()
   network_peer_called = false
   local no_network_op = assert(op_dht:find_peer("missing-peer", { use_network = false }))
   local no_network_report = assert(no_network_op:result({ timeout = 1 }))
-  if network_peer_called
+  if
+    network_peer_called
     or no_network_report.peer ~= nil
     or no_network_report.lookup.termination ~= "network_disabled"
   then
@@ -684,7 +706,12 @@ local function run()
   if spawned ~= 2 or cancelled ~= 1 then
     return nil, "scheduler lookup should cancel outstanding query tasks after strict completion"
   end
-  if scheduler_lookup.queried ~= 2 or scheduler_lookup.responses ~= 1 or scheduler_lookup.failed ~= 0 or scheduler_lookup.cancelled ~= 1 then
+  if
+    scheduler_lookup.queried ~= 2
+    or scheduler_lookup.responses ~= 1
+    or scheduler_lookup.failed ~= 0
+    or scheduler_lookup.cancelled ~= 1
+  then
     return nil, "scheduler lookup accounting should include cancelled active queries"
   end
   if checkpointed ~= 0 then
@@ -713,7 +740,11 @@ local function run()
   if capped_lookup.active_peak > 3 then
     return nil, "max_concurrent_queries should cap active lookup tasks"
   end
-  if capped_lookup.requested_concurrency ~= 100 or capped_lookup.effective_concurrency ~= 3 or capped_lookup.max_concurrent_queries ~= 3 then
+  if
+    capped_lookup.requested_concurrency ~= 100
+    or capped_lookup.effective_concurrency ~= 3
+    or capped_lookup.max_concurrent_queries ~= 3
+  then
     return nil, "lookup report should include requested and effective concurrency"
   end
 
@@ -739,7 +770,11 @@ local function run()
   if not filter_lookup then
     return nil, "query filter lookup should complete"
   end
-  if filter_lookup.queried ~= 1 or not filter_lookup.queried_peers[1] or filter_lookup.queried_peers[1].peer_id ~= "peer-b" then
+  if
+    filter_lookup.queried ~= 1
+    or not filter_lookup.queried_peers[1]
+    or filter_lookup.queried_peers[1].peer_id ~= "peer-b"
+  then
     return nil, "query_filter should exclude filtered seed peers"
   end
   if #filter_lookup.closest_peers ~= 1 or filter_lookup.closest_peers[1].peer_id ~= "peer-a" then
@@ -758,7 +793,11 @@ local function run()
       return false
     end,
   })
-  if not option_filter_lookup or option_filter_lookup.queried ~= 0 or option_filter_lookup.termination ~= "starvation" then
+  if
+    not option_filter_lookup
+    or option_filter_lookup.queried ~= 0
+    or option_filter_lookup.termination ~= "starvation"
+  then
     return nil, "per-query query_filter should override configured filter"
   end
 
@@ -867,7 +906,12 @@ local function run()
   if diversity_dht:get_local_peer("peer-b") ~= nil then
     return nil, "peer_diversity_filter should prevent routing table insertion"
   end
-  if #diversity_seen ~= 2 or diversity_seen[1].existing ~= 0 or diversity_seen[2].existing ~= 1 or diversity_seen[1].allow_replace ~= true then
+  if
+    #diversity_seen ~= 2
+    or diversity_seen[1].existing ~= 0
+    or diversity_seen[2].existing ~= 1
+    or diversity_seen[1].allow_replace ~= true
+  then
     return nil, "peer_diversity_filter should receive routing table snapshot and insertion options"
   end
   local diversity_override, diversity_override_err = diversity_dht:add_peer("peer-b", {

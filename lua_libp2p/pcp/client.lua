@@ -182,7 +182,11 @@ function Client:_exchange(op, payload, lifetime, opts)
   if not client_ip_bytes then
     return nil, error_mod.new("input", "pcp client_ip/source_ip must be ipv4 or ipv6")
   end
-  local request = string.char(M.VERSION, op) .. string.rep("\0", 2) .. u32be(tonumber(lifetime) or 0) .. client_ip_bytes .. payload
+  local request = string.char(M.VERSION, op)
+    .. string.rep("\0", 2)
+    .. u32be(tonumber(lifetime) or 0)
+    .. client_ip_bytes
+    .. payload
 
   local use_v6 = is_ipv6(options.gateway or self.gateway) or is_ipv6(options.source_ip)
   local udp_ctor = use_v6 and socket.udp6 or socket.udp
@@ -229,12 +233,13 @@ function Client:_exchange(op, payload, lifetime, opts)
     if data then
       udp:close()
       if from_ip ~= (options.gateway or self.gateway) or tonumber(from_port) ~= tonumber(self.port) then
-        return nil, error_mod.new("protocol", "pcp response from unexpected source", {
-          from_ip = from_ip,
-          from_port = from_port,
-          expected_ip = options.gateway or self.gateway,
-          expected_port = self.port,
-        })
+        return nil,
+          error_mod.new("protocol", "pcp response from unexpected source", {
+            from_ip = from_ip,
+            from_port = from_port,
+            expected_ip = options.gateway or self.gateway,
+            expected_port = self.port,
+          })
       end
       if #data < 24 then
         return nil, error_mod.new("protocol", "pcp response too short")
@@ -288,7 +293,8 @@ function Client:_exchange(op, payload, lifetime, opts)
     opcode = op,
     attempts = retries + 1,
   })
-  return nil, error_mod.new("timeout", "pcp request timed out", { gateway = options.gateway or self.gateway, opcode = op })
+  return nil,
+    error_mod.new("timeout", "pcp request timed out", { gateway = options.gateway or self.gateway, opcode = op })
 end
 
 --- Request PCP MAP mapping.
@@ -325,12 +331,7 @@ function Client:map_port(protocol, internal_port, suggested_external_port, lifet
     return nil, error_mod.new("input", "pcp suggested_external_ip must be ipv4 or ipv6")
   end
 
-  local payload = nonce
-    .. string.char(proto_num)
-    .. string.rep("\0", 3)
-    .. u16be(iport)
-    .. u16be(eport)
-    .. ext_ip_bytes
+  local payload = nonce .. string.char(proto_num) .. string.rep("\0", 3) .. u16be(iport) .. u16be(eport) .. ext_ip_bytes
 
   log.debug("pcp map request started", {
     gateway = opts and opts.gateway or self.gateway,

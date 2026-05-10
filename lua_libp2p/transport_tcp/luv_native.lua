@@ -131,7 +131,8 @@ local function classify_uv_error(err, io_message)
     return err
   end
   local upper = string.upper(tostring(err or ""))
-  if upper == "CLOSED"
+  if
+    upper == "CLOSED"
     or upper == "ECONNRESET"
     or upper == "EPIPE"
     or upper == "ENOTCONN"
@@ -176,7 +177,10 @@ local function run_once_or_loop_running()
   end)
   if not called then
     local msg = tostring(ok or "")
-    if string.find(msg, "loop already running", 1, true) ~= nil or string.find(msg, "cannot resume non%-suspended coroutine") ~= nil then
+    if
+      string.find(msg, "loop already running", 1, true) ~= nil
+      or string.find(msg, "cannot resume non%-suspended coroutine") ~= nil
+    then
       return nil, "loop_running"
     end
     return nil, ok
@@ -218,18 +222,20 @@ local function bind_listener_socket(server, host, port, require_ipv6_only)
         return bind_ok, bind_err
       end
       if require_ipv6_only then
-        return nil, error_mod.new("unsupported", "failed binding ipv6-only listener", {
-          host = host,
-          port = port,
-          cause = bind_ok,
-        })
+        return nil,
+          error_mod.new("unsupported", "failed binding ipv6-only listener", {
+            host = host,
+            port = port,
+            cause = bind_ok,
+          })
       end
     end
     if require_ipv6_only then
-      return nil, error_mod.new("unsupported", "ipv6-only listeners are not supported by this runtime", {
-        host = host,
-        port = port,
-      })
+      return nil,
+        error_mod.new("unsupported", "ipv6-only listeners are not supported by this runtime", {
+          host = host,
+          port = port,
+        })
     end
   end
   return server:bind(host, port)
@@ -366,9 +372,7 @@ function NativeConnection:_ensure_read_pump()
       return
     end
     local start_text = string.upper(tostring(start_err or ""))
-    if string.find(start_text, "EALREADY", 1, true) ~= nil
-      or string.find(start_text, "ALREADY", 1, true) ~= nil
-    then
+    if string.find(start_text, "EALREADY", 1, true) ~= nil or string.find(start_text, "ALREADY", 1, true) ~= nil then
       self._read_started = true
       return
     end

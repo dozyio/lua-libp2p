@@ -120,7 +120,8 @@ function M.select_record(dht, key, incoming)
   if choice_or_err == "existing" or choice_or_err == false or choice_or_err == 1 then
     return false
   end
-  return nil, error_mod.new("protocol", "kad-dht record selector returned unsupported choice", { choice = choice_or_err })
+  return nil,
+    error_mod.new("protocol", "kad-dht record selector returned unsupported choice", { choice = choice_or_err })
 end
 
 function M.select_best_record(dht, key, existing, incoming)
@@ -148,7 +149,8 @@ function M.select_best_record(dht, key, existing, incoming)
   if choice_or_err == "existing" or choice_or_err == false or choice_or_err == 1 then
     return existing
   end
-  return nil, error_mod.new("protocol", "kad-dht record selector returned unsupported choice", { choice = choice_or_err })
+  return nil,
+    error_mod.new("protocol", "kad-dht record selector returned unsupported choice", { choice = choice_or_err })
 end
 
 function M.synthesize_pk_record(dht, key)
@@ -254,7 +256,8 @@ function M.get_value(dht, peer_or_addr, key, opts)
   if type(key) ~= "string" or key == "" then
     return nil, error_mod.new("input", "GET_VALUE key must be non-empty bytes")
   end
-  local response, err = dht:_rpc(peer_or_addr, { type = protocol.MESSAGE_TYPE.GET_VALUE, key = key }, protocol.MESSAGE_TYPE.GET_VALUE, opts)
+  local response, err =
+    dht:_rpc(peer_or_addr, { type = protocol.MESSAGE_TYPE.GET_VALUE, key = key }, protocol.MESSAGE_TYPE.GET_VALUE, opts)
   if not response then
     return nil, err
   end
@@ -297,10 +300,11 @@ local function seed_candidates_from_routing_table(dht, key, count)
   for _, entry in ipairs(nearest) do
     local addrs = {}
     if dht.host and dht.host.peerstore then
-      local filtered, filtered_err = dht:_dialable_tcp_addrs(dht:_filter_addrs(dht.host.peerstore:get_addrs(entry.peer_id), {
-        peer_id = entry.peer_id,
-        purpose = "client_query_seed",
-      }))
+      local filtered, filtered_err =
+        dht:_dialable_tcp_addrs(dht:_filter_addrs(dht.host.peerstore:get_addrs(entry.peer_id), {
+          peer_id = entry.peer_id,
+          purpose = "client_query_seed",
+        }))
       if not filtered then
         return nil, filtered_err
       end
@@ -370,7 +374,11 @@ function M.find_value(dht, key, opts)
       end
       query_options.ctx = ctx
     end
-    local result, err = dht:_get_value(peer.addr or (peer.addrs and peer.addrs[1]) or { peer_id = peer.peer_id, addrs = peer.addrs }, key, query_options)
+    local result, err = dht:_get_value(
+      peer.addr or (peer.addrs and peer.addrs[1]) or { peer_id = peer.peer_id, addrs = peer.addrs },
+      key,
+      query_options
+    )
     if not result then
       return nil, err
     end
@@ -403,7 +411,14 @@ function M.find_value(dht, key, opts)
             key_size = #best_key,
             peer_id = item.peer.peer_id,
           })
-          dht:_put_value(item.peer.addr or (item.peer.addrs and item.peer.addrs[1]) or { peer_id = item.peer.peer_id, addrs = item.peer.addrs }, best_key, best_record, options)
+          dht:_put_value(
+            item.peer.addr
+              or (item.peer.addrs and item.peer.addrs[1])
+              or { peer_id = item.peer.peer_id, addrs = item.peer.addrs },
+            best_key,
+            best_record,
+            options
+          )
         end
       end
     end
@@ -442,7 +457,11 @@ local function normalize_value_record(key, value_or_record)
     if type(value_or_record.value) ~= "string" then
       return nil, error_mod.new("input", "put_value record value must be bytes")
     end
-    return { key = key, value = value_or_record.value, time_received = value_or_record.time_received or value_or_record.timeReceived }
+    return {
+      key = key,
+      value = value_or_record.value,
+      time_received = value_or_record.time_received or value_or_record.timeReceived,
+    }
   end
   if type(value_or_record) ~= "string" then
     return nil, error_mod.new("input", "put_value value must be bytes or a record table")
@@ -492,7 +511,8 @@ function M.put_value_workflow(dht, key, value_or_record, opts)
     lookup = closest_lookup_or_err
   end
 
-  local report = { key = key, record = record, lookup = lookup, attempted = 0, succeeded = 0, failed = 0, peers = {}, errors = {} }
+  local report =
+    { key = key, record = record, lookup = lookup, attempted = 0, succeeded = 0, failed = 0, peers = {}, errors = {} }
   local limit = options.count or dht.k
   log.debug("kad dht put value announcing", {
     key_size = #key,

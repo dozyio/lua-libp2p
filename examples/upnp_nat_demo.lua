@@ -171,12 +171,23 @@ local function print_upnp_mapping_table(host, max)
     return
   end
   for _, mapping in ipairs(mappings) do
-    print("  [" .. tostring(mapping.index) .. "] "
-      .. tostring(mapping.internal_client) .. ":" .. tostring(mapping.internal_port)
-      .. " -> " .. tostring(mapping.external_port)
-      .. " (" .. tostring(mapping.protocol) .. ")"
-      .. " desc=" .. tostring(mapping.description)
-      .. " lease=" .. tostring(mapping.lease_duration))
+    print(
+      "  ["
+        .. tostring(mapping.index)
+        .. "] "
+        .. tostring(mapping.internal_client)
+        .. ":"
+        .. tostring(mapping.internal_port)
+        .. " -> "
+        .. tostring(mapping.external_port)
+        .. " ("
+        .. tostring(mapping.protocol)
+        .. ")"
+        .. " desc="
+        .. tostring(mapping.description)
+        .. " lease="
+        .. tostring(mapping.lease_duration)
+    )
   end
 end
 
@@ -239,18 +250,30 @@ local function print_mappings(host)
   for _, addr in ipairs(mappings) do
     local meta = host.address_manager:get_reachability(addr) or {}
     print("  " .. addr)
-    print("    type=" .. tostring(meta.type)
-      .. " verified=" .. tostring(meta.verified)
-      .. " status=" .. tostring(meta.status)
-      .. " source=" .. tostring(meta.source))
+    print(
+      "    type="
+        .. tostring(meta.type)
+        .. " verified="
+        .. tostring(meta.verified)
+        .. " status="
+        .. tostring(meta.status)
+        .. " source="
+        .. tostring(meta.source)
+    )
     if meta.internal_addr then
       print("    internal_addr=" .. tostring(meta.internal_addr))
     end
     if meta.internal_client then
-      print("    internal_client=" .. tostring(meta.internal_client)
-        .. " internal_port=" .. tostring(meta.internal_port)
-        .. " external_port=" .. tostring(meta.external_port)
-        .. " protocol=" .. tostring(meta.protocol))
+      print(
+        "    internal_client="
+          .. tostring(meta.internal_client)
+          .. " internal_port="
+          .. tostring(meta.internal_port)
+          .. " external_port="
+          .. tostring(meta.external_port)
+          .. " protocol="
+          .. tostring(meta.protocol)
+      )
     end
   end
 end
@@ -261,16 +284,23 @@ local function metadata_status(host, addr)
     return "missing"
   end
   return tostring(metadata.status or "unknown")
-    .. ",verified=" .. tostring(metadata.verified == true)
-    .. ",source=" .. tostring(metadata.source)
+    .. ",verified="
+    .. tostring(metadata.verified == true)
+    .. ",source="
+    .. tostring(metadata.source)
 end
 
 local function print_autonat_summary(stats)
-  print("AutoNAT summary: checked="
-    .. tostring(stats and stats.checked or 0)
-    .. " responses=" .. tostring(stats and stats.responses or 0)
-    .. " refused=" .. tostring(stats and stats.refused or 0)
-    .. " reachable=" .. tostring(stats and stats.reachable or 0))
+  print(
+    "AutoNAT summary: checked="
+      .. tostring(stats and stats.checked or 0)
+      .. " responses="
+      .. tostring(stats and stats.responses or 0)
+      .. " refused="
+      .. tostring(stats and stats.refused or 0)
+      .. " reachable="
+      .. tostring(stats and stats.reachable or 0)
+  )
 end
 
 local function autonat_check_mappings_async(host, server, ctx)
@@ -293,10 +323,16 @@ local function autonat_check_mappings_async(host, server, ctx)
     return nil, task_err
   end
   print("AutoNAT: checking public mappings via " .. tostring(type(server) == "table" and server.peer_id or server))
-  print("  reachable=" .. tostring(result.reachable)
-    .. " response_status=" .. tostring(result.response_status)
-    .. " dial_status=" .. tostring(result.dial_status)
-    .. " dial_back_verified=" .. tostring(result.dial_back_verified))
+  print(
+    "  reachable="
+      .. tostring(result.reachable)
+      .. " response_status="
+      .. tostring(result.response_status)
+      .. " dial_status="
+      .. tostring(result.dial_status)
+      .. " dial_back_verified="
+      .. tostring(result.dial_back_verified)
+  )
   if result.addr then
     print("  checked_addr=" .. tostring(result.addr) .. " status=" .. metadata_status(host, result.addr))
   end
@@ -353,14 +389,21 @@ h:on("upnp_nat:mapping:active", function(mapping)
     print("  internal: " .. tostring(mapping.internal_addr))
   end
   if mapping.internal_client then
-    print("  upnp request: " .. tostring(mapping.protocol)
-      .. " " .. tostring(mapping.internal_client)
-      .. ":" .. tostring(mapping.internal_port)
-      .. " <- external port " .. tostring(mapping.external_port))
+    print(
+      "  upnp request: "
+        .. tostring(mapping.protocol)
+        .. " "
+        .. tostring(mapping.internal_client)
+        .. ":"
+        .. tostring(mapping.internal_port)
+        .. " <- external port "
+        .. tostring(mapping.external_port)
+    )
   end
   if mapping.actual_internal_client then
-    print("  router reports: " .. tostring(mapping.actual_internal_client)
-      .. ":" .. tostring(mapping.actual_internal_port))
+    print(
+      "  router reports: " .. tostring(mapping.actual_internal_client) .. ":" .. tostring(mapping.actual_internal_port)
+    )
   end
   return true
 end)
@@ -376,13 +419,20 @@ h:on("autonat:address:reachable", function(payload)
 end)
 
 h:on("autonat:reachability:checked", function(payload)
-  print("autonat reachability check: "
-    .. tostring(payload and payload.addr)
-    .. " reachable=" .. tostring(payload and payload.reachable)
-    .. " response_status=" .. tostring(payload and payload.response_status)
-    .. " dial_status=" .. tostring(payload and payload.dial_status)
-    .. " verified=" .. tostring(payload and payload.dial_back_verified)
-    .. " metadata=" .. metadata_status(h, payload and payload.addr))
+  print(
+    "autonat reachability check: "
+      .. tostring(payload and payload.addr)
+      .. " reachable="
+      .. tostring(payload and payload.reachable)
+      .. " response_status="
+      .. tostring(payload and payload.response_status)
+      .. " dial_status="
+      .. tostring(payload and payload.dial_status)
+      .. " verified="
+      .. tostring(payload and payload.dial_back_verified)
+      .. " metadata="
+      .. metadata_status(h, payload and payload.addr)
+  )
   return true
 end)
 
@@ -392,35 +442,49 @@ h:on("autonat:address:unreachable", function(payload)
 end)
 
 h:on("autonat:request:failed", function(payload)
-  print("autonat request failed: server="
-    .. tostring(payload and payload.server_peer_id)
-    .. " response_status=" .. tostring(payload and payload.response_status)
-    .. " dial_status=" .. tostring(payload and payload.dial_status))
+  print(
+    "autonat request failed: server="
+      .. tostring(payload and payload.server_peer_id)
+      .. " response_status="
+      .. tostring(payload and payload.response_status)
+      .. " dial_status="
+      .. tostring(payload and payload.dial_status)
+  )
   return true
 end)
 
 h:on("autonat:discovery:check_failed", function(payload)
-  print("autonat discovery check failed: peer="
-    .. tostring(payload and payload.peer_id)
-    .. " cause=" .. tostring(payload and payload.error))
+  print(
+    "autonat discovery check failed: peer="
+      .. tostring(payload and payload.peer_id)
+      .. " cause="
+      .. tostring(payload and payload.error)
+  )
   return true
 end)
 
 h:on("autonat:discovery:candidates", function(payload)
-  print("autonat discovery: peerstore_peers="
-    .. tostring(payload and payload.peerstore_peers or 0)
-    .. " autonat_proto_candidates="
-    .. tostring(payload and payload.protocol_candidates or 0))
+  print(
+    "autonat discovery: peerstore_peers="
+      .. tostring(payload and payload.peerstore_peers or 0)
+      .. " autonat_proto_candidates="
+      .. tostring(payload and payload.protocol_candidates or 0)
+  )
   return true
 end)
 
 h:on("autonat:discovery:walk", function(payload)
   local report = payload and payload.report or {}
-  print("autonat discovery: random_walk queried="
-    .. tostring(report.queried or 0)
-    .. " responses=" .. tostring(report.responses or 0)
-    .. " added=" .. tostring(report.added or 0)
-    .. " discovered=" .. tostring(report.discovered or 0))
+  print(
+    "autonat discovery: random_walk queried="
+      .. tostring(report.queried or 0)
+      .. " responses="
+      .. tostring(report.responses or 0)
+      .. " added="
+      .. tostring(report.added or 0)
+      .. " discovered="
+      .. tostring(report.discovered or 0)
+  )
   if payload and payload.routing_table_peers then
     print("autonat discovery: post-walk peers=" .. tostring(payload.routing_table_peers))
   end
@@ -428,11 +492,16 @@ h:on("autonat:discovery:walk", function(payload)
 end)
 
 h:on("autonat:discovery:progress", function(payload)
-  print("autonat discovery: checked="
-    .. tostring(payload and payload.checked or 0)
-    .. " responses=" .. tostring(payload and payload.responses or 0)
-    .. " refused=" .. tostring(payload and payload.refused or 0)
-    .. " reachable=" .. tostring(payload and payload.reachable or 0))
+  print(
+    "autonat discovery: checked="
+      .. tostring(payload and payload.checked or 0)
+      .. " responses="
+      .. tostring(payload and payload.responses or 0)
+      .. " refused="
+      .. tostring(payload and payload.refused or 0)
+      .. " reachable="
+      .. tostring(payload and payload.reachable or 0)
+  )
   return true
 end)
 
@@ -443,10 +512,14 @@ h:on("autonat:monitor:verified", function(payload)
 end)
 
 h:on("kad_dht:mode_changed", function(payload)
-  print("kad dht mode changed: "
-    .. tostring(payload and payload.old_mode)
-    .. " -> " .. tostring(payload and payload.mode)
-    .. " reason=" .. tostring(payload and payload.reason))
+  print(
+    "kad dht mode changed: "
+      .. tostring(payload and payload.old_mode)
+      .. " -> "
+      .. tostring(payload and payload.mode)
+      .. " reason="
+      .. tostring(payload and payload.reason)
+  )
   return true
 end)
 

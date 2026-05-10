@@ -179,10 +179,11 @@ function ResourceManager:_check_protocol_peer_limit(protocol_id, peer_id, resour
   local limit = self:_protocol_peer_limit(protocol_id, resource)
   current = current or 0
   if limit ~= nil and limit >= 0 and current >= limit then
-    return nil, limit_error(resource, "protocol_peer", limit, current, {
-      protocol = protocol_id,
-      peer_id = peer_id,
-    })
+    return nil,
+      limit_error(resource, "protocol_peer", limit, current, {
+        protocol = protocol_id,
+        peer_id = peer_id,
+      })
   end
   return true
 end
@@ -402,7 +403,8 @@ function ResourceManager:open_stream(peer_id, direction, protocol_id)
     end
     local protocol_dir_limit_name = direction_key("streams", dir)
     if protocol_dir_limit_name then
-      ok, err = self:_check_protocol_limit(protocol_id, protocol_dir_limit_name, protocol_stats[protocol_dir_limit_name])
+      ok, err =
+        self:_check_protocol_limit(protocol_id, protocol_dir_limit_name, protocol_stats[protocol_dir_limit_name])
       if not ok then
         return nil, err
       end
@@ -625,7 +627,8 @@ end
 function M.new(opts)
   local options = opts or {}
   local overrides = options.limits or options
-  local limits = options.default_limits == false and merge_limits({}, overrides) or merge_limits(DEFAULT_LIMITS, overrides)
+  local limits = options.default_limits == false and merge_limits({}, overrides)
+    or merge_limits(DEFAULT_LIMITS, overrides)
   return setmetatable({
     limits = limits,
     _stats = {

@@ -249,11 +249,12 @@ local function make_task_context(task)
       end
     end
     if child_task.status ~= "completed" then
-      return nil, child_task.error or error_mod.new("state", "task did not complete", {
-        task_id = child_task.id,
-        name = child_task.name,
-        status = child_task.status,
-      })
+      return nil,
+        child_task.error or error_mod.new("state", "task did not complete", {
+          task_id = child_task.id,
+          name = child_task.name,
+          status = child_task.status,
+        })
     end
     if child_task.results then
       return unpack_returns(child_task.results)
@@ -271,7 +272,8 @@ local function make_task_context(task)
       return nil, error_mod.new("cancelled", "task cancelled", { task_id = task.id, name = task.name })
     end
     for _, child_task in ipairs(child_tasks) do
-      if type(child_task) == "table"
+      if
+        type(child_task) == "table"
         and (child_task.status == "completed" or child_task.status == "failed" or child_task.status == "cancelled")
       then
         return true
@@ -297,11 +299,12 @@ local function run_task_finalizer(host, task)
   task.on_finished = nil
   local ok, result, err = pcall(finalizer, host, task)
   if not ok then
-    return nil, error_mod.new("protocol", "task finalizer panicked", {
-      task_id = task.id,
-      name = task.name,
-      cause = result,
-    })
+    return nil,
+      error_mod.new("protocol", "task finalizer panicked", {
+        task_id = task.id,
+        name = task.name,
+        cause = result,
+      })
   end
   if result == nil and err then
     return nil, err
@@ -369,7 +372,9 @@ function M.install(Host)
     for _, task in pairs(self._tasks) do
       out[#out + 1] = task
     end
-    table.sort(out, function(a, b) return a.id < b.id end)
+    table.sort(out, function(a, b)
+      return a.id < b.id
+    end)
     return out
   end
 
@@ -529,10 +534,11 @@ function M.install(Host)
 
     while task.status ~= "completed" and task.status ~= "failed" and task.status ~= "cancelled" do
       if deadline and now_seconds() >= deadline then
-        return nil, error_mod.new("timeout", "task wait timed out", {
-          task_id = task.id,
-          name = task.name,
-        })
+        return nil,
+          error_mod.new("timeout", "task wait timed out", {
+            task_id = task.id,
+            name = task.name,
+          })
       end
       local ok, err = self:_poll_once(poll_interval)
       if not ok then
@@ -540,11 +546,12 @@ function M.install(Host)
       end
     end
     if task.status ~= "completed" then
-      return nil, task.error or error_mod.new("state", "task did not complete", {
-        task_id = task.id,
-        name = task.name,
-        status = task.status,
-      })
+      return nil,
+        task.error or error_mod.new("state", "task did not complete", {
+          task_id = task.id,
+          name = task.name,
+          status = task.status,
+        })
     end
     if task.results then
       return unpack_returns(task.results)

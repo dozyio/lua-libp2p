@@ -59,11 +59,13 @@ local function local_ipv4_addrs()
   for _, entries in pairs(interfaces or {}) do
     for _, entry in ipairs(entries or {}) do
       local addr = entry.address or entry.ip
-      if (entry.family == "IPv4" or entry.family == "inet")
-          and not entry.internal
-          and type(addr) == "string"
-          and addr ~= "0.0.0.0"
-          and not seen[addr] then
+      if
+        (entry.family == "IPv4" or entry.family == "inet")
+        and not entry.internal
+        and type(addr) == "string"
+        and addr ~= "0.0.0.0"
+        and not seen[addr]
+      then
         seen[addr] = true
         out[#out + 1] = addr
       end
@@ -84,10 +86,11 @@ local function local_ipv6_addrs()
   for _, entries in pairs(interfaces or {}) do
     for _, entry in ipairs(entries or {}) do
       local addr = entry.address or entry.ip
-      if (entry.family == "IPv6" or entry.family == "inet6")
-          and not entry.internal
-          and type(addr) == "string"
-          and addr ~= "::"
+      if
+        (entry.family == "IPv6" or entry.family == "inet6")
+        and not entry.internal
+        and type(addr) == "string"
+        and addr ~= "::"
       then
         local normalized = addr:gsub("%%.+$", "")
         if normalized ~= "" and normalized:sub(1, 5):lower() ~= "fe80:" and not seen[normalized] then
@@ -245,7 +248,14 @@ function AddressManager:add_public_address_mapping(mapping)
     end
   end
   for k, v in pairs(mapping) do
-    if metadata[k] == nil and not (existing_verified and not incoming_verified and (k == "verified" or k == "status" or k == "source" or k == "last_verified")) then
+    if
+      metadata[k] == nil
+      and not (
+        existing_verified
+        and not incoming_verified
+        and (k == "verified" or k == "status" or k == "source" or k == "last_verified")
+      )
+    then
       metadata[k] = v
     end
   end

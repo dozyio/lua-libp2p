@@ -10,9 +10,21 @@ local function run()
     listen_addrs = {},
   }))
 
-  local c1 = { close = function() return true end }
-  local c2 = { close = function() return true end }
-  local limited = { close = function() return true end }
+  local c1 = {
+    close = function()
+      return true
+    end,
+  }
+  local c2 = {
+    close = function()
+      return true
+    end,
+  }
+  local limited = {
+    close = function()
+      return true
+    end,
+  }
   local e1 = host_connections.add(h, c1, { remote_peer_id = "peer-a" })
   local e2 = host_connections.add(h, c2, { remote_peer_id = "peer-a" })
   local e3 = host_connections.add(h, limited, {
@@ -27,9 +39,18 @@ local function run()
     return nil, "peer index should locate connections"
   end
 
-  local stale = { _closed = true, close = function() return true end }
+  local stale = {
+    _closed = true,
+    close = function()
+      return true
+    end,
+  }
   local stale_entry = host_connections.add(h, stale, { remote_peer_id = "peer-a" })
-  local fresh = { close = function() return true end }
+  local fresh = {
+    close = function()
+      return true
+    end,
+  }
   local fresh_entry = host_connections.add(h, fresh, { remote_peer_id = "peer-a" })
   local selected = h:_find_connection("peer-a")
   if selected ~= fresh_entry then
@@ -77,17 +98,25 @@ local function run()
   local stale_state = { remote_peer_id = "peer-retry" }
   local fresh_state = { remote_peer_id = "peer-retry" }
   local stale_conn = {
-    close = function() return true end,
+    close = function()
+      return true
+    end,
     new_stream = function()
       return nil, nil, error_mod.new("closed", "write on closed connection")
     end,
   }
   local stream_opened = false
   local fresh_conn = {
-    close = function() return true end,
+    close = function()
+      return true
+    end,
     new_stream = function(_, protocols)
       stream_opened = true
-      return { close = function() return true end }, protocols[1]
+      return {
+        close = function()
+          return true
+        end,
+      }, protocols[1]
     end,
   }
   local retry_stale_entry = host_connections.add(retry_host, stale_conn, stale_state)

@@ -24,8 +24,12 @@ local function run()
     return nil, "decoded public key payload mismatch"
   end
 
-  local ed25519_private = hex.decode("7e0830617c4a7de83925dfb2694556b12936c477a0e1feb2e148ec9da60fee7d1ed1e8fae2c4a144b8be8fd4b47bf3d3b34b871c3cacf6010f0e42d474fce27e")
-  local expected_private_proto = hex.decode("080112407e0830617c4a7de83925dfb2694556b12936c477a0e1feb2e148ec9da60fee7d1ed1e8fae2c4a144b8be8fd4b47bf3d3b34b871c3cacf6010f0e42d474fce27e")
+  local ed25519_private = hex.decode(
+    "7e0830617c4a7de83925dfb2694556b12936c477a0e1feb2e148ec9da60fee7d1ed1e8fae2c4a144b8be8fd4b47bf3d3b34b871c3cacf6010f0e42d474fce27e"
+  )
+  local expected_private_proto = hex.decode(
+    "080112407e0830617c4a7de83925dfb2694556b12936c477a0e1feb2e148ec9da60fee7d1ed1e8fae2c4a144b8be8fd4b47bf3d3b34b871c3cacf6010f0e42d474fce27e"
+  )
 
   local encoded_priv, enc_priv_err = key_pb.encode_private_key(key_pb.KEY_TYPE.Ed25519, ed25519_private)
   if not encoded_priv then

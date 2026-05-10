@@ -27,9 +27,10 @@ local function build_peer_discovery(config)
     elseif type(source_spec) == "table" and source_spec.module ~= nil then
       local module = source_spec.module
       if type(module) ~= "table" or type(module.new) ~= "function" then
-        return nil, error_mod.new("input", "peer_discovery module entry must expose .new(opts)", {
-          source = source_name,
-        })
+        return nil,
+          error_mod.new("input", "peer_discovery module entry must expose .new(opts)", {
+            source = source_name,
+          })
       end
       local built_source, built_err = module.new(source_spec.config or {})
       if not built_source then
@@ -43,15 +44,17 @@ local function build_peer_discovery(config)
       end
       source = built_source
     else
-      return nil, error_mod.new("input", "peer_discovery entries must be source objects or module specs", {
-        source = source_name,
-      })
+      return nil,
+        error_mod.new("input", "peer_discovery entries must be source objects or module specs", {
+          source = source_name,
+        })
     end
 
     if type(source) ~= "table" or type(source.discover) ~= "function" then
-      return nil, error_mod.new("input", "peer_discovery source must provide discover(opts)", {
-        source = source_name,
-      })
+      return nil,
+        error_mod.new("input", "peer_discovery source must provide discover(opts)", {
+          source = source_name,
+        })
     end
     if source_name == "bootstrap" and type(source._bootstrap_config) == "table" then
       bootstrap_config = source._bootstrap_config
@@ -119,7 +122,12 @@ function M.install(Host)
       return true
     end
     local existing = self._bootstrap_discovery_task
-    if existing and existing.status ~= "completed" and existing.status ~= "failed" and existing.status ~= "cancelled" then
+    if
+      existing
+      and existing.status ~= "completed"
+      and existing.status ~= "failed"
+      and existing.status ~= "cancelled"
+    then
       return true
     end
     local delay = type(delay_seconds) == "number" and math.max(0, delay_seconds) or 0

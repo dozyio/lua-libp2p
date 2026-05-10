@@ -104,7 +104,8 @@ local function fallback_ipv6_default_route(neighbors)
           gateway = candidate,
           ifname = entry.ifname,
           source = "ndp_router",
-        }, nil
+        },
+          nil
       end
     end
   end

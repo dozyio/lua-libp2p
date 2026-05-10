@@ -83,8 +83,10 @@ function Service:_eligible_addrs()
           goto continue_addr
         end
       end
-      if multiaddr.is_private_addr("/" .. parsed.ip_proto .. "/" .. parsed.ip .. "/" .. parsed.protocol .. "/" .. parsed.port)
-        and not is_loopback_ip(parsed.ip)
+      if
+        multiaddr.is_private_addr(
+          "/" .. parsed.ip_proto .. "/" .. parsed.ip .. "/" .. parsed.protocol .. "/" .. parsed.port
+        ) and not is_loopback_ip(parsed.ip)
       then
         addrs[#addrs + 1] = parsed
       end
@@ -135,7 +137,11 @@ function Service:map_ip_addresses()
       gateway = self.gateway,
       cause = tostring(ip_meta_or_err),
     })
-    emit_event(self.host, "nat_pmp:mapping:failed", { error = ip_meta_or_err, error_message = tostring(ip_meta_or_err) })
+    emit_event(
+      self.host,
+      "nat_pmp:mapping:failed",
+      { error = ip_meta_or_err, error_message = tostring(ip_meta_or_err) }
+    )
     return nil, ip_meta_or_err
   end
 
@@ -248,7 +254,9 @@ function Service:stop()
   log.debug("nat-pmp service stopped", {
     mappings = (function()
       local n = 0
-      for _ in pairs(self.mappings) do n = n + 1 end
+      for _ in pairs(self.mappings) do
+        n = n + 1
+      end
       return n
     end)(),
   })

@@ -31,7 +31,10 @@ local function target_key(target)
     if addr and multiaddr.is_relay_addr(addr) then
       local relay, relay_err = multiaddr.relay_info(addr)
       if relay then
-        return "relay:" .. tostring(relay.relay_peer_id or "") .. "->" .. tostring(relay.destination_peer_id or target.peer_id or "")
+        return "relay:"
+          .. tostring(relay.relay_peer_id or "")
+          .. "->"
+          .. tostring(relay.destination_peer_id or target.peer_id or "")
       end
       return "relay_addr:" .. addr .. ":" .. tostring(relay_err)
     end
@@ -64,7 +67,8 @@ local function is_dialable_tcp_addr(addr)
   end
   local host_part = parsed.components[1]
   local tcp_part = parsed.components[2]
-  if host_part.protocol ~= "ip4"
+  if
+    host_part.protocol ~= "ip4"
     and host_part.protocol ~= "ip6"
     and host_part.protocol ~= "dns"
     and host_part.protocol ~= "dns4"
@@ -97,7 +101,8 @@ function M.new(host, opts)
   return setmetatable({
     host = host,
     max_parallel_dials = options.max_parallel_dials == nil and DEFAULT_MAX_PARALLEL_DIALS or options.max_parallel_dials,
-    max_dial_queue_length = options.max_dial_queue_length == nil and DEFAULT_MAX_DIAL_QUEUE_LENGTH or options.max_dial_queue_length,
+    max_dial_queue_length = options.max_dial_queue_length == nil and DEFAULT_MAX_DIAL_QUEUE_LENGTH
+      or options.max_dial_queue_length,
     max_peer_addrs_to_dial = options.max_peer_addrs_to_dial or options.max_dial_addrs or DEFAULT_MAX_PEER_ADDRS_TO_DIAL,
     address_dial_timeout = options.address_dial_timeout or DEFAULT_ADDRESS_DIAL_TIMEOUT,
     dial_timeout = options.dial_timeout,
@@ -272,7 +277,7 @@ end
 function ConnectionManager:_run_dial(target, opts, key, ctx)
   local token = {}
   self.queue[#self.queue + 1] = token
-  while (self.queue[1] ~= token or self.active_dials >= self.max_parallel_dials) do
+  while self.queue[1] ~= token or self.active_dials >= self.max_parallel_dials do
     if ctx:cancelled() then
       self:_remove_token(token)
       return nil, error_mod.new("cancelled", "dial task cancelled")
@@ -335,9 +340,11 @@ function ConnectionManager:open_connection(target, opts)
   end
 
   if #self.queue >= self.max_dial_queue_length then
-    return nil, nil, error_mod.new("resource", "dial queue full", {
-      max_dial_queue_length = self.max_dial_queue_length,
-    })
+    return nil,
+      nil,
+      error_mod.new("resource", "dial queue full", {
+        max_dial_queue_length = self.max_dial_queue_length,
+      })
   end
 
   local pending_entry = {}
@@ -403,11 +410,16 @@ function ConnectionManager:can_open_connection(state)
   local direction = conn_state.direction or "unknown"
   local peer_id = conn_state.remote_peer_id
 
-  if self.max_connections_per_peer and peer_id and self:peer_connection_count(peer_id) >= self.max_connections_per_peer then
-    return nil, error_mod.new("resource", "per-peer connection limit reached", {
-      peer_id = peer_id,
-      max_connections_per_peer = self.max_connections_per_peer,
-    })
+  if
+    self.max_connections_per_peer
+    and peer_id
+    and self:peer_connection_count(peer_id) >= self.max_connections_per_peer
+  then
+    return nil,
+      error_mod.new("resource", "per-peer connection limit reached", {
+        peer_id = peer_id,
+        max_connections_per_peer = self.max_connections_per_peer,
+      })
   end
 
   local direction_limit = nil
@@ -417,15 +429,19 @@ function ConnectionManager:can_open_connection(state)
     direction_limit = self.max_outbound_connections
   end
   if direction_limit and self:connection_count(direction) >= direction_limit then
-    local pruned, prune_err = self:prune_if_needed(true, { direction = direction, high = direction_limit, low = math.max(direction_limit - 1, 0) })
+    local pruned, prune_err = self:prune_if_needed(
+      true,
+      { direction = direction, high = direction_limit, low = math.max(direction_limit - 1, 0) }
+    )
     if not pruned then
       return nil, prune_err
     end
     if self:connection_count(direction) >= direction_limit then
-      return nil, error_mod.new("resource", direction .. " connection limit reached", {
-        direction = direction,
-        limit = direction_limit,
-      })
+      return nil,
+        error_mod.new("resource", direction .. " connection limit reached", {
+          direction = direction,
+          limit = direction_limit,
+        })
     end
   end
 
@@ -435,9 +451,10 @@ function ConnectionManager:can_open_connection(state)
       return nil, prune_err
     end
     if self:connection_count() >= self.max_connections then
-      return nil, error_mod.new("resource", "connection limit reached", {
-        max_connections = self.max_connections,
-      })
+      return nil,
+        error_mod.new("resource", "connection limit reached", {
+          max_connections = self.max_connections,
+        })
     end
   end
 
@@ -517,9 +534,17 @@ function ConnectionManager:prune_if_needed(force, opts)
       if cutoff then
         old_enough = (entry.opened_at or 0) <= cutoff
       end
-      if old_enough and (not direction or entry_direction == direction) and not (peer_id and self.protected_peers[peer_id]) then
+      if
+        old_enough
+        and (not direction or entry_direction == direction)
+        and not (peer_id and self.protected_peers[peer_id])
+      then
         local value = self:peer_value(peer_id)
-        if not candidate or value < candidate_value or (value == candidate_value and (entry.opened_at or 0) < (candidate.opened_at or 0)) then
+        if
+          not candidate
+          or value < candidate_value
+          or (value == candidate_value and (entry.opened_at or 0) < (candidate.opened_at or 0))
+        then
           candidate = entry
           candidate_value = value
         end
@@ -529,10 +554,11 @@ function ConnectionManager:prune_if_needed(force, opts)
       if cutoff then
         return true
       else
-        return nil, error_mod.new("resource", "connection limit reached and no prunable connections available", {
-          high_water = high,
-          low_water = low,
-        })
+        return nil,
+          error_mod.new("resource", "connection limit reached and no prunable connections available", {
+            high_water = high,
+            low_water = low,
+          })
       end
     else
       if candidate.conn and type(candidate.conn.close) == "function" then

@@ -5,7 +5,9 @@ local ping_service = require("lua_libp2p.protocol_ping.service")
 
 local function close_host(h)
   if h then
-    pcall(function() h:close() end)
+    pcall(function()
+      h:close()
+    end)
   end
 end
 
@@ -122,7 +124,8 @@ local function run()
   end
 
   local counters = rawget(server, "_debug_counters") or {}
-  if (tonumber(counters.inbound_resource_reject) or 0) ~= 0
+  if
+    (tonumber(counters.inbound_resource_reject) or 0) ~= 0
     or (tonumber(counters.inbound_registration_failed) or 0) ~= 0
     or (tonumber(counters.inbound_upgrade_failed) or 0) ~= 0
   then

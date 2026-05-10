@@ -22,7 +22,11 @@ local function run()
     },
   }))
   decoded = assert(autonat.decode_message(encoded))
-  if not decoded.dialDataRequest or decoded.dialDataRequest.addrIdx ~= 0 or decoded.dialDataRequest.numBytes ~= 30000 then
+  if
+    not decoded.dialDataRequest
+    or decoded.dialDataRequest.addrIdx ~= 0
+    or decoded.dialDataRequest.numBytes ~= 30000
+  then
     return nil, "autonat should roundtrip dial data request"
   end
 
@@ -34,7 +38,11 @@ local function run()
     },
   }))
   decoded = assert(autonat.decode_message(encoded))
-  if not decoded.dialResponse or decoded.dialResponse.addrIdx ~= 1 or decoded.dialResponse.dialStatus ~= autonat.DIAL_STATUS.OK then
+  if
+    not decoded.dialResponse
+    or decoded.dialResponse.addrIdx ~= 1
+    or decoded.dialResponse.dialStatus ~= autonat.DIAL_STATUS.OK
+  then
     return nil, "autonat should roundtrip dial response"
   end
 

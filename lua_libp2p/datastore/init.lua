@@ -54,9 +54,10 @@ function M.key(...)
   end
   for i, part in ipairs(parts) do
     if type(part) ~= "string" or part == "" then
-      return nil, error_mod.new("input", "datastore key segment must be a non-empty string", {
-        index = i,
-      })
+      return nil,
+        error_mod.new("input", "datastore key segment must be a non-empty string", {
+          index = i,
+        })
     end
   end
   return table.concat(parts, "/")

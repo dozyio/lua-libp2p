@@ -22,9 +22,19 @@ local function parse_args(args)
       i = i + 1
     else
       forwarded[#forwarded + 1] = token
-      if token == "--bootstrap" or token == "--target" or token == "--count" or token == "--alpha" or token == "--disjoint-paths"
-        or token == "--connect-timeout" or token == "--io-timeout" or token == "--identity-key" or token == "--key"
-        or token == "--key-hex" or token == "--limit" or token == "--persist-peerstore"
+      if
+        token == "--bootstrap"
+        or token == "--target"
+        or token == "--count"
+        or token == "--alpha"
+        or token == "--disjoint-paths"
+        or token == "--connect-timeout"
+        or token == "--io-timeout"
+        or token == "--identity-key"
+        or token == "--key"
+        or token == "--key-hex"
+        or token == "--limit"
+        or token == "--persist-peerstore"
       then
         local value = args[i + 1]
         if value and value:sub(1, 2) ~= "--" then

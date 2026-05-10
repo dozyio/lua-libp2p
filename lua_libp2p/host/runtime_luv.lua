@@ -208,7 +208,7 @@ function M.tick(host)
   end
 
   if #host._pending_inbound > 0 then
-      ok, err = M.poll_once(host, 0)
+    ok, err = M.poll_once(host, 0)
     if not ok then
       host:_set_runtime_error("luv", err)
       return nil, err
@@ -238,7 +238,7 @@ function M.tick(host)
   end
 
   if map_size(host._luv_ready) > 0 then
-      ok, err = M.poll_once(host, 0)
+    ok, err = M.poll_once(host, 0)
     if not ok then
       host:_set_runtime_error("luv", err)
       return nil, err
@@ -405,10 +405,11 @@ function M.sync_watchers(host)
           end
         end)
         if not ok then
-          return nil, error_mod.new("io", "failed to register luv readable watcher", {
-            kind = item.kind,
-            cause = unwatch_or_err,
-          })
+          return nil,
+            error_mod.new("io", "failed to register luv readable watcher", {
+              kind = item.kind,
+              cause = unwatch_or_err,
+            })
         end
         if type(unwatch_or_err) ~= "function" then
           goto continue_targets
@@ -427,18 +428,22 @@ function M.sync_watchers(host)
 
         local poll_handle, poll_err = uv.new_poll(fd)
         if not poll_handle then
-          return nil, error_mod.new("io", "failed to create luv poll handle", {
-            kind = item.kind,
-            cause = poll_err,
-          })
+          return nil,
+            error_mod.new("io", "failed to create luv poll handle", {
+              kind = item.kind,
+              cause = poll_err,
+            })
         end
 
         local ok, start_err = poll_handle:start(item.events or "r", function(err)
           if err then
-            host:_set_runtime_error("luv", error_mod.new("io", "luv poll callback error", {
-              kind = item.kind,
-              cause = err,
-            }))
+            host:_set_runtime_error(
+              "luv",
+              error_mod.new("io", "luv poll callback error", {
+                kind = item.kind,
+                cause = err,
+              })
+            )
             return
           end
           host._luv_ready[target] = true
@@ -459,10 +464,11 @@ function M.sync_watchers(host)
           pcall(function()
             poll_handle:close()
           end)
-          return nil, error_mod.new("io", "failed to start luv poll handle", {
-            kind = item.kind,
-            cause = start_err,
-          })
+          return nil,
+            error_mod.new("io", "failed to start luv poll handle", {
+              kind = item.kind,
+              cause = start_err,
+            })
         end
 
         host._luv_watchers[target] = {

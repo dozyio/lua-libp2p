@@ -3,9 +3,8 @@ local noise = require("lua_libp2p.connection_encrypter_noise.protocol")
 local mime = require("mime")
 
 local function public_pem_to_der(pem)
-  local body = pem:gsub("%-%-%-%-%-BEGIN PUBLIC KEY%-%-%-%-%-", "")
-    :gsub("%-%-%-%-%-END PUBLIC KEY%-%-%-%-%-", "")
-    :gsub("%s+", "")
+  local body =
+    pem:gsub("%-%-%-%-%-BEGIN PUBLIC KEY%-%-%-%-%-", ""):gsub("%-%-%-%-%-END PUBLIC KEY%-%-%-%-%-", ""):gsub("%s+", "")
   return mime.unb64(body)
 end
 

@@ -13,7 +13,8 @@ destination: default
     return nil, "macos route parser should scope link-local default gateway"
   end
 
-  local neighbors = macos.parse_ndp_neighbors([[Neighbor                                Linklayer Address  Netif Expire    St Flgs Prbs
+  local neighbors =
+    macos.parse_ndp_neighbors([[Neighbor                                Linklayer Address  Netif Expire    St Flgs Prbs
 2a00:23c7:ad38:6601:56b7:bdff:fe9e:91   54:b7:bd:9e:0:91     en0 21h57m0s  S  R
 fe80::56b7:bdff:fe9e:91%en0             54:b7:bd:9e:0:91     en0 1s        R  R
 ]])

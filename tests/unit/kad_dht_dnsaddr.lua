@@ -44,7 +44,9 @@ local function run()
   if not recursive then
     return nil, recursive_err
   end
-  if #recursive ~= 1 or recursive[1] ~= "/ip4/147.75.87.27/tcp/4001/p2p/QmNnooDu7bfjPFoTZYxMNLWUQJyrVwtbZg5gBMjTezGAJN" then
+  if
+    #recursive ~= 1 or recursive[1] ~= "/ip4/147.75.87.27/tcp/4001/p2p/QmNnooDu7bfjPFoTZYxMNLWUQJyrVwtbZg5gBMjTezGAJN"
+  then
     return nil, "expected recursive dnsaddr resolution to terminal ip4 address"
   end
 

@@ -139,11 +139,7 @@ local function run()
   if not proto_stream_one or not proto_stream_two then
     return nil, "expected first two protocol-peer streams to fit"
   end
-  local blocked_proto_peer, blocked_proto_peer_err = protocol_peer:open_stream(
-    "peer-proto",
-    "inbound",
-    "/proto/1.0.0"
-  )
+  local blocked_proto_peer, blocked_proto_peer_err = protocol_peer:open_stream("peer-proto", "inbound", "/proto/1.0.0")
   if blocked_proto_peer then
     return nil, "expected protocol-peer inbound stream limit to block"
   end

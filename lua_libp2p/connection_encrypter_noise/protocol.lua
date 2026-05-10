@@ -117,7 +117,12 @@ function M.make_identity_signature(identity_keypair, noise_static_public_key)
   return keys.sign(identity_keypair, M.SIG_PREFIX .. noise_static_public_key)
 end
 
-function M.verify_identity_signature(identity_public_key, noise_static_public_key, identity_signature, identity_key_type)
+function M.verify_identity_signature(
+  identity_public_key,
+  noise_static_public_key,
+  identity_signature,
+  identity_key_type
+)
   if type(noise_static_public_key) ~= "string" or #noise_static_public_key ~= 32 then
     return nil, error_mod.new("input", "noise static public key must be 32 bytes")
   end
@@ -331,12 +336,18 @@ function M.verify_handshake_payload(payload, noise_static_public_key, expected_r
   if not identity_pub then
     return nil, pub_err
   end
-  if identity_pub.type ~= key_pb.KEY_TYPE.Ed25519 and identity_pub.type ~= key_pb.KEY_TYPE.RSA and identity_pub.type ~= key_pb.KEY_TYPE.ECDSA and identity_pub.type ~= key_pb.KEY_TYPE.Secp256k1 then
-    return nil, error_mod.new("unsupported", "unsupported identity key type for noise verification", {
-      received_key_type = identity_pub.type,
-      received_key_type_name = identity_pub.type_name,
-      supported = { "ed25519", "rsa", "ecdsa", "secp256k1" },
-    })
+  if
+    identity_pub.type ~= key_pb.KEY_TYPE.Ed25519
+    and identity_pub.type ~= key_pb.KEY_TYPE.RSA
+    and identity_pub.type ~= key_pb.KEY_TYPE.ECDSA
+    and identity_pub.type ~= key_pb.KEY_TYPE.Secp256k1
+  then
+    return nil,
+      error_mod.new("unsupported", "unsupported identity key type for noise verification", {
+        received_key_type = identity_pub.type,
+        received_key_type_name = identity_pub.type_name,
+        supported = { "ed25519", "rsa", "ecdsa", "secp256k1" },
+      })
   end
 
   local sig_ok, sig_err = M.verify_identity_signature({
@@ -360,10 +371,11 @@ function M.verify_handshake_payload(payload, noise_static_public_key, expected_r
     local expected = peerid.parse(expected_remote_peer_id)
     local expected_bytes = expected and expected.bytes or expected_remote_peer_id
     if expected_bytes ~= pid.bytes then
-      return nil, error_mod.new("verify", "noise remote peer id mismatch", {
-        expected = expected and expected.id or peerid.to_base58(expected_bytes),
-        received = pid.id,
-      })
+      return nil,
+        error_mod.new("verify", "noise remote peer id mismatch", {
+          expected = expected and expected.id or peerid.to_base58(expected_bytes),
+          received = pid.id,
+        })
     end
   end
 
@@ -416,7 +428,10 @@ local function nonce12(n)
   local lo = n & 0xFFFFFFFF
   local hi = (n >> 32) & 0xFFFFFFFF
   return string.char(
-    0, 0, 0, 0,
+    0,
+    0,
+    0,
+    0,
     lo & 0xFF,
     (lo >> 8) & 0xFF,
     (lo >> 16) & 0xFF,
@@ -713,9 +728,14 @@ function M.handshake_xx_outbound(raw_conn, opts)
   local enc_rs = msg2:sub(33, 80)
   local rs_pub, rs_err = hs:decrypt_and_hash(enc_rs)
   if not rs_pub then
-    return handshake_failed("outbound", "decrypt_msg2_static_key", error_mod.wrap("verify", "noise msg2 static key decrypt failed", rs_err), {
-      expected_remote_peer_id = options.expected_remote_peer_id,
-    })
+    return handshake_failed(
+      "outbound",
+      "decrypt_msg2_static_key",
+      error_mod.wrap("verify", "noise msg2 static key decrypt failed", rs_err),
+      {
+        expected_remote_peer_id = options.expected_remote_peer_id,
+      }
+    )
   end
   hs.rs = { public_key = rs_pub }
 
@@ -724,9 +744,14 @@ function M.handshake_xx_outbound(raw_conn, opts)
   local enc_payload2 = msg2:sub(81)
   local payload2_bytes, payload2_err = hs:decrypt_and_hash(enc_payload2)
   if not payload2_bytes then
-    return handshake_failed("outbound", "decrypt_msg2_payload", error_mod.wrap("verify", "noise msg2 payload decrypt failed", payload2_err), {
-      expected_remote_peer_id = options.expected_remote_peer_id,
-    })
+    return handshake_failed(
+      "outbound",
+      "decrypt_msg2_payload",
+      error_mod.wrap("verify", "noise msg2 payload decrypt failed", payload2_err),
+      {
+        expected_remote_peer_id = options.expected_remote_peer_id,
+      }
+    )
   end
   local payload2, decode_err = M.decode_handshake_payload(payload2_bytes)
   if not payload2 then
@@ -849,9 +874,14 @@ function M.handshake_xx_inbound(raw_conn, opts)
   local enc_rs = msg3:sub(1, 48)
   local rs_pub, rs_err = hs:decrypt_and_hash(enc_rs)
   if not rs_pub then
-    return handshake_failed("inbound", "decrypt_msg3_static_key", error_mod.wrap("verify", "noise msg3 static key decrypt failed", rs_err), {
-      expected_remote_peer_id = options.expected_remote_peer_id,
-    })
+    return handshake_failed(
+      "inbound",
+      "decrypt_msg3_static_key",
+      error_mod.wrap("verify", "noise msg3 static key decrypt failed", rs_err),
+      {
+        expected_remote_peer_id = options.expected_remote_peer_id,
+      }
+    )
   end
   hs.rs = { public_key = rs_pub }
   hs:mix_key(dh(hs.e.private_key, hs.rs.public_key))
@@ -859,9 +889,14 @@ function M.handshake_xx_inbound(raw_conn, opts)
   local enc_payload3 = msg3:sub(49)
   local payload3_bytes, payload3_err = hs:decrypt_and_hash(enc_payload3)
   if not payload3_bytes then
-    return handshake_failed("inbound", "decrypt_msg3_payload", error_mod.wrap("verify", "noise msg3 payload decrypt failed", payload3_err), {
-      expected_remote_peer_id = options.expected_remote_peer_id,
-    })
+    return handshake_failed(
+      "inbound",
+      "decrypt_msg3_payload",
+      error_mod.wrap("verify", "noise msg3 payload decrypt failed", payload3_err),
+      {
+        expected_remote_peer_id = options.expected_remote_peer_id,
+      }
+    )
   end
   local payload3, decode_err = M.decode_handshake_payload(payload3_bytes)
   if not payload3 then

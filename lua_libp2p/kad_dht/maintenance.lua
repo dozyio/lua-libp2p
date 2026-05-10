@@ -188,7 +188,9 @@ function M.refresh_once(dht, opts)
   local peers = dht.routing_table:all_peers()
   local report = { checked = 0, healthy = 0, removed = 0, skipped = 0, errors = {} }
   for _, entry in ipairs(peers) do
-    if report.checked >= max_checks then break end
+    if report.checked >= max_checks then
+      break
+    end
     local peer_id = entry.peer_id
     local health = dht._peer_health[peer_id] or {}
     local failed_checks = tonumber(health.failed_checks) or (health.stale == true and 1 or 0)

@@ -39,7 +39,9 @@ local function run()
     return nil, "unchanged advertised state should not emit"
   end
   h._running = true
-  assert(h:handle("/tests/new/1.0.0", function() return true end))
+  assert(h:handle("/tests/new/1.0.0", function()
+    return true
+  end))
   local changed = h:next_event(sub)
   if not changed or changed.name ~= "self_peer_update" then
     return nil, "protocol changes should emit self peer update"

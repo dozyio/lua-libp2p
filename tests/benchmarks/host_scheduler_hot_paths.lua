@@ -13,13 +13,15 @@ end
 
 local function print_result(name, iterations, elapsed)
   local per_iter_ms = iterations > 0 and (elapsed * 1000 / iterations) or 0
-  io.stdout:write(string.format(
-    "  %-34s iterations=%d total_ms=%.2f per_iter_ms=%.4f\n",
-    name,
-    iterations,
-    elapsed * 1000,
-    per_iter_ms
-  ))
+  io.stdout:write(
+    string.format(
+      "  %-34s iterations=%d total_ms=%.2f per_iter_ms=%.4f\n",
+      name,
+      iterations,
+      elapsed * 1000,
+      per_iter_ms
+    )
+  )
 end
 
 local function new_host()
@@ -79,9 +81,13 @@ end
 
 function M.run()
   local ok, err = bench_task_queue_resume()
-  if not ok then return nil, err end
+  if not ok then
+    return nil, err
+  end
   ok, err = bench_sleep_scan_with_retained_tasks()
-  if not ok then return nil, err end
+  if not ok then
+    return nil, err
+  end
   return true
 end
 

@@ -231,10 +231,11 @@ function Host:new(config)
   end
   local runtime_impl = RUNTIME_IMPLS[runtime_name]
   if runtime_impl == nil then
-    return nil, error_mod.new("input", "unsupported host runtime", {
-      runtime = runtime_name,
-      supported = { "auto", "luv" },
-    })
+    return nil,
+      error_mod.new("input", "unsupported host runtime", {
+        runtime = runtime_name,
+        supported = { "auto", "luv" },
+      })
   end
   local start_blocking = cfg.blocking
   if start_blocking == nil then
@@ -359,7 +360,10 @@ function Host:new(config)
   })
 
   local services = cfg.services
-  if contains_circuit_listen_addr(self_obj.listen_addrs) and not (type(services) == "table" and services.autorelay ~= nil) then
+  if
+    contains_circuit_listen_addr(self_obj.listen_addrs)
+    and not (type(services) == "table" and services.autorelay ~= nil)
+  then
     return nil, error_mod.new("input", "/p2p-circuit listen addr requires autorelay service")
   end
   local services_ok, services_err = host_service_manager.install(self_obj, services)
@@ -390,9 +394,13 @@ function Host:_spawn_stream_negotiation_task(stream, conn, entry)
     local stream_scope, resource_err = self:_open_stream_resource(entry, "inbound")
     if resource_err then
       if type(stream.reset_now) == "function" then
-        pcall(function() stream:reset_now() end)
+        pcall(function()
+          stream:reset_now()
+        end)
       elseif type(stream.close) == "function" then
-        pcall(function() stream:close() end)
+        pcall(function()
+          stream:close()
+        end)
       end
       return nil, resource_err
     end
@@ -409,9 +417,13 @@ function Host:_spawn_stream_negotiation_task(stream, conn, entry)
     local set_ok, set_err = self:_set_stream_resource_protocol(stream_scope, protocol_id)
     if not set_ok then
       if type(stream.reset_now) == "function" then
-        pcall(function() stream:reset_now() end)
+        pcall(function()
+          stream:reset_now()
+        end)
       elseif type(stream.close) == "function" then
-        pcall(function() stream:close() end)
+        pcall(function()
+          stream:close()
+        end)
       end
       self:_close_stream_resource(stream_scope)
       log.debug("host inbound stream resource protocol failed", {
@@ -423,13 +435,18 @@ function Host:_spawn_stream_negotiation_task(stream, conn, entry)
       return nil, set_err
     end
     stream = self:_wrap_stream_resource(stream, stream_scope)
-    if self:_connection_is_limited(entry.state)
+    if
+      self:_connection_is_limited(entry.state)
       and not self:_protocol_allowed_on_limited_connection(protocol_id, handler_options)
     then
       if type(stream.reset_now) == "function" then
-        pcall(function() stream:reset_now() end)
+        pcall(function()
+          stream:reset_now()
+        end)
       elseif type(stream.close) == "function" then
-        pcall(function() stream:close() end)
+        pcall(function()
+          stream:close()
+        end)
       end
       self:_release_stream_resource(stream)
       log.debug("host inbound stream blocked on limited connection", {
@@ -644,7 +661,8 @@ function Host:_register_connection(conn, state)
   local function rollback_registration()
     host_connections.remove(self, entry)
     self:_close_connection_resource(entry.state and entry.state.resource_scope)
-    if entry._connection_manager_tracked
+    if
+      entry._connection_manager_tracked
       and self.connection_manager
       and type(self.connection_manager.on_connection_closed) == "function"
     then
@@ -694,7 +712,8 @@ function Host:_register_connection(conn, state)
     end
   end
 
-  if host_runtime_luv_native.is_native_host(self)
+  if
+    host_runtime_luv_native.is_native_host(self)
     and (type(entry.conn.pump_once) == "function" or type(entry.conn.process_one) == "function")
   then
     local _, pump_err = host_runtime_luv_native.start_connection_pump_task(self, entry, is_nonfatal_stream_error)
@@ -978,13 +997,23 @@ function Host:_process_runtime_events(timeout, ready_map)
         local resource_scope, resource_err = self:_open_connection_resource("inbound", nil, { transient = true })
         if resource_err then
           self:_bump_debug_counter("inbound_resource_reject")
-          log.debug("host inbound raw connection closing after resource failure", raw_conn_log_fields(raw_conn, {
-            cause = tostring(resource_err),
-          }))
+          log.debug(
+            "host inbound raw connection closing after resource failure",
+            raw_conn_log_fields(raw_conn, {
+              cause = tostring(resource_err),
+            })
+          )
           raw_conn:close()
-          log.debug("host inbound connection resource failed", flatten_error_fields(resource_err, "cause", raw_conn_log_fields(raw_conn, {
-            cause = tostring(resource_err),
-          })))
+          log.debug(
+            "host inbound connection resource failed",
+            flatten_error_fields(
+              resource_err,
+              "cause",
+              raw_conn_log_fields(raw_conn, {
+                cause = tostring(resource_err),
+              })
+            )
+          )
           if not (error_mod.is_error(resource_err) and resource_err.kind == "resource") then
             return nil, resource_err
           end
@@ -993,9 +1022,12 @@ function Host:_process_runtime_events(timeout, ready_map)
         log.debug("host inbound connection resource opened", raw_conn_log_fields(raw_conn))
         if host_runtime_luv_native.is_native_host(self) then
           self._pending_inbound[#self._pending_inbound + 1] = { raw_conn = raw_conn, resource_scope = resource_scope }
-          log.debug("host inbound upgrade pending", raw_conn_log_fields(raw_conn, {
-            pending_inbound = #self._pending_inbound,
-          }))
+          log.debug(
+            "host inbound upgrade pending",
+            raw_conn_log_fields(raw_conn, {
+              pending_inbound = #self._pending_inbound,
+            })
+          )
           goto continue_accept_loop
         end
 
@@ -1009,7 +1041,9 @@ function Host:_process_runtime_events(timeout, ready_map)
         })
         if not conn then
           self:_bump_debug_counter("inbound_upgrade_failed")
-          if up_err and error_mod.is_error(up_err)
+          if
+            up_err
+            and error_mod.is_error(up_err)
             and up_err.kind == "timeout"
             and self._runtime == "luv"
             and self._tcp_transport
@@ -1026,13 +1060,19 @@ function Host:_process_runtime_events(timeout, ready_map)
             raw_conn:rollback_read_tx()
           end
           self:_close_connection_resource(resource_scope)
-          log.debug("host inbound raw connection closing after upgrade failure", raw_conn_log_fields(raw_conn, {
-            cause = tostring(up_err),
-          }))
+          log.debug(
+            "host inbound raw connection closing after upgrade failure",
+            raw_conn_log_fields(raw_conn, {
+              cause = tostring(up_err),
+            })
+          )
           raw_conn:close()
-          log.debug("host inbound upgrade failed", raw_conn_log_fields(raw_conn, {
-            cause = tostring(up_err),
-          }))
+          log.debug(
+            "host inbound upgrade failed",
+            raw_conn_log_fields(raw_conn, {
+              cause = tostring(up_err),
+            })
+          )
           if not is_nonfatal_stream_error(up_err) then
             return nil, up_err
           end
@@ -1134,11 +1174,8 @@ function Host:_process_runtime_events(timeout, ready_map)
     local raw_conn = host_runtime_luv_native.pending_raw(pending_entry)
 
     if host_runtime_luv_native.is_native_host(self) then
-      local status, _, resume_err, normalized_entry = host_runtime_luv_native.resume_inbound_upgrade(
-        self,
-        pending_entry,
-        is_nonfatal_stream_error
-      )
+      local status, _, resume_err, normalized_entry =
+        host_runtime_luv_native.resume_inbound_upgrade(self, pending_entry, is_nonfatal_stream_error)
       self._pending_inbound[i] = normalized_entry
       if status == "pending" then
         goto continue_pending_inbound
@@ -1239,12 +1276,7 @@ function Host:_process_runtime_events(timeout, ready_map)
 
     if should_process then
       if host_runtime_luv_native.is_native_host(self) then
-        local ok, native_err = host_runtime_luv_native.process_connection(
-          self,
-          entry,
-          router,
-          is_nonfatal_stream_error
-        )
+        local ok, native_err = host_runtime_luv_native.process_connection(self, entry, router, is_nonfatal_stream_error)
         if not ok then
           return nil, native_err
         end
@@ -1315,9 +1347,13 @@ function Host:_process_runtime_events(timeout, ready_map)
         local stream_scope, resource_err = self:_open_stream_resource(entry, "inbound", protocol_id)
         if resource_err then
           if type(stream.reset_now) == "function" then
-            pcall(function() stream:reset_now() end)
+            pcall(function()
+              stream:reset_now()
+            end)
           elseif type(stream.close) == "function" then
-            pcall(function() stream:close() end)
+            pcall(function()
+              stream:close()
+            end)
           end
           log.debug("host inbound stream resource failed", {
             peer_id = entry.state and entry.state.remote_peer_id or nil,
@@ -1328,13 +1364,18 @@ function Host:_process_runtime_events(timeout, ready_map)
           return nil, resource_err
         end
         stream = self:_wrap_stream_resource(stream, stream_scope)
-        if self:_connection_is_limited(entry.state)
+        if
+          self:_connection_is_limited(entry.state)
           and not self:_protocol_allowed_on_limited_connection(protocol_id, handler_options)
         then
           if type(stream.reset_now) == "function" then
-            pcall(function() stream:reset_now() end)
+            pcall(function()
+              stream:reset_now()
+            end)
           elseif type(stream.close) == "function" then
-            pcall(function() stream:close() end)
+            pcall(function()
+              stream:close()
+            end)
           end
           log.debug("host inbound stream blocked on limited connection", {
             peer_id = entry.state and entry.state.remote_peer_id or nil,
@@ -1488,7 +1529,9 @@ function Host:close()
     listeners = #self._listeners,
     tasks = (function()
       local n = 0
-      for _ in pairs(self._tasks) do n = n + 1 end
+      for _ in pairs(self._tasks) do
+        n = n + 1
+      end
       return n
     end)(),
   })

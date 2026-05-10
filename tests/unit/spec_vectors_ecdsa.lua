@@ -5,8 +5,12 @@ local peerid = require("lua_libp2p.peerid")
 
 local function run()
   -- Vector from https://github.com/libp2p/specs/blob/master/peer-ids/peer-ids.md
-  local public_key_proto = hex.decode("0803125b3059301306072a8648ce3d020106082a8648ce3d03010703420004de3d300fa36ae0e8f5d530899d83abab44abf3161f162a4bc901d8e6ecda020e8b6d5f8da30525e71d6851510c098e5c47c646a597fb4dcec034e9f77c409e62")
-  local private_key_proto = hex.decode("08031279307702010104203e5b1fe9712e6c314942a750bd67485de3c1efe85b1bfb520ae8f9ae3dfa4a4ca00a06082a8648ce3d030107a14403420004de3d300fa36ae0e8f5d530899d83abab44abf3161f162a4bc901d8e6ecda020e8b6d5f8da30525e71d6851510c098e5c47c646a597fb4dcec034e9f77c409e62")
+  local public_key_proto = hex.decode(
+    "0803125b3059301306072a8648ce3d020106082a8648ce3d03010703420004de3d300fa36ae0e8f5d530899d83abab44abf3161f162a4bc901d8e6ecda020e8b6d5f8da30525e71d6851510c098e5c47c646a597fb4dcec034e9f77c409e62"
+  )
+  local private_key_proto = hex.decode(
+    "08031279307702010104203e5b1fe9712e6c314942a750bd67485de3c1efe85b1bfb520ae8f9ae3dfa4a4ca00a06082a8648ce3d030107a14403420004de3d300fa36ae0e8f5d530899d83abab44abf3161f162a4bc901d8e6ecda020e8b6d5f8da30525e71d6851510c098e5c47c646a597fb4dcec034e9f77c409e62"
+  )
 
   local decoded_pub, pub_err = key_pb.decode_public_key(public_key_proto)
   if not decoded_pub then

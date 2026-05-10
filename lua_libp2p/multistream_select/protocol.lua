@@ -105,10 +105,11 @@ function M.read_frame(conn)
     return nil, len_err
   end
   if length > M.MAX_PROTOCOL_LENGTH then
-    return nil, error_mod.new("decode", "multistream frame too large", {
-      max = M.MAX_PROTOCOL_LENGTH,
-      got = length,
-    })
+    return nil,
+      error_mod.new("decode", "multistream frame too large", {
+        max = M.MAX_PROTOCOL_LENGTH,
+        got = length,
+      })
   end
 
   local payload, payload_err = read_exact(conn, length)

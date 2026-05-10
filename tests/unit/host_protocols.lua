@@ -16,7 +16,9 @@ local function run()
   if not ok then
     return nil, err
   end
-  assert(h:handle("/tests/blocked/1.0.0", function() return true end))
+  assert(h:handle("/tests/blocked/1.0.0", function()
+    return true
+  end))
 
   if not h:_protocol_allowed_on_limited_connection("/tests/allowed/1.0.0") then
     return nil, "handler option should allow limited connection"
@@ -25,7 +27,9 @@ local function run()
   if allowed ~= nil or not allow_err or allow_err.kind ~= "permission" then
     return nil, "limited connection policy should reject blocked protocols"
   end
-  if not h:_protocols_allowed_on_limited_connection({ "/tests/blocked/1.0.0" }, { allow_limited_connection = true }) then
+  if
+    not h:_protocols_allowed_on_limited_connection({ "/tests/blocked/1.0.0" }, { allow_limited_connection = true })
+  then
     return nil, "outbound override should allow limited connection"
   end
 
