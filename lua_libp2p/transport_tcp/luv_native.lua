@@ -285,8 +285,7 @@ function NativeConnection:new(raw, opts)
     _tx_active = false,
     _tx_consumed = "",
     _fd_tls_mode = false,
-    _fd_tls_poll_read = nil,
-    _fd_tls_poll_write = nil,
+    _fd_tls_poll = nil,
     _watch_callbacks = {},
     _write_watch_callbacks = {},
     _active_timers = {},
@@ -471,12 +470,12 @@ function NativeConnection:begin_fd_tls()
   return self:pollfd()
 end
 
-local function start_fd_tls_poll(self, slot, events, callbacks)
+local function start_fd_tls_poll(self)
   local ok_luv, uv = pcall(require, "luv")
   if not ok_luv then
     return nil, error_mod.new("unsupported", "luv is required for fd TLS readiness watches")
   end
-  if self[slot] ~= nil then
+  if self._fd_tls_poll ~= nil then
     return true
   end
   local fd, fd_err = self:pollfd()
@@ -487,12 +486,15 @@ local function start_fd_tls_poll(self, slot, events, callbacks)
   if not poll then
     return nil, error_mod.new("io", "failed creating fd TLS poll watcher", { cause = poll_err })
   end
-  local ok, start_err = poll:start(events, function(err)
+  local ok, start_err = poll:start("rw", function(err)
     if err then
       self._read_error = self._read_error or err
       self._write_error = self._write_error or err
     end
-    for _, cb in pairs(callbacks) do
+    for _, cb in pairs(self._watch_callbacks) do
+      cb()
+    end
+    for _, cb in pairs(self._write_watch_callbacks) do
       cb()
     end
   end)
@@ -502,7 +504,7 @@ local function start_fd_tls_poll(self, slot, events, callbacks)
     end)
     return nil, error_mod.new("io", "failed starting fd TLS poll watcher", { cause = start_err })
   end
-  self[slot] = poll
+  self._fd_tls_poll = poll
   return true
 end
 
@@ -514,7 +516,7 @@ function NativeConnection:watch_luv_readable(on_readable)
   self._next_watch_id = watch_id + 1
   self._watch_callbacks[watch_id] = on_readable
   if self._fd_tls_mode then
-    local ok, err = start_fd_tls_poll(self, "_fd_tls_poll_read", "r", self._watch_callbacks)
+    local ok, err = start_fd_tls_poll(self)
     if not ok then
       self._watch_callbacks[watch_id] = nil
       return nil, err
@@ -537,7 +539,7 @@ function NativeConnection:watch_luv_write(on_write)
   self._next_watch_id = watch_id + 1
   self._write_watch_callbacks[watch_id] = on_write
   if self._fd_tls_mode then
-    local ok, err = start_fd_tls_poll(self, "_fd_tls_poll_write", "w", self._write_watch_callbacks)
+    local ok, err = start_fd_tls_poll(self)
     if not ok then
       self._write_watch_callbacks[watch_id] = nil
       return nil, err
@@ -829,16 +831,13 @@ function NativeConnection:close()
   end
   self._raw_closed = true
   self:_close_active_timers()
-  for _, poll in ipairs({ self._fd_tls_poll_read, self._fd_tls_poll_write }) do
-    if poll then
-      pcall(function()
-        poll:stop()
-        poll:close()
-      end)
-    end
+  if self._fd_tls_poll then
+    pcall(function()
+      self._fd_tls_poll:stop()
+      self._fd_tls_poll:close()
+    end)
   end
-  self._fd_tls_poll_read = nil
-  self._fd_tls_poll_write = nil
+  self._fd_tls_poll = nil
   pcall(function()
     self._raw:read_stop()
   end)
