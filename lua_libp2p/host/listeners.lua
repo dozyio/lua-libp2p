@@ -49,12 +49,7 @@ local function has_ipv6_wildcard_listener(bound_addrs, port)
       return true
     end
   end
-  local host_component = parsed.components[1]
-  local tcp_component = parsed.components[2]
-  if not host_component or not tcp_component or tcp_component.protocol ~= "tcp" then
-    return addr
-  end
-  return "/" .. tostring(host_component.protocol) .. "/" .. tostring(host_component.value) .. "/tcp/" .. tostring(port)
+  return false
 end
 
 local function verify_bound_targets(targets, bound_addrs)

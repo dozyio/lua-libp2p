@@ -142,11 +142,15 @@ local function run()
   end
   function host:spawn_task(name, fn)
     spawned_task_names[#spawned_task_names + 1] = name
-    return { id = #spawned_task_names, status = "completed", result = fn({
-      sleep = function()
-        return true
-      end,
-    }) }
+    return {
+      id = #spawned_task_names,
+      status = "completed",
+      result = fn({
+        sleep = function()
+          return true
+        end,
+      }),
+    }
   end
   function host:wait_task(task)
     return task and task.result

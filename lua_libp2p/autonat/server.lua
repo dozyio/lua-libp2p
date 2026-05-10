@@ -78,8 +78,7 @@ local function stream_peer_id(ctx)
 end
 
 local function stream_remote_addr(ctx)
-  return (ctx and ctx.state and ctx.state.remote_addr)
-    or (ctx and ctx.connection and ctx.connection.remote_addr)
+  return (ctx and ctx.state and ctx.state.remote_addr) or (ctx and ctx.connection and ctx.connection.remote_addr)
 end
 
 local function close_quiet(stream)
@@ -173,7 +172,9 @@ function Server:_limiter_allow_dial_data()
   local now = now_seconds()
   local window = self.rate_limit_window_seconds
   self._limiter.dial_data = prune_recent(self._limiter.dial_data, now, window)
-  if self.max_dial_data_requests_per_window > 0 and #self._limiter.dial_data >= self.max_dial_data_requests_per_window then
+  if
+    self.max_dial_data_requests_per_window > 0 and #self._limiter.dial_data >= self.max_dial_data_requests_per_window
+  then
     return false
   end
   self._limiter.dial_data[#self._limiter.dial_data + 1] = now

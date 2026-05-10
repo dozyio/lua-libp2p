@@ -31,6 +31,10 @@
   <li><a href="../index.html">Index</a></li>
 </ul>
 
+<h2>Contents</h2>
+<ul>
+<li><a href="#Functions">Functions</a></li>
+</ul>
 
 
 <h2>Modules</h2>
@@ -39,7 +43,7 @@
   <li><a href="../modules/lua_libp2p.address_manager.html">lua_libp2p.address_manager</a></li>
   <li><a href="../modules/lua_libp2p.autonat.html">lua_libp2p.autonat</a></li>
   <li><a href="../modules/lua_libp2p.autonat.client.html">lua_libp2p.autonat.client</a></li>
-  <li><a href="../modules/lua_libp2p.autonat.server.html">lua_libp2p.autonat.server</a></li>
+  <li><strong>lua_libp2p.autonat.server</strong></li>
   <li><a href="../modules/lua_libp2p.bootstrap.html">lua_libp2p.bootstrap</a></li>
   <li><a href="../modules/lua_libp2p.connection_encrypter_noise.protocol.html">lua_libp2p.connection_encrypter_noise.protocol</a></li>
   <li><a href="../modules/lua_libp2p.connection_encrypter_plaintext.protocol.html">lua_libp2p.connection_encrypter_plaintext.protocol</a></li>
@@ -80,7 +84,7 @@
   <li><a href="../modules/lua_libp2p.kad_dht.record_validators.html">lua_libp2p.kad_dht.record_validators</a></li>
   <li><a href="../modules/lua_libp2p.kad_dht.records.html">lua_libp2p.kad_dht.records</a></li>
   <li><a href="../modules/lua_libp2p.kad_dht.reprovider.html">lua_libp2p.kad_dht.reprovider</a></li>
-  <li><strong>lua_libp2p.kad_dht.values</strong></li>
+  <li><a href="../modules/lua_libp2p.kad_dht.values.html">lua_libp2p.kad_dht.values</a></li>
   <li><a href="../modules/lua_libp2p.kbucket.html">lua_libp2p.kbucket</a></li>
   <li><a href="../modules/lua_libp2p.log.html">lua_libp2p.log</a></li>
   <li><a href="../modules/lua_libp2p.multiaddr.html">lua_libp2p.multiaddr</a></li>
@@ -144,18 +148,62 @@
 
 <div id="content">
 
-<h1>Module <code>lua_libp2p.kad_dht.values</code></h1>
-<p>KAD-DHT value record workflows.</p>
+<h1>Module <code>lua_libp2p.autonat.server</code></h1>
+<p>AutoNAT server service supporting v1 and v2.</p>
 <p>
 
 </p>
 
 
+<h2><a href="#Functions">Functions</a></h2>
+<table class="function_list">
+	<tr>
+	<td class="name" nowrap><a href="#new">new (host, opts)</a></td>
+	<td class="summary">Construct a new AutoNAT server instance.</td>
+	</tr>
+</table>
 
 <br/>
 <br/>
 
 
+    <h2 class="section-header "><a name="Functions"></a>Functions</h2>
+
+    <dl class="function">
+    <dt>
+    <a name = "new"></a>
+    <strong>new (host, opts)</strong>
+    </dt>
+    <dd>
+    Construct a new AutoNAT server instance.
+ <code>opts</code> supports protocol toggles (<code>enable_v1</code>, <code>enable_v2</code>),
+ timeout/message sizing (<code>timeout</code>, <code>max_message_size</code>, <code>dial_data_bytes</code>), and
+ rate-limiting controls:
+ <code>rate_limit_window_seconds</code>, <code>max_requests_per_window</code>,
+ <code>max_requests_per_peer_per_window</code>, <code>max_dial_data_requests_per_window</code>,
+ and <code>max_concurrent_per_peer</code>.
+
+
+    <h3>Parameters:</h3>
+    <ul>
+        <li><span class="parameter">host</span>
+
+
+
+        </li>
+        <li><span class="parameter">opts</span>
+
+
+
+        </li>
+    </ul>
+
+
+
+
+
+</dd>
+</dl>
 
 
 </div> <!-- id="content" -->

@@ -95,7 +95,12 @@ local function run()
     new_stream = function(self, target, protocols)
       self.last_new_stream = { target = target, protocols = protocols }
       local response = {}
-      local w = { write = function(_, data) response[#response + 1] = data return true end }
+      local w = {
+        write = function(_, data)
+          response[#response + 1] = data
+          return true
+        end,
+      }
       assert(autonat_v2.write_dial_back_response(w, { status = autonat_v2.DIAL_BACK_STATUS.OK }))
       local response_bytes = table.concat(response)
       local read_pos = 1
@@ -156,10 +161,7 @@ local function run()
     end,
   }))
   if decoded_v1.dialResponse.status ~= autonat_v1.RESPONSE_STATUS.OK then
-    return nil,
-      "autonat server should answer v1 dial request (got "
-        .. tostring(decoded_v1.dialResponse.status)
-        .. ")"
+    return nil, "autonat server should answer v1 dial request (got " .. tostring(decoded_v1.dialResponse.status) .. ")"
   end
 
   local v2_stream = stream_from_v2_messages({
@@ -248,7 +250,9 @@ local function run()
       return chunk
     end,
   }))
-  if not limited_resp.dialResponse or limited_resp.dialResponse.status ~= autonat_v2.RESPONSE_STATUS.E_REQUEST_REJECTED then
+  if
+    not limited_resp.dialResponse or limited_resp.dialResponse.status ~= autonat_v2.RESPONSE_STATUS.E_REQUEST_REJECTED
+  then
     return nil, "autonat server should rate limit v2 requests per peer"
   end
 
