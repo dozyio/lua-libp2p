@@ -7,7 +7,6 @@ local M = {}
 
 M.yamux = yamux
 
-
 local registry = {
   [yamux.PROTOCOL_ID] = {
     protocol_id = yamux.PROTOCOL_ID,

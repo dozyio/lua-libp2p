@@ -68,22 +68,28 @@ local function build_service_defs(host, services)
       service_requires = service_spec.requires
     end
     if type(module) ~= "table" or type(module.new) ~= "function" then
-      return nil, nil, error_mod.new("input", "service entry must be module with .new(host, config)", {
-        service = service_name,
-      })
+      return nil,
+        nil,
+        error_mod.new("input", "service entry must be module with .new(host, config)", {
+          service = service_name,
+        })
     end
 
     local provides, provides_err = normalize_capability_list(service_provides or module.provides, service_name)
     if not provides then
-      return nil, nil, error_mod.wrap("input", "invalid service provides metadata", provides_err, {
-        service = service_name,
-      })
+      return nil,
+        nil,
+        error_mod.wrap("input", "invalid service provides metadata", provides_err, {
+          service = service_name,
+        })
     end
     local requires, requires_err = normalize_capability_list(service_requires or module.requires, nil)
     if not requires then
-      return nil, nil, error_mod.wrap("input", "invalid service requires metadata", requires_err, {
-        service = service_name,
-      })
+      return nil,
+        nil,
+        error_mod.wrap("input", "invalid service requires metadata", requires_err, {
+          service = service_name,
+        })
     end
 
     local instance, new_err = module.new(host, service_opts, service_name)
@@ -110,11 +116,13 @@ local function build_service_defs(host, services)
     for _, capability in ipairs(provides) do
       local existing = capability_providers[capability]
       if existing and existing ~= service_name then
-        return nil, nil, error_mod.new("input", "duplicate service capability provider", {
-          capability = capability,
-          existing_service = existing,
-          conflicting_service = service_name,
-        })
+        return nil,
+          nil,
+          error_mod.new("input", "duplicate service capability provider", {
+            capability = capability,
+            existing_service = existing,
+            conflicting_service = service_name,
+          })
       end
       capability_providers[capability] = service_name
       host.components[capability] = instance
@@ -134,10 +142,11 @@ local function validate_dependencies(service_defs, capability_providers)
   for _, def in ipairs(service_defs) do
     for _, required in ipairs(def.requires) do
       if capability_providers[required] == nil then
-        return nil, error_mod.new("state", "service dependency is missing", {
-          service = def.name,
-          required_capability = required,
-        })
+        return nil,
+          error_mod.new("state", "service dependency is missing", {
+            service = def.name,
+            required_capability = required,
+          })
       end
     end
   end
@@ -192,9 +201,10 @@ local function start_services(host, service_defs, capability_providers)
           blocked[#blocked + 1] = def.name
         end
       end
-      return nil, error_mod.new("state", "service dependency cycle or unresolved dependency", {
-        blocked_services = blocked,
-      })
+      return nil,
+        error_mod.new("state", "service dependency cycle or unresolved dependency", {
+          blocked_services = blocked,
+        })
     end
   end
 

@@ -247,10 +247,11 @@ function M.verify_exchange(exchange, expected_remote_peer_id)
     return nil, expected_err
   end
   if expected_bytes and expected_bytes ~= exchange.id then
-    return nil, error_mod.new("verify", "remote peer id did not match expected", {
-      expected = peerid.to_base58(expected_bytes),
-      received = derived.id,
-    })
+    return nil,
+      error_mod.new("verify", "remote peer id did not match expected", {
+        expected = peerid.to_base58(expected_bytes),
+        received = derived.id,
+      })
   end
 
   return {

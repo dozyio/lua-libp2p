@@ -274,7 +274,8 @@ local function run()
   if host.connection_manager.protected[relay_a] ~= autorelay_mod.KEEP_ALIVE_TAG then
     return nil, "autorelay should protect relay backing connections in connection manager"
   end
-  if not host.connection_manager.tags[relay_a]
+  if
+    not host.connection_manager.tags[relay_a]
     or host.connection_manager.tags[relay_a][autorelay_mod.KEEP_ALIVE_TAG] ~= 100
   then
     return nil, "autorelay should tag relay peer in connection manager"

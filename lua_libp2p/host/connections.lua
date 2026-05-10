@@ -2,6 +2,37 @@
 -- @module lua_libp2p.host.connections
 local M = {}
 
+local error_mod = require("lua_libp2p.error")
+
+local function now_seconds()
+  local ok_socket, socket = pcall(require, "socket")
+  if ok_socket and type(socket.gettime) == "function" then
+    return socket.gettime()
+  end
+  return os.time()
+end
+
+local function entry_is_usable(entry)
+  if not entry or not entry.conn then
+    return false
+  end
+  local task = entry.scheduler_pump_task
+  if task and (task.status == "failed" or task.status == "cancelled") then
+    return false
+  end
+  local conn = entry.conn
+  if conn._closed == true then
+    return false
+  end
+  if type(conn.is_closed) == "function" then
+    local ok, closed = pcall(conn.is_closed, conn)
+    if ok and closed then
+      return false
+    end
+  end
+  return true
+end
+
 function M.init(host)
   host._connections = {}
   host._connections_by_peer = {}
@@ -20,7 +51,7 @@ function M.add(host, conn, state)
     id = connection_id,
     conn = conn,
     state = state,
-    opened_at = os.time(),
+    opened_at = now_seconds(),
   }
   entry.state.connection_id = connection_id
 
@@ -99,8 +130,25 @@ function M.install(Host)
     if not by_peer then
       return nil
     end
-    local limited = nil
+    local stale = {}
+    local usable = {}
     for _, entry in pairs(by_peer) do
+      if entry_is_usable(entry) then
+        usable[#usable + 1] = entry
+      else
+        stale[#stale + 1] = entry
+      end
+    end
+    for _, entry in ipairs(stale) do
+      self:_unregister_connection(nil, entry, error_mod.new("closed", "stale connection reaped during lookup"))
+    end
+
+    table.sort(usable, function(a, b)
+      return (a.id or 0) > (b.id or 0)
+    end)
+
+    local limited = nil
+    for _, entry in ipairs(usable) do
       if self:_connection_is_limited(entry.state) then
         limited = limited or entry
       else

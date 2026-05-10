@@ -1,5 +1,7 @@
 --- Lightweight structured logging helpers.
 -- @module lua_libp2p.log
+local tables = require("lua_libp2p.util.tables")
+
 local M = {}
 
 local LEVELS = {
@@ -21,7 +23,9 @@ local function split_csv(value)
   local out = {}
   for part in tostring(value or ""):gmatch("[^,]+") do
     local item = trim(part)
-    if item ~= "" then out[#out + 1] = item end
+    if item ~= "" then
+      out[#out + 1] = item
+    end
   end
   return out
 end
@@ -31,9 +35,13 @@ local function parse_level(value)
 end
 
 local function field_subsystem(fields)
-  if type(fields) ~= "table" then return nil end
+  if type(fields) ~= "table" then
+    return nil
+  end
   local subsystem = fields.subsystem
-  if type(subsystem) ~= "string" or subsystem == "" then return nil end
+  if type(subsystem) ~= "string" or subsystem == "" then
+    return nil
+  end
   return subsystem
 end
 
@@ -50,7 +58,9 @@ end
 
 local function level_name_for(level)
   for name, value in pairs(LEVELS) do
-    if value == level then return name end
+    if value == level then
+      return name
+    end
   end
   return nil
 end
@@ -98,7 +108,9 @@ end
 
 local function env(name)
   local ok, value = pcall(os.getenv, name)
-  if ok then return value end
+  if ok then
+    return value
+  end
   return nil
 end
 
@@ -148,6 +160,33 @@ function M.reset()
   current_level = LEVELS.info
   subsystem_levels = nil
   default_subsystem_level = nil
+  return true
+end
+
+--- Capture current logging configuration for later restore.
+-- @treturn table snapshot
+function M.snapshot()
+  return {
+    current_level = current_level,
+    subsystem_levels = tables.copy_table(subsystem_levels),
+    default_subsystem_level = default_subsystem_level,
+  }
+end
+
+--- Restore logging configuration from a prior snapshot.
+-- @tparam table snapshot
+-- @treturn true|nil ok
+-- @treturn[opt] string err
+function M.restore(snapshot)
+  if type(snapshot) ~= "table" then
+    return nil, "invalid log snapshot"
+  end
+  current_level = tonumber(snapshot.current_level) or LEVELS.info
+  subsystem_levels = nil
+  if type(snapshot.subsystem_levels) == "table" then
+    subsystem_levels = tables.copy_table(snapshot.subsystem_levels)
+  end
+  default_subsystem_level = snapshot.default_subsystem_level
   return true
 end
 

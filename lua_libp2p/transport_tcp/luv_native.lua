@@ -7,9 +7,18 @@ local multiaddr = require("lua_libp2p.multiaddr")
 local ok_luv, uv = pcall(require, "luv")
 local ok_socket, socket = pcall(require, "socket")
 
+local DEFAULT_LISTEN_BACKLOG = 4096
+local DEFAULT_ACCEPT_BATCH = 64
+local next_raw_connection_id = 0
+
 local M = {
   AVAILABLE = ok_luv,
 }
+
+local function allocate_raw_connection_id()
+  next_raw_connection_id = next_raw_connection_id + 1
+  return next_raw_connection_id
+end
 
 local function parse_ipv4(host)
   if type(host) ~= "string" then
@@ -122,7 +131,8 @@ local function classify_uv_error(err, io_message)
     return err
   end
   local upper = string.upper(tostring(err or ""))
-  if upper == "CLOSED"
+  if
+    upper == "CLOSED"
     or upper == "ECONNRESET"
     or upper == "EPIPE"
     or upper == "ENOTCONN"
@@ -167,7 +177,10 @@ local function run_once_or_loop_running()
   end)
   if not called then
     local msg = tostring(ok or "")
-    if string.find(msg, "loop already running", 1, true) ~= nil or string.find(msg, "cannot resume non%-suspended coroutine") ~= nil then
+    if
+      string.find(msg, "loop already running", 1, true) ~= nil
+      or string.find(msg, "cannot resume non%-suspended coroutine") ~= nil
+    then
       return nil, "loop_running"
     end
     return nil, ok
@@ -209,18 +222,20 @@ local function bind_listener_socket(server, host, port, require_ipv6_only)
         return bind_ok, bind_err
       end
       if require_ipv6_only then
-        return nil, error_mod.new("unsupported", "failed binding ipv6-only listener", {
-          host = host,
-          port = port,
-          cause = bind_ok,
-        })
+        return nil,
+          error_mod.new("unsupported", "failed binding ipv6-only listener", {
+            host = host,
+            port = port,
+            cause = bind_ok,
+          })
       end
     end
     if require_ipv6_only then
-      return nil, error_mod.new("unsupported", "ipv6-only listeners are not supported by this runtime", {
-        host = host,
-        port = port,
-      })
+      return nil,
+        error_mod.new("unsupported", "ipv6-only listeners are not supported by this runtime", {
+          host = host,
+          port = port,
+        })
     end
   end
   return server:bind(host, port)
@@ -260,7 +275,9 @@ function NativeConnection:new(raw, opts)
   local options = opts or {}
   local conn = setmetatable({
     _raw = raw,
+    _debug_id = options.debug_id or allocate_raw_connection_id(),
     _closed = false,
+    _raw_closed = false,
     _pending = "",
     _read_started = false,
     _read_error = nil,
@@ -281,6 +298,14 @@ function NativeConnection:new(raw, opts)
   }, self)
   conn:_ensure_read_pump()
   return conn
+end
+
+function NativeConnection:debug_id()
+  return self._debug_id
+end
+
+function NativeConnection:is_closed()
+  return self._closed == true
 end
 
 function NativeConnection:_ensure_read_pump()
@@ -347,9 +372,7 @@ function NativeConnection:_ensure_read_pump()
       return
     end
     local start_text = string.upper(tostring(start_err or ""))
-    if string.find(start_text, "EALREADY", 1, true) ~= nil
-      or string.find(start_text, "ALREADY", 1, true) ~= nil
-    then
+    if string.find(start_text, "EALREADY", 1, true) ~= nil or string.find(start_text, "ALREADY", 1, true) ~= nil then
       self._read_started = true
       return
     end
@@ -593,8 +616,8 @@ function NativeConnection:read(length)
     local read_err = self._read_error
     self._read_error = nil
     if read_err == "closed" then
-      self._closed = true
       log.debug("tcp connection disconnected", {
+        raw_id = self._debug_id,
         direction = self._direction,
         local_host = self._local_host,
         local_port = self._local_port,
@@ -603,11 +626,12 @@ function NativeConnection:read(length)
         operation = "read",
         cause = "closed",
       })
+      self:close()
       return nil, error_mod.new("closed", "connection closed during read")
     end
     local mapped = classify_uv_error(read_err, "native luv read failed")
     if mapped.kind == "closed" then
-      self._closed = true
+      self:close()
     end
     return nil, mapped
   end
@@ -661,8 +685,8 @@ function NativeConnection:read(length)
       return nil, read_err
     end
     if read_err == "closed" then
-      self._closed = true
       log.debug("tcp connection disconnected", {
+        raw_id = self._debug_id,
         direction = self._direction,
         local_host = self._local_host,
         local_port = self._local_port,
@@ -671,12 +695,13 @@ function NativeConnection:read(length)
         operation = "read",
         cause = "closed",
       })
+      self:close()
       return nil, error_mod.new("closed", "connection closed during read")
     end
     local mapped = classify_uv_error(read_err, "native luv read failed")
     if mapped.kind == "closed" then
-      self._closed = true
       log.debug("tcp connection disconnected", {
+        raw_id = self._debug_id,
         direction = self._direction,
         local_host = self._local_host,
         local_port = self._local_port,
@@ -685,6 +710,7 @@ function NativeConnection:read(length)
         operation = "read",
         cause = tostring(read_err),
       })
+      self:close()
     end
     return nil, mapped
   end
@@ -706,17 +732,25 @@ function NativeConnection:remote_multiaddr()
 end
 
 function NativeConnection:close()
-  if self._closed then
+  if self._closed and self._raw_closed then
     return true
   end
+  local already_closed = self._closed == true
   self._closed = true
-  log.debug("tcp connection closed", {
-    direction = self._direction,
-    local_host = self._local_host,
-    local_port = self._local_port,
-    peer_host = self._peer_host,
-    peer_port = self._peer_port,
-  })
+  if not already_closed then
+    log.debug("tcp connection closed", {
+      raw_id = self._debug_id,
+      direction = self._direction,
+      local_host = self._local_host,
+      local_port = self._local_port,
+      peer_host = self._peer_host,
+      peer_port = self._peer_port,
+    })
+  end
+  if self._raw_closed then
+    return true
+  end
+  self._raw_closed = true
   self:_close_active_timers()
   pcall(function()
     self._raw:read_stop()
@@ -747,8 +781,13 @@ function NativeListener:new(server, opts)
     _io_timeout = options.io_timeout,
     _default_accept_timeout = options.accept_timeout,
     _tcp_options = options.tcp_options or {},
+    _accept_batch = tonumber(options.accept_batch) or DEFAULT_ACCEPT_BATCH,
     _watch_callbacks = {},
     _next_watch_id = 1,
+    _callback_total = 0,
+    _accepted_total = 0,
+    _accept_failed_total = 0,
+    _callback_error_total = 0,
   }, self)
 end
 
@@ -819,6 +858,20 @@ end
 
 function NativeListener:multiaddr()
   return format_multiaddr(self._listen_host, self._listen_port)
+end
+
+function NativeListener:stats()
+  return {
+    listen_host = self._listen_host,
+    listen_port = self._listen_port,
+    pending = #self._pending,
+    callback_total = self._callback_total or 0,
+    accepted_total = self._accepted_total or 0,
+    accept_failed_total = self._accept_failed_total or 0,
+    callback_error_total = self._callback_error_total or 0,
+    watchers = self._watch_callbacks and #self._watch_callbacks or 0,
+    closed = self._closed == true,
+  }
 end
 
 function NativeListener:covers_multiaddr(target, listen_err)
@@ -924,8 +977,14 @@ function M.listen(target, opts)
     },
   })
 
-  local listen_ok, listen_err = server:listen(128, function(err)
+  local backlog = tonumber(options.listen_backlog) or DEFAULT_LISTEN_BACKLOG
+  if backlog < 1 then
+    backlog = DEFAULT_LISTEN_BACKLOG
+  end
+  local listen_ok, listen_err = server:listen(backlog, function(err)
+    listener._callback_total = (listener._callback_total or 0) + 1
     if err then
+      listener._callback_error_total = (listener._callback_error_total or 0) + 1
       log.debug("tcp accept callback failed", {
         listen_host = listener._listen_host,
         listen_port = listener._listen_port,
@@ -933,35 +992,57 @@ function M.listen(target, opts)
       })
       return
     end
-    local client = uv.new_tcp()
-    local accepted = server:accept(client)
-    if not accepted then
-      log.debug("tcp accept failed", {
+    local accepted_count = 0
+    local max_accepts = math.max(1, listener._accept_batch or DEFAULT_ACCEPT_BATCH)
+    while accepted_count < max_accepts do
+      local client = uv.new_tcp()
+      local accepted = server:accept(client)
+      if not accepted then
+        if accepted_count == 0 then
+          listener._accept_failed_total = (listener._accept_failed_total or 0) + 1
+          log.debug("tcp accept failed", {
+            listen_host = listener._listen_host,
+            listen_port = listener._listen_port,
+          })
+        end
+        client:close()
+        break
+      end
+      accepted_count = accepted_count + 1
+      configure_tcp_socket(client, listener._tcp_options)
+      local local_name = client:getsockname() or {}
+      local peer_name = client:getpeername() or {}
+      local raw_id = allocate_raw_connection_id()
+      log.debug("tcp connection accepted", {
+        raw_id = raw_id,
         listen_host = listener._listen_host,
         listen_port = listener._listen_port,
+        peer_host = peer_name.ip,
+        peer_port = peer_name.port,
       })
-      client:close()
-      return
+      listener._accepted_total = (listener._accepted_total or 0) + 1
+      log.debug("tcp accepted raw connection queued", {
+        raw_id = raw_id,
+        listen_host = listener._listen_host,
+        listen_port = listener._listen_port,
+        peer_host = peer_name.ip,
+        peer_port = peer_name.port,
+        pending = #listener._pending + 1,
+      })
+      listener._pending[#listener._pending + 1] = NativeConnection:new(client, {
+        debug_id = raw_id,
+        local_host = local_name.ip or normalized_host,
+        local_port = local_name.port or port,
+        peer_host = peer_name.ip or "127.0.0.1",
+        peer_port = peer_name.port or 0,
+        direction = "inbound",
+        io_timeout = listener._io_timeout,
+      })
     end
-    configure_tcp_socket(client, listener._tcp_options)
-    local local_name = client:getsockname() or {}
-    local peer_name = client:getpeername() or {}
-    log.debug("tcp connection accepted", {
-      listen_host = listener._listen_host,
-      listen_port = listener._listen_port,
-      peer_host = peer_name.ip,
-      peer_port = peer_name.port,
-    })
-    listener._pending[#listener._pending + 1] = NativeConnection:new(client, {
-      local_host = local_name.ip or normalized_host,
-      local_port = local_name.port or port,
-      peer_host = peer_name.ip or "127.0.0.1",
-      peer_port = peer_name.port or 0,
-      direction = "inbound",
-      io_timeout = listener._io_timeout,
-    })
-    for _, cb in pairs(listener._watch_callbacks) do
-      cb()
+    if accepted_count > 0 then
+      for _, cb in pairs(listener._watch_callbacks) do
+        cb()
+      end
     end
   end)
   if not listen_ok then
@@ -981,6 +1062,7 @@ function M.listen(target, opts)
   log.debug("tcp listen active", {
     host = listener._listen_host,
     port = listener._listen_port,
+    backlog = backlog,
   })
   return listener
 end
@@ -1130,6 +1212,7 @@ function M.dial(target, opts)
     peer_port = peer_name.port,
   })
   return NativeConnection:new(conn, {
+    debug_id = allocate_raw_connection_id(),
     local_host = local_name.ip or "127.0.0.1",
     local_port = local_name.port or 0,
     peer_host = peer_name.ip or dial_host,

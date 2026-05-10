@@ -14,10 +14,7 @@ local RelayDiscovery = {}
 RelayDiscovery.__index = RelayDiscovery
 
 local function task_active(task)
-  return task
-    and task.status ~= "completed"
-    and task.status ~= "failed"
-    and task.status ~= "cancelled"
+  return task and task.status ~= "completed" and task.status ~= "failed" and task.status ~= "cancelled"
 end
 
 function RelayDiscovery:_schedule()
@@ -99,7 +96,8 @@ function RelayDiscovery:run_once(now)
   end
 
   local ktable_peers = 0
-  if self.host.kad_dht
+  if
+    self.host.kad_dht
     and self.host.kad_dht.routing_table
     and type(self.host.kad_dht.routing_table.all_peers) == "function"
   then

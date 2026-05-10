@@ -2,7 +2,9 @@ local conformance = require("tests.unit.datastore_conformance")
 local sqlite = require("lua_libp2p.datastore.sqlite")
 
 local function close_remove(store, path)
-  if store then store:close() end
+  if store then
+    store:close()
+  end
   os.remove(path)
 end
 
@@ -41,7 +43,10 @@ local function run()
     return nil, "sqlite empty list should return an empty table without decode error"
   end
 
-  local raw_ok, raw_err = exec_raw(store, "REPLACE INTO " .. store._table .. " (key, value, expires_at, updated_at) VALUES ('corrupt/delete', X'ff', NULL, 1)")
+  local raw_ok, raw_err = exec_raw(
+    store,
+    "REPLACE INTO " .. store._table .. " (key, value, expires_at, updated_at) VALUES ('corrupt/delete', X'ff', NULL, 1)"
+  )
   if not raw_ok then
     close_remove(store, path)
     return nil, raw_err

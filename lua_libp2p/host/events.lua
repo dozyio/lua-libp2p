@@ -37,10 +37,11 @@ function M.emit(host, name, payload)
     for _, handler in ipairs(handlers) do
       local ok, err = pcall(handler, payload, event)
       if not ok then
-        return nil, error_mod.new("protocol", "host event handler panicked", {
-          event = name,
-          cause = err,
-        })
+        return nil,
+          error_mod.new("protocol", "host event handler panicked", {
+            event = name,
+            cause = err,
+          })
       end
     end
   end

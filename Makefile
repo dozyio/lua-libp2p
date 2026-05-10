@@ -1,4 +1,4 @@
-.PHONY: deps lint-deps lint docs-deps docs test check
+.PHONY: deps lint-deps lint fmt docs-deps docs test bench check
 
 deps:
 	luarocks make lua-libp2p-0.1.0-1.rockspec
@@ -16,6 +16,13 @@ lint:
 	}
 	luacheck --std lua54 --no-max-line-length --no-self --read-globals arg -- lua_libp2p tests examples
 
+fmt:
+	@command -v stylua >/dev/null 2>&1 || { \
+		echo "stylua not found; install StyLua first"; \
+		exit 127; \
+	}
+	stylua lua_libp2p tests examples
+
 docs:
 	@command -v ldoc >/dev/null 2>&1 || { \
 		echo "ldoc not found; run 'make docs-deps' and load your LuaRocks path"; \
@@ -25,6 +32,9 @@ docs:
 
 test:
 	lua tests/run.lua
+
+bench:
+	lua tests/benchmarks/run.lua
 
 check: test
 

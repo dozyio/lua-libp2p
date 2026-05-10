@@ -5,7 +5,9 @@ local sodium = require("luasodium")
 
 local function run()
   local public_key_proto = hex.decode("080112201ed1e8fae2c4a144b8be8fd4b47bf3d3b34b871c3cacf6010f0e42d474fce27e")
-  local private_key_proto = hex.decode("080112407e0830617c4a7de83925dfb2694556b12936c477a0e1feb2e148ec9da60fee7d1ed1e8fae2c4a144b8be8fd4b47bf3d3b34b871c3cacf6010f0e42d474fce27e")
+  local private_key_proto = hex.decode(
+    "080112407e0830617c4a7de83925dfb2694556b12936c477a0e1feb2e148ec9da60fee7d1ed1e8fae2c4a144b8be8fd4b47bf3d3b34b871c3cacf6010f0e42d474fce27e"
+  )
 
   local pub_data = public_key_proto:sub(5)
   local priv_data = private_key_proto:sub(5)

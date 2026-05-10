@@ -133,11 +133,7 @@ function AutoRelay:_active_or_queued_count()
   end
   local reserving = 0
   for _, task in pairs(self._reserve_tasks or {}) do
-    if task
-      and task.status ~= "completed"
-      and task.status ~= "failed"
-      and task.status ~= "cancelled"
-    then
+    if task and task.status ~= "completed" and task.status ~= "failed" and task.status ~= "cancelled" then
       reserving = reserving + 1
     end
   end
@@ -207,10 +203,15 @@ function AutoRelay:_reserve_target(target, opts)
   if self._failed[key] and not (opts and opts.retry_failed) then
     return nil, self._failed[key]
   end
-  if not (opts and opts.force_refresh) and self.max_reservations and self.reservation_count >= self.max_reservations then
-    return nil, error_mod.new("state", "autorelay reservation limit reached", {
-      max_reservations = self.max_reservations,
-    })
+  if
+    not (opts and opts.force_refresh)
+    and self.max_reservations
+    and self.reservation_count >= self.max_reservations
+  then
+    return nil,
+      error_mod.new("state", "autorelay reservation limit reached", {
+        max_reservations = self.max_reservations,
+      })
   end
 
   local reservation, err = self.client:reserve(target, opts or self.reserve_opts)
@@ -294,10 +295,7 @@ function AutoRelay:_reserve_target(target, opts)
 end
 
 local function task_is_active(task)
-  return task
-    and task.status ~= "completed"
-    and task.status ~= "failed"
-    and task.status ~= "cancelled"
+  return task and task.status ~= "completed" and task.status ~= "failed" and task.status ~= "cancelled"
 end
 
 --- Schedule reservation task for target.
@@ -411,7 +409,8 @@ function AutoRelay:_keepalive(_, reservation, now)
     return true
   end
   reservation.next_keepalive_at = now + self.keepalive_interval
-  if reservation.keepalive_task
+  if
+    reservation.keepalive_task
     and reservation.keepalive_task.status ~= "completed"
     and reservation.keepalive_task.status ~= "failed"
     and reservation.keepalive_task.status ~= "cancelled"
@@ -506,9 +505,7 @@ function AutoRelay:_process_queue(now, limit)
     local item = table.remove(self._queue, 1)
     self._queued[item.key] = nil
     local backoff_until = self._backoff_until[item.key]
-    if not self._reserved[item.key]
-        and not self._invalid[item.key]
-        and not (backoff_until and backoff_until > now) then
+    if not self._reserved[item.key] and not self._invalid[item.key] and not (backoff_until and backoff_until > now) then
       local scheduled, schedule_err = self:_schedule_reserve_target(item.target)
       if not scheduled and schedule_err then
         self._failed[item.key] = schedule_err
@@ -787,7 +784,8 @@ function M.new(host, opts)
     max_queue_length = options.max_queue_length or 32,
     reservation_concurrency = options.reservation_concurrency or 1,
     backoff_seconds = options.backoff_seconds or 60,
-    keepalive_interval = options.keepalive_interval == nil and M.DEFAULT_KEEPALIVE_INTERVAL or options.keepalive_interval,
+    keepalive_interval = options.keepalive_interval == nil and M.DEFAULT_KEEPALIVE_INTERVAL
+      or options.keepalive_interval,
     tick_interval = options.tick_interval or 1,
     keepalive_timeout = options.keepalive_timeout or 5,
     fail_fast = options.fail_fast == true,

@@ -53,7 +53,7 @@ function M.build_search_request(st, opts)
   return table.concat({
     "M-SEARCH * HTTP/1.1",
     "HOST: " .. host,
-    "MAN: \"ssdp:discover\"",
+    'MAN: "ssdp:discover"',
     "MX: " .. tostring(mx),
     "ST: " .. st,
     "",

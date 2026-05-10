@@ -90,7 +90,11 @@ local function run()
     return nil, "expected off() to remove registered handler"
   end
 
-  local c2 = { close = function() return true end }
+  local c2 = {
+    close = function()
+      return true
+    end,
+  }
   local e2, e2_err = host:_register_connection(c2, { remote_peer_id = "peer-b" })
   if not e2 then
     return nil, e2_err
@@ -108,14 +112,19 @@ local function run()
       end,
     },
   }))
-  local rollback_entry, rollback_err = rollback_host:_register_connection({ close = function() return true end }, {
+  local rollback_entry, rollback_err = rollback_host:_register_connection({
+    close = function()
+      return true
+    end,
+  }, {
     remote_peer_id = "peer-rollback",
     direction = "outbound",
   })
   if rollback_entry ~= nil or not rollback_err then
     return nil, "event failure should reject connection registration"
   end
-  if #rollback_host._connections ~= 0
+  if
+    #rollback_host._connections ~= 0
     or rollback_host._connections_by_peer["peer-rollback"] ~= nil
     or rollback_host.connection_manager:stats().connections ~= 0
   then
@@ -353,7 +362,8 @@ local function run()
     return true
   end))
   assert(host:_run_background_tasks({ max_resumes = 1 }))
-  if (immediate_read_task.status ~= "ready" and immediate_read_task.status ~= "completed")
+  if
+    (immediate_read_task.status ~= "ready" and immediate_read_task.status ~= "completed")
     or immediate_read_task.read_unwatch ~= nil
   then
     return nil, "immediate read watcher wake should not leave stale watcher"
@@ -369,7 +379,8 @@ local function run()
     return true
   end))
   assert(host:_run_background_tasks({ max_resumes = 1 }))
-  if (immediate_write_task.status ~= "ready" and immediate_write_task.status ~= "completed")
+  if
+    (immediate_write_task.status ~= "ready" and immediate_write_task.status ~= "completed")
     or immediate_write_task.write_unwatch ~= nil
   then
     return nil, "immediate write watcher wake should not leave stale watcher"
@@ -491,7 +502,8 @@ local function run()
   if parked_parent.status ~= "waiting_task" then
     return nil, "await_task parent should park on child completion"
   end
-  if not wait_host._task_completion_waiters[parked_child.id]
+  if
+    not wait_host._task_completion_waiters[parked_child.id]
     or not wait_host._task_completion_waiters[parked_child.id][parked_parent.id]
   then
     return nil, "await_task should register task completion waiter"
@@ -566,7 +578,8 @@ local function run()
   close_parent.task_unwatch = function()
     close_cleanup.task = true
   end
-  if close_parent.status ~= "waiting_task"
+  if
+    close_parent.status ~= "waiting_task"
     or close_read_task.status ~= "waiting_read"
     or close_dial_task.status ~= "waiting_dial"
     or close_write_task.status ~= "waiting_write"
@@ -594,7 +607,9 @@ local function run()
     local watchable = {}
     function watchable:watch_luv_readable(on_readable)
       self.on_readable = on_readable
-      return function() return true end
+      return function()
+        return true
+      end
     end
     fairness_readables[i] = watchable
     assert(fairness_host:spawn_task("test.fair_wait_read", function(ctx)
@@ -690,7 +705,11 @@ local function run()
     },
   }))
   function full_queue_host:_dial_direct()
-    return { close = function() return true end }, {}
+    return {
+      close = function()
+        return true
+      end,
+    }, {}
   end
   local full_peer_a = peer_a
   local full_peer_b = peer_b

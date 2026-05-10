@@ -14,6 +14,9 @@ local function run()
   local default_nodelay_enabled
   local default_keepalive_enabled
   local default_keepalive_delay
+  local read_closed_raw_close_count = 0
+  local read_closed_raw_shutdown_count = 0
+  local read_closed_raw_stop_count = 0
   uv.new_tcp = function()
     return {
       connect = function(_, _, _, cb)
@@ -32,7 +35,9 @@ local function run()
       getpeername = function()
         return { ip = "127.0.0.1", port = 10002 }
       end,
-      close = function() return true end,
+      close = function()
+        return true
+      end,
     }
   end
   local default_socket_conn, default_socket_err = tcp_luv.dial({ host = "127.0.0.1", port = 9999 }, { timeout = 1 })
@@ -67,7 +72,9 @@ local function run()
       getpeername = function()
         return { ip = "127.0.0.1", port = 10002 }
       end,
-      close = function() return true end,
+      close = function()
+        return true
+      end,
     }
   end
   local disabled_socket_conn, disabled_socket_err = tcp_luv.dial({ host = "127.0.0.1", port = 9999 }, {
@@ -87,7 +94,9 @@ local function run()
   uv.new_tcp = function()
     return {
       connect = function() end,
-      close = function() return true end,
+      close = function()
+        return true
+      end,
     }
   end
   local _, forced_timeout_err = tcp_luv.dial({ host = "127.0.0.1", port = 9999 }, { timeout = 0.02 })
@@ -104,7 +113,9 @@ local function run()
       connect = function(_, _, _, cb)
         cb("ECONNRESET")
       end,
-      close = function() return true end,
+      close = function()
+        return true
+      end,
     }
   end
   local _, forced_closed_err = tcp_luv.dial({ host = "127.0.0.1", port = 9999 }, { timeout = 1 })
@@ -121,7 +132,9 @@ local function run()
       connect = function(_, _, _, cb)
         cb("EADDRNOTAVAIL")
       end,
-      close = function() return true end,
+      close = function()
+        return true
+      end,
     }
   end
   local _, forced_io_err = tcp_luv.dial({ host = "127.0.0.1", port = 9999 }, { timeout = 1 })
@@ -152,10 +165,15 @@ local function run()
           cb(nil)
         end
       end,
-      close = function() return true end,
+      close = function()
+        return true
+      end,
     }
   end
-  local forced_write_closed_conn, forced_write_closed_conn_err = tcp_luv.dial({ host = "127.0.0.1", port = 10002 }, { timeout = 1 })
+  local forced_write_closed_conn, forced_write_closed_conn_err = tcp_luv.dial(
+    { host = "127.0.0.1", port = 10002 },
+    { timeout = 1 }
+  )
   uv.new_tcp = real_new_tcp
   if not forced_write_closed_conn then
     return nil, forced_write_closed_conn_err
@@ -191,27 +209,102 @@ local function run()
       read_start = function(_, cb)
         cb("EOF", nil)
       end,
-      read_stop = function() return true end,
+      read_stop = function()
+        read_closed_raw_stop_count = read_closed_raw_stop_count + 1
+        return true
+      end,
       shutdown = function(_, cb)
+        read_closed_raw_shutdown_count = read_closed_raw_shutdown_count + 1
         if cb then
           cb(nil)
         end
       end,
-      close = function() return true end,
+      close = function()
+        read_closed_raw_close_count = read_closed_raw_close_count + 1
+        return true
+      end,
     }
   end
-  local forced_read_closed_conn, forced_read_closed_conn_err = tcp_luv.dial({ host = "127.0.0.1", port = 10004 }, { timeout = 1 })
+  local forced_read_closed_conn, forced_read_closed_conn_err = tcp_luv.dial(
+    { host = "127.0.0.1", port = 10004 },
+    { timeout = 1 }
+  )
   uv.new_tcp = real_new_tcp
   if not forced_read_closed_conn then
     return nil, forced_read_closed_conn_err
   end
   local _, forced_read_closed_err = forced_read_closed_conn:read(1)
-  forced_read_closed_conn:close()
   if not forced_read_closed_err then
+    forced_read_closed_conn:close()
     return nil, "expected forced closed error from native tcp_luv read"
   end
   if forced_read_closed_err.kind ~= "closed" then
+    forced_read_closed_conn:close()
     return nil, "expected closed kind for forced native tcp_luv read closed error"
+  end
+  if read_closed_raw_close_count ~= 1 then
+    forced_read_closed_conn:close()
+    return nil, "expected native tcp_luv read EOF to close raw socket handle"
+  end
+  if read_closed_raw_shutdown_count ~= 1 or read_closed_raw_stop_count == 0 then
+    forced_read_closed_conn:close()
+    return nil, "expected native tcp_luv read EOF to stop and shutdown raw socket handle"
+  end
+  forced_read_closed_conn:close()
+  if read_closed_raw_close_count ~= 1 then
+    return nil, "expected native tcp_luv close after EOF to be idempotent"
+  end
+
+  local read_nil_eof_raw_close_count = 0
+  uv.new_tcp = function()
+    return {
+      connect = function(_, _, _, cb)
+        cb(nil)
+      end,
+      getsockname = function()
+        return { ip = "127.0.0.1", port = 10013 }
+      end,
+      getpeername = function()
+        return { ip = "127.0.0.1", port = 10014 }
+      end,
+      read_start = function(_, cb)
+        cb(nil, nil)
+      end,
+      read_stop = function()
+        return true
+      end,
+      shutdown = function(_, cb)
+        if cb then
+          cb(nil)
+        end
+      end,
+      close = function()
+        read_nil_eof_raw_close_count = read_nil_eof_raw_close_count + 1
+        return true
+      end,
+    }
+  end
+  local read_nil_eof_conn, read_nil_eof_conn_err = tcp_luv.dial({ host = "127.0.0.1", port = 10014 }, { timeout = 1 })
+  uv.new_tcp = real_new_tcp
+  if not read_nil_eof_conn then
+    return nil, read_nil_eof_conn_err
+  end
+  local _, read_nil_eof_err = read_nil_eof_conn:read(1)
+  if not read_nil_eof_err then
+    read_nil_eof_conn:close()
+    return nil, "expected nil EOF read to fail"
+  end
+  if read_nil_eof_err.kind ~= "closed" then
+    read_nil_eof_conn:close()
+    return nil, "expected nil EOF read to map to closed error"
+  end
+  if read_nil_eof_raw_close_count ~= 1 then
+    read_nil_eof_conn:close()
+    return nil, "expected nil EOF read to close raw socket handle"
+  end
+  read_nil_eof_conn:close()
+  if read_nil_eof_raw_close_count ~= 1 then
+    return nil, "expected nil EOF close to be idempotent"
   end
 
   uv.new_tcp = function()
@@ -228,16 +321,23 @@ local function run()
       read_start = function(_, cb)
         cb("EADDRNOTAVAIL", nil)
       end,
-      read_stop = function() return true end,
+      read_stop = function()
+        return true
+      end,
       shutdown = function(_, cb)
         if cb then
           cb(nil)
         end
       end,
-      close = function() return true end,
+      close = function()
+        return true
+      end,
     }
   end
-  local forced_read_io_conn, forced_read_io_conn_err = tcp_luv.dial({ host = "127.0.0.1", port = 10006 }, { timeout = 1 })
+  local forced_read_io_conn, forced_read_io_conn_err = tcp_luv.dial(
+    { host = "127.0.0.1", port = 10006 },
+    { timeout = 1 }
+  )
   uv.new_tcp = real_new_tcp
   if not forced_read_io_conn then
     return nil, forced_read_io_conn_err
@@ -263,16 +363,23 @@ local function run()
         return { ip = "127.0.0.1", port = 10008 }
       end,
       read_start = function() end,
-      read_stop = function() return true end,
+      read_stop = function()
+        return true
+      end,
       shutdown = function(_, cb)
         if cb then
           cb(nil)
         end
       end,
-      close = function() return true end,
+      close = function()
+        return true
+      end,
     }
   end
-  local forced_read_timeout_conn, forced_read_timeout_conn_err = tcp_luv.dial({ host = "127.0.0.1", port = 10008 }, { timeout = 1, io_timeout = 0.02 })
+  local forced_read_timeout_conn, forced_read_timeout_conn_err = tcp_luv.dial(
+    { host = "127.0.0.1", port = 10008 },
+    { timeout = 1, io_timeout = 0.02 }
+  )
   uv.new_tcp = real_new_tcp
   if not forced_read_timeout_conn then
     return nil, forced_read_timeout_conn_err

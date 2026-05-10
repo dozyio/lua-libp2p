@@ -33,7 +33,8 @@ local function marshal_ecdsa_public_key(public_key_der)
   end
   local ok, parsed_or_err = pcall(ossl_pkey.new, der_public_key_to_pem(public_key_der))
   if not ok or not parsed_or_err then
-    return nil, error_mod.new("input", "ecdsa public key must be DER-encoded SubjectPublicKeyInfo", { cause = parsed_or_err })
+    return nil,
+      error_mod.new("input", "ecdsa public key must be DER-encoded SubjectPublicKeyInfo", { cause = parsed_or_err })
   end
   return key_pb.encode_public_key(key_pb.KEY_TYPE.ECDSA, public_key_der)
 end

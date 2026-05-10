@@ -38,8 +38,12 @@ local function run()
       return nil, nil, nil, "peer-b not serving kad"
     end
     local stream = {}
-    function stream:close_write() return true end
-    function stream:close() return true end
+    function stream:close_write()
+      return true
+    end
+    function stream:close()
+      return true
+    end
     return stream, kad_dht.PROTOCOL_ID, {}, {}
   end
 

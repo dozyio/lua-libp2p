@@ -69,7 +69,9 @@ end
 local function negotiate_inbound(conn, supported)
   local router = mss.new_router()
   for _, protocol_id in ipairs(supported) do
-    local ok, reg_err = router:register(protocol_id, function() return true end)
+    local ok, reg_err = router:register(protocol_id, function()
+      return true
+    end)
     if not ok then
       return nil, reg_err
     end
@@ -106,13 +108,14 @@ local function run_security_handshake(raw_conn, is_outbound, selected_security, 
       return nil, nil, handshake_err
     end
 
-    return raw_conn, {
-      security = selected_security,
-      remote_peer_id = verified.peer_id and verified.peer_id.id or nil,
-      remote_peer_id_bytes = verified.peer_id and verified.peer_id.bytes or nil,
-      remote_public_key = verified.public_key_data,
-      remote_key_type = verified.key_type,
-    }
+    return raw_conn,
+      {
+        security = selected_security,
+        remote_peer_id = verified.peer_id and verified.peer_id.id or nil,
+        remote_peer_id_bytes = verified.peer_id and verified.peer_id.bytes or nil,
+        remote_public_key = verified.public_key_data,
+        remote_key_type = verified.key_type,
+      }
   end
 
   if selected_security == noise.PROTOCOL_ID then
@@ -140,19 +143,22 @@ local function run_security_handshake(raw_conn, is_outbound, selected_security, 
 
     local remote_peer = hs_state and hs_state.remote_peer
 
-    return secure_conn, {
-      security = selected_security,
-      remote_peer_id = remote_peer and remote_peer.id or nil,
-      remote_peer_id_bytes = remote_peer and remote_peer.bytes or nil,
-      remote_public_key = remote_peer and remote_peer.public_key,
-      remote_key_type = remote_peer and remote_peer.type,
-      noise_extensions = hs_state and hs_state.remote_extensions or nil,
-    }
+    return secure_conn,
+      {
+        security = selected_security,
+        remote_peer_id = remote_peer and remote_peer.id or nil,
+        remote_peer_id_bytes = remote_peer and remote_peer.bytes or nil,
+        remote_public_key = remote_peer and remote_peer.public_key,
+        remote_key_type = remote_peer and remote_peer.type,
+        noise_extensions = hs_state and hs_state.remote_extensions or nil,
+      }
   end
 
-  return nil, nil, error_mod.new("unsupported", "security protocol not supported", {
-    protocol = selected_security,
-  })
+  return nil,
+    nil,
+    error_mod.new("unsupported", "security protocol not supported", {
+      protocol = selected_security,
+    })
 end
 
 --- Upgrade an outbound raw transport connection.

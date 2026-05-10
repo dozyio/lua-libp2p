@@ -8,6 +8,13 @@ local upgrader = require("lua_libp2p.network.upgrader")
 
 local M = {}
 
+local function is_closed_error(err)
+  if not error_mod.is_error(err) then
+    return false
+  end
+  return err.kind == "closed"
+end
+
 local function now_seconds()
   local ok_socket, socket = pcall(require, "socket")
   if ok_socket and type(socket.gettime) == "function" then
@@ -78,7 +85,8 @@ function M.install(Host)
   -- `opts.allow_limited_connection=true` allows limited relay state results.
   function Host:_dial_relay_raw(addr, destination_peer_id, opts)
     opts = opts or {}
-    if not opts.ctx
+    if
+      not opts.ctx
       and not opts._internal_task_ctx
       and type(self.spawn_task) == "function"
       and type(self.run_until_task) == "function"
@@ -115,7 +123,8 @@ function M.install(Host)
       relay_addr = info.relay_addr,
     })
 
-    local stream, selected, relay_conn, relay_state_or_err = self:new_stream(info.relay_addr, { relay_proto.HOP_ID }, opts)
+    local stream, selected, relay_conn, relay_state_or_err =
+      self:new_stream(info.relay_addr, { relay_proto.HOP_ID }, opts)
     if not stream then
       log.debug("host relay dial stream failed", {
         relay_peer_id = info.relay_peer_id,
@@ -148,16 +157,17 @@ function M.install(Host)
       protocol = selected,
       limit_kind = relay_proto.classify_limit(response.limit),
     })
-    return stream, {
-      relay_peer_id = info.relay_peer_id,
-      relay_addr = info.relay_addr,
-      destination_peer_id = target_peer_id,
-      protocol = selected,
-      relay_connection = relay_conn,
-      relay_state = relay_state_or_err,
-      limit = response.limit,
-      limit_kind = relay_proto.classify_limit(response.limit),
-    }
+    return stream,
+      {
+        relay_peer_id = info.relay_peer_id,
+        relay_addr = info.relay_addr,
+        destination_peer_id = target_peer_id,
+        protocol = selected,
+        relay_connection = relay_conn,
+        relay_state = relay_state_or_err,
+        limit = response.limit,
+        limit_kind = relay_proto.classify_limit(response.limit),
+      }
   end
 
   --- Dial peer/address directly (non-relay-specialized path).
@@ -332,7 +342,8 @@ function M.install(Host)
   function Host:dial(peer_or_addr, opts)
     local options = opts or {}
     log.debug("host dial requested", {
-      target = type(peer_or_addr) == "table" and (peer_or_addr.peer_id or peer_or_addr.addr or peer_or_addr.multiaddr) or peer_or_addr,
+      target = type(peer_or_addr) == "table" and (peer_or_addr.peer_id or peer_or_addr.addr or peer_or_addr.multiaddr)
+        or peer_or_addr,
       bypass_connection_manager = options.bypass_connection_manager == true,
       force = options.force == true,
     })
@@ -353,6 +364,81 @@ function M.install(Host)
   -- @treturn[opt] table conn Underlying connection.
   -- @treturn[opt] table state_or_err Connection state or error.
   function Host:new_stream(peer_or_addr, protocols, opts)
+    local function open_once(dial_opts)
+      local conn, state, dial_err = self:dial(peer_or_addr, dial_opts)
+      if not conn then
+        log.debug("host stream dial failed", {
+          target = type(peer_or_addr) == "table"
+              and (peer_or_addr.peer_id or peer_or_addr.addr or peer_or_addr.multiaddr)
+            or peer_or_addr,
+          protocols = table.concat(protocols or {}, ","),
+          cause = tostring(dial_err),
+        })
+        return nil, nil, nil, dial_err
+      end
+
+      if self:_connection_is_limited(state) then
+        local allowed, allow_err = self:_protocols_allowed_on_limited_connection(protocols, dial_opts)
+        if not allowed then
+          log.debug("host stream blocked on limited connection", {
+            peer_id = state and state.remote_peer_id or nil,
+            connection_id = state and state.connection_id or nil,
+            protocols = table.concat(protocols or {}, ","),
+            cause = tostring(allow_err),
+          })
+          return nil, nil, nil, allow_err
+        end
+      end
+
+      local stream_scope, resource_err = self:_open_stream_resource({ state = state }, "outbound")
+      if resource_err then
+        return nil, nil, nil, resource_err
+      end
+
+      local stream, selected, stream_err = conn:new_stream(protocols)
+      if not stream then
+        self:_close_stream_resource(stream_scope)
+        log.debug("host stream open failed", {
+          peer_id = state and state.remote_peer_id or nil,
+          connection_id = state and state.connection_id or nil,
+          protocols = table.concat(protocols or {}, ","),
+          cause = tostring(stream_err),
+        })
+        return nil, nil, nil, stream_err, state
+      end
+
+      local set_ok, set_err = self:_set_stream_resource_protocol(stream_scope, selected)
+      if not set_ok then
+        if type(stream.reset_now) == "function" then
+          pcall(function()
+            stream:reset_now()
+          end)
+        elseif type(stream.close) == "function" then
+          pcall(function()
+            stream:close()
+          end)
+        end
+        self:_close_stream_resource(stream_scope)
+        log.debug("host stream resource protocol failed", {
+          peer_id = state and state.remote_peer_id or nil,
+          connection_id = state and state.connection_id or nil,
+          protocol = selected,
+          cause = tostring(set_err),
+        })
+        return nil, nil, nil, set_err, state
+      end
+      stream = self:_wrap_stream_resource(stream, stream_scope)
+
+      log.debug("host stream opened", {
+        peer_id = state and state.remote_peer_id or nil,
+        connection_id = state and state.connection_id or nil,
+        protocol = selected,
+        direction = state and state.direction or nil,
+      })
+
+      return stream, selected, conn, state
+    end
+
     local stream_opts = {}
     for k, v in pairs(opts or {}) do
       stream_opts[k] = v
@@ -365,77 +451,36 @@ function M.install(Host)
     end
 
     log.debug("host stream open requested", {
-      target = type(peer_or_addr) == "table" and (peer_or_addr.peer_id or peer_or_addr.addr or peer_or_addr.multiaddr) or peer_or_addr,
+      target = type(peer_or_addr) == "table" and (peer_or_addr.peer_id or peer_or_addr.addr or peer_or_addr.multiaddr)
+        or peer_or_addr,
       protocols = table.concat(protocols or {}, ","),
       allow_limited_connection = stream_opts.allow_limited_connection == true,
     })
 
-    local conn, state, dial_err = self:dial(peer_or_addr, stream_opts)
-    if not conn then
-      log.debug("host stream dial failed", {
-        target = type(peer_or_addr) == "table" and (peer_or_addr.peer_id or peer_or_addr.addr or peer_or_addr.multiaddr) or peer_or_addr,
-        protocols = table.concat(protocols or {}, ","),
-        cause = tostring(dial_err),
-      })
-      return nil, nil, nil, dial_err
+    local stream, selected, conn, state_or_err, state = open_once(stream_opts)
+    if stream then
+      return stream, selected, conn, state_or_err
     end
-
-    if self:_connection_is_limited(state) then
-      local allowed, allow_err = self:_protocols_allowed_on_limited_connection(protocols, stream_opts)
-      if not allowed then
-        log.debug("host stream blocked on limited connection", {
-          peer_id = state and state.remote_peer_id or nil,
-          connection_id = state and state.connection_id or nil,
-          protocols = table.concat(protocols or {}, ","),
-          cause = tostring(allow_err),
-        })
-        return nil, nil, nil, allow_err
+    local stream_err = state_or_err
+    if is_closed_error(stream_err) then
+      local bad_state = state
+      local bad_connection_id = bad_state and bad_state.connection_id or nil
+      local bad_entry = bad_connection_id and self:_find_connection_by_id(bad_connection_id) or nil
+      if bad_entry then
+        self:_unregister_connection(nil, bad_entry, stream_err)
       end
-    end
-
-    local stream_scope, resource_err = self:_open_stream_resource({ state = state }, "outbound")
-    if resource_err then
-      return nil, nil, nil, resource_err
-    end
-
-    local stream, selected, stream_err = conn:new_stream(protocols)
-    if not stream then
-      self:_close_stream_resource(stream_scope)
-      log.debug("host stream open failed", {
-        peer_id = state and state.remote_peer_id or nil,
-        connection_id = state and state.connection_id or nil,
-        protocols = table.concat(protocols or {}, ","),
-        cause = tostring(stream_err),
-      })
-      return nil, nil, nil, stream_err
-    end
-
-    local set_ok, set_err = self:_set_stream_resource_protocol(stream_scope, selected)
-    if not set_ok then
-      if type(stream.reset_now) == "function" then
-        pcall(function() stream:reset_now() end)
-      elseif type(stream.close) == "function" then
-        pcall(function() stream:close() end)
+      local retry_opts = {}
+      for k, v in pairs(stream_opts) do
+        retry_opts[k] = v
       end
-      self:_close_stream_resource(stream_scope)
-      log.debug("host stream resource protocol failed", {
-        peer_id = state and state.remote_peer_id or nil,
-        connection_id = state and state.connection_id or nil,
-        protocol = selected,
-        cause = tostring(set_err),
-      })
-      return nil, nil, nil, set_err
+      retry_opts.force = true
+      local retry_stream, retry_selected, retry_conn, retry_state_or_err = open_once(retry_opts)
+      if retry_stream then
+        return retry_stream, retry_selected, retry_conn, retry_state_or_err
+      end
+      return nil, nil, nil, retry_state_or_err
     end
-    stream = self:_wrap_stream_resource(stream, stream_scope)
-
-    log.debug("host stream opened", {
-      peer_id = state and state.remote_peer_id or nil,
-      connection_id = state and state.connection_id or nil,
-      protocol = selected,
-      direction = state and state.direction or nil,
-    })
-
-    return stream, selected, conn, state
+    return nil, nil, nil, stream_err
   end
 end
 

@@ -190,10 +190,11 @@ function M.read_message(conn, opts)
     return nil, len_err
   end
   if length > max_message_size then
-    return nil, error_mod.new("decode", "dcutr message too large", {
-      size = length,
-      max_size = max_message_size,
-    })
+    return nil,
+      error_mod.new("decode", "dcutr message too large", {
+        size = length,
+        max_size = max_message_size,
+      })
   end
   local payload, payload_err = read_exact(conn, length)
   if not payload then
@@ -212,10 +213,11 @@ function M.write_message(conn, message, opts)
     return nil, payload_err
   end
   if #payload > max_message_size then
-    return nil, error_mod.new("input", "dcutr message too large", {
-      size = #payload,
-      max_size = max_message_size,
-    })
+    return nil,
+      error_mod.new("input", "dcutr message too large", {
+        size = #payload,
+        max_size = max_message_size,
+      })
   end
   local len, len_err = varint.encode_u64(#payload)
   if not len then

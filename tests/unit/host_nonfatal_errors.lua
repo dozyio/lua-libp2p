@@ -122,7 +122,11 @@ local function run_inner()
     end, {
       stream = {},
       protocol = "/test/1.0.0",
-      connection = { close = function() return true end },
+      connection = {
+        close = function()
+          return true
+        end,
+      },
       state = {},
     })
 

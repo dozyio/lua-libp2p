@@ -6,6 +6,8 @@ local log = require("lua_libp2p.log").subsystem("host")
 local M = {}
 
 M.DEFAULT_TASK_RESUME_BUDGET = 128
+M.DEFAULT_TASK_RETENTION = 2048
+M.DEFAULT_TASK_PRUNE_INTERVAL = 1
 
 local function now_seconds()
   local ok_socket, socket = pcall(require, "socket")
@@ -13,6 +15,34 @@ local function now_seconds()
     return socket.gettime()
   end
   return os.time()
+end
+
+local function debug_perf_add(host, key, elapsed_seconds)
+  local perf = type(host) == "table" and rawget(host, "_debug_perf") or nil
+  if type(perf) ~= "table" then
+    return
+  end
+  perf[key .. "_calls"] = (perf[key .. "_calls"] or 0) + 1
+  perf[key .. "_ms"] = (perf[key .. "_ms"] or 0) + (elapsed_seconds * 1000)
+end
+
+local function debug_perf_add_group(host, group_key, item_key, elapsed_seconds)
+  local perf = type(host) == "table" and rawget(host, "_debug_perf") or nil
+  if type(perf) ~= "table" then
+    return
+  end
+  local group = perf[group_key]
+  if type(group) ~= "table" then
+    group = {}
+    perf[group_key] = group
+  end
+  local item = group[tostring(item_key or "unknown")]
+  if type(item) ~= "table" then
+    item = { calls = 0, ms = 0 }
+    group[tostring(item_key or "unknown")] = item
+  end
+  item.calls = (item.calls or 0) + 1
+  item.ms = (item.ms or 0) + (elapsed_seconds * 1000)
 end
 
 local function pack_returns(...)
@@ -32,6 +62,105 @@ local function map_count(values)
     count = count + 1
   end
   return count
+end
+
+local function task_queue_depth(host)
+  local head = host._task_queue_head or 1
+  local tail = host._task_queue_tail or 0
+  if tail < head then
+    return 0
+  end
+  return tail - head + 1
+end
+
+local function task_queue_push_back(host, task_id)
+  local tail = (host._task_queue_tail or 0) + 1
+  host._task_queue_tail = tail
+  if not host._task_queue_head then
+    host._task_queue_head = 1
+  end
+  host._task_queue[tail] = task_id
+end
+
+local function task_queue_push_front(host, task_id)
+  local head = (host._task_queue_head or 1) - 1
+  host._task_queue_head = head
+  if not host._task_queue_tail or host._task_queue_tail < head then
+    host._task_queue_tail = head
+  end
+  host._task_queue[head] = task_id
+end
+
+local function task_queue_pop_front(host)
+  local head = host._task_queue_head or 1
+  local tail = host._task_queue_tail or 0
+  if tail < head then
+    return nil
+  end
+  local task_id = host._task_queue[head]
+  host._task_queue[head] = nil
+  head = head + 1
+  if head > tail then
+    host._task_queue_head = 1
+    host._task_queue_tail = 0
+  else
+    host._task_queue_head = head
+  end
+  return task_id
+end
+
+local function should_prune_task(task)
+  if type(task) ~= "table" then
+    return false
+  end
+  return task.status == "completed" or task.status == "failed" or task.status == "cancelled"
+end
+
+local function prune_task_history(self)
+  local retention = tonumber(self._task_retention) or M.DEFAULT_TASK_RETENTION
+  if retention < 0 then
+    return
+  end
+  local now = now_seconds()
+  local interval = tonumber(self._task_prune_interval) or M.DEFAULT_TASK_PRUNE_INTERVAL
+  if interval > 0 and self._last_task_prune_at and (now - self._last_task_prune_at) < interval then
+    return
+  end
+  self._last_task_prune_at = now
+
+  local total = 0
+  for _ in pairs(self._tasks) do
+    total = total + 1
+  end
+  if total <= retention then
+    return
+  end
+
+  local pruneable = {}
+  for task_id, task in pairs(self._tasks) do
+    if should_prune_task(task) then
+      pruneable[#pruneable + 1] = {
+        task_id = task_id,
+        updated_at = tonumber(task.updated_at) or 0,
+      }
+    end
+  end
+
+  if #pruneable == 0 then
+    return
+  end
+
+  table.sort(pruneable, function(a, b)
+    if a.updated_at == b.updated_at then
+      return tostring(a.task_id) < tostring(b.task_id)
+    end
+    return a.updated_at < b.updated_at
+  end)
+
+  local to_prune = math.min(total - retention, #pruneable)
+  for i = 1, to_prune do
+    self._tasks[pruneable[i].task_id] = nil
+  end
 end
 
 local function emit_task_event(host, name, payload)
@@ -120,11 +249,12 @@ local function make_task_context(task)
       end
     end
     if child_task.status ~= "completed" then
-      return nil, child_task.error or error_mod.new("state", "task did not complete", {
-        task_id = child_task.id,
-        name = child_task.name,
-        status = child_task.status,
-      })
+      return nil,
+        child_task.error or error_mod.new("state", "task did not complete", {
+          task_id = child_task.id,
+          name = child_task.name,
+          status = child_task.status,
+        })
     end
     if child_task.results then
       return unpack_returns(child_task.results)
@@ -142,7 +272,8 @@ local function make_task_context(task)
       return nil, error_mod.new("cancelled", "task cancelled", { task_id = task.id, name = task.name })
     end
     for _, child_task in ipairs(child_tasks) do
-      if type(child_task) == "table"
+      if
+        type(child_task) == "table"
         and (child_task.status == "completed" or child_task.status == "failed" or child_task.status == "cancelled")
       then
         return true
@@ -168,11 +299,12 @@ local function run_task_finalizer(host, task)
   task.on_finished = nil
   local ok, result, err = pcall(finalizer, host, task)
   if not ok then
-    return nil, error_mod.new("protocol", "task finalizer panicked", {
-      task_id = task.id,
-      name = task.name,
-      cause = result,
-    })
+    return nil,
+      error_mod.new("protocol", "task finalizer panicked", {
+        task_id = task.id,
+        name = task.name,
+        cause = result,
+      })
   end
   if result == nil and err then
     return nil, err
@@ -209,9 +341,9 @@ function M.install(Host)
     end)
     self._tasks[id] = task
     if options.priority == "front" then
-      table.insert(self._task_queue, 1, id)
+      task_queue_push_front(self, id)
     else
-      self._task_queue[#self._task_queue + 1] = id
+      task_queue_push_back(self, id)
     end
     emit_task_event(self, "task:started", {
       task_id = id,
@@ -222,9 +354,13 @@ function M.install(Host)
       task_id = id,
       name = name,
       service = task.service,
-      queue_depth = #self._task_queue,
+      queue_depth = task_queue_depth(self),
     })
     return task
+  end
+
+  function Host:_task_queue_depth()
+    return task_queue_depth(self)
   end
 
   function Host:get_task(task_id)
@@ -236,14 +372,16 @@ function M.install(Host)
     for _, task in pairs(self._tasks) do
       out[#out + 1] = task
     end
-    table.sort(out, function(a, b) return a.id < b.id end)
+    table.sort(out, function(a, b)
+      return a.id < b.id
+    end)
     return out
   end
 
   function Host:task_stats()
     local stats = {
       total = 0,
-      queue_depth = #self._task_queue,
+      queue_depth = task_queue_depth(self),
       identify_inflight = map_count(self._identify_inflight),
       by_status = {},
       by_name = {},
@@ -348,6 +486,9 @@ function M.install(Host)
     if task.status == "completed" or task.status == "failed" or task.status == "cancelled" then
       return false
     end
+    if self._sleeping_tasks then
+      self._sleeping_tasks[task.id] = nil
+    end
     self:_cleanup_task_waiters(task)
     task.cancelled = true
     task.status = "cancelled"
@@ -375,7 +516,7 @@ function M.install(Host)
     if not task or task.status ~= "ready" then
       return false
     end
-    self._task_queue[#self._task_queue + 1] = task.id
+    task_queue_push_back(self, task.id)
     return true
   end
 
@@ -393,10 +534,11 @@ function M.install(Host)
 
     while task.status ~= "completed" and task.status ~= "failed" and task.status ~= "cancelled" do
       if deadline and now_seconds() >= deadline then
-        return nil, error_mod.new("timeout", "task wait timed out", {
-          task_id = task.id,
-          name = task.name,
-        })
+        return nil,
+          error_mod.new("timeout", "task wait timed out", {
+            task_id = task.id,
+            name = task.name,
+          })
       end
       local ok, err = self:_poll_once(poll_interval)
       if not ok then
@@ -404,11 +546,12 @@ function M.install(Host)
       end
     end
     if task.status ~= "completed" then
-      return nil, task.error or error_mod.new("state", "task did not complete", {
-        task_id = task.id,
-        name = task.name,
-        status = task.status,
-      })
+      return nil,
+        task.error or error_mod.new("state", "task did not complete", {
+          task_id = task.id,
+          name = task.name,
+          status = task.status,
+        })
     end
     if task.results then
       return unpack_returns(task.results)
@@ -704,34 +847,62 @@ function M.install(Host)
     local options = opts or {}
     local budget = options.max_resumes or self._task_resume_budget or M.DEFAULT_TASK_RESUME_BUDGET
     local now = now_seconds()
+    local perf = rawget(self, "_debug_perf")
+    local phase_started = perf and now_seconds() or nil
 
-    for _, task in pairs(self._tasks) do
-      if task.status == "sleeping" and task.wake_at and task.wake_at <= now then
+    for task_id in pairs(self._sleeping_tasks or {}) do
+      local task = self._tasks[task_id]
+      if not task or task.status ~= "sleeping" then
+        self._sleeping_tasks[task_id] = nil
+      elseif task.wake_at and task.wake_at <= now then
+        self._sleeping_tasks[task_id] = nil
         task.status = "ready"
         task.wake_at = nil
         task.updated_at = now
         self:_enqueue_task(task)
       end
     end
+    if phase_started then
+      debug_perf_add(self, "background_sleep_scan", now_seconds() - phase_started)
+      phase_started = now_seconds()
+    end
 
     local resumes = 0
-    while resumes < budget and #self._task_queue > 0 do
-      local task_id = table.remove(self._task_queue, 1)
+    while resumes < budget and task_queue_depth(self) > 0 do
+      local resume_phase_started = perf and now_seconds() or nil
+      local task_id = task_queue_pop_front(self)
       local task = self._tasks[task_id]
       if not task or task.status ~= "ready" then
+        if resume_phase_started then
+          debug_perf_add(self, "background_resume_skip", now_seconds() - resume_phase_started)
+        end
         goto continue_tasks
       end
       if task.cancelled then
         self:_cleanup_task_waiters(task)
         task.status = "cancelled"
         task.updated_at = now_seconds()
+        if resume_phase_started then
+          debug_perf_add(self, "background_resume_cancel", now_seconds() - resume_phase_started)
+        end
         goto continue_tasks
+      end
+      if resume_phase_started then
+        debug_perf_add(self, "background_resume_dequeue", now_seconds() - resume_phase_started)
+        resume_phase_started = now_seconds()
       end
 
       resumes = resumes + 1
       task.status = "running"
       task.updated_at = now_seconds()
       local resumed = pack_returns(coroutine.resume(task.co))
+      if resume_phase_started then
+        local coroutine_elapsed = now_seconds() - resume_phase_started
+        debug_perf_add(self, "background_resume_coroutine", coroutine_elapsed)
+        debug_perf_add_group(self, "background_resume_by_name", task.name, coroutine_elapsed)
+        debug_perf_add_group(self, "background_resume_by_service", task.service or "unknown", coroutine_elapsed)
+        resume_phase_started = now_seconds()
+      end
       local ok = resumed[1]
       local result_or_yield = resumed[2]
       local extra = resumed[3]
@@ -762,6 +933,9 @@ function M.install(Host)
         local final_ok, final_err = run_task_finalizer(self, task)
         if not final_ok then
           return nil, final_err
+        end
+        if resume_phase_started then
+          debug_perf_add(self, "background_resume_failed", now_seconds() - resume_phase_started)
         end
         goto continue_tasks
       end
@@ -812,6 +986,9 @@ function M.install(Host)
             return nil, final_err
           end
         end
+        if resume_phase_started then
+          debug_perf_add(self, "background_resume_completed", now_seconds() - resume_phase_started)
+        end
         goto continue_tasks
       end
 
@@ -819,6 +996,9 @@ function M.install(Host)
       if type(yielded) == "table" and yielded.type == "sleep" then
         task.status = "sleeping"
         task.wake_at = yielded.until_at or now_seconds()
+        if self._sleeping_tasks then
+          self._sleeping_tasks[task.id] = true
+        end
       elseif type(yielded) == "table" and yielded.type == "read" then
         self:_wait_task_read(task, yielded.connection or yielded.conn or yielded.watchable)
       elseif type(yielded) == "table" and yielded.type == "dial" then
@@ -831,10 +1011,21 @@ function M.install(Host)
         task.status = "ready"
         self:_enqueue_task(task)
       end
+      if resume_phase_started then
+        debug_perf_add(self, "background_resume_yield", now_seconds() - resume_phase_started)
+      end
 
       ::continue_tasks::
     end
+    if phase_started then
+      debug_perf_add(self, "background_resume", now_seconds() - phase_started)
+      phase_started = now_seconds()
+    end
 
+    prune_task_history(self)
+    if phase_started then
+      debug_perf_add(self, "background_prune", now_seconds() - phase_started)
+    end
     return true
   end
 end

@@ -1,6 +1,7 @@
 --- Kademlia k-bucket routing table primitives.
 -- @module lua_libp2p.kbucket
 local error_mod = require("lua_libp2p.error")
+local log = require("lua_libp2p.log").subsystem("ktable")
 local peerid = require("lua_libp2p.peerid")
 
 local ok_sodium, sodium = pcall(require, "luasodium")
@@ -212,6 +213,11 @@ function RoutingTable:try_add_peer(peer, opts)
     existing.last_seen = os.time()
     remove_from_list(self._buckets[existing.bucket], existing)
     table.insert(self._buckets[existing.bucket], 1, existing)
+    log.debug("routing table peer refreshed", {
+      peer_id = peer_id,
+      bucket = existing.bucket,
+      size = self:size(),
+    })
     return false
   end
 
@@ -219,12 +225,23 @@ function RoutingTable:try_add_peer(peer, opts)
   local evicted = nil
   if #bucket >= self.bucket_size then
     if not options.allow_replace then
+      log.debug("routing table peer rejected capacity", {
+        peer_id = peer_id,
+        bucket = bucket_index,
+        bucket_size = #bucket,
+        max_bucket_size = self.bucket_size,
+      })
       return nil, error_mod.new("capacity", "kbucket is full", { bucket = bucket_index })
     end
     local old = table.remove(bucket)
     if old then
       self._entries[old.peer_id] = nil
       evicted = old.peer_id
+      log.debug("routing table peer evicted", {
+        peer_id = old.peer_id,
+        bucket = bucket_index,
+        replacement_peer_id = peer_id,
+      })
     end
   end
 
@@ -237,6 +254,13 @@ function RoutingTable:try_add_peer(peer, opts)
   }
   table.insert(bucket, 1, entry)
   self._entries[peer_id] = entry
+
+  log.debug("routing table peer added", {
+    peer_id = peer_id,
+    bucket = bucket_index,
+    size = self:size(),
+    evicted_peer_id = evicted,
+  })
 
   return true, evicted
 end
@@ -254,6 +278,11 @@ function RoutingTable:remove_peer(peer)
 
   remove_from_list(self._buckets[existing.bucket], existing)
   self._entries[peer_id] = nil
+  log.debug("routing table peer removed", {
+    peer_id = peer_id,
+    bucket = existing.bucket,
+    size = self:size(),
+  })
   return true
 end
 

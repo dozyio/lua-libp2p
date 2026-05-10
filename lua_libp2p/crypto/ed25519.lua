@@ -38,10 +38,11 @@ end
 
 local function expect_len(name, value, expected)
   if #value ~= expected then
-    return nil, error_mod.new("input", string.format("%s must be %d bytes", name, expected), {
-      actual = #value,
-      expected = expected,
-    })
+    return nil,
+      error_mod.new("input", string.format("%s must be %d bytes", name, expected), {
+        actual = #value,
+        expected = expected,
+      })
   end
   return true
 end

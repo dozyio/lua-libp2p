@@ -10,4 +10,12 @@ function M.copy_list(values)
   return out
 end
 
+function M.copy_table(values)
+  local out = {}
+  for key, value in pairs(values or {}) do
+    out[key] = value
+  end
+  return out
+end
+
 return M

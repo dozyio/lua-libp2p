@@ -122,8 +122,10 @@ function Service:_eligible_addrs()
           goto continue_addr
         end
       end
-      if multiaddr.is_private_addr("/" .. parsed.ip_proto .. "/" .. parsed.ip .. "/" .. parsed.protocol .. "/" .. parsed.port)
-        and not is_loopback_ip(parsed.ip)
+      if
+        multiaddr.is_private_addr(
+          "/" .. parsed.ip_proto .. "/" .. parsed.ip .. "/" .. parsed.protocol .. "/" .. parsed.port
+        ) and not is_loopback_ip(parsed.ip)
       then
         addrs[#addrs + 1] = parsed
       end
@@ -160,13 +162,18 @@ function Service:map_ip_addresses()
     return nil, ip_err
   end
   if multiaddr.is_private_addr("/ip4/" .. external_ip .. "/tcp/1") then
-    local err = error_mod.new("state", "UPnP external address is private; likely double NAT", { external_ip = external_ip })
+    local err =
+      error_mod.new("state", "UPnP external address is private; likely double NAT", { external_ip = external_ip })
     self.last_error = err
     log.debug("upnp nat mapping refresh failed", {
       reason = "private_external_ip",
       external_ip = external_ip,
     })
-    emit_event(self.host, "upnp_nat:mapping:failed", { external_ip = external_ip, error = err, error_message = tostring(err) })
+    emit_event(
+      self.host,
+      "upnp_nat:mapping:failed",
+      { external_ip = external_ip, error = err, error_message = tostring(err) }
+    )
     return nil, err
   end
 
@@ -196,23 +203,19 @@ function Service:map_ip_addresses()
         client:delete_port_mapping(addr.protocol, requested_external_port)
       end)
     end
-    local mapping, map_err = client:add_port_mapping(
-      addr.protocol,
-      addr.port,
-      requested_external_port,
-      addr.ip,
-      self.ttl,
-      self.description
-    )
+    local mapping, map_err =
+      client:add_port_mapping(addr.protocol, addr.port, requested_external_port, addr.ip, self.ttl, self.description)
     if mapping then
       local ext_port = mapping.external_port or requested_external_port
       local actual
       if type(client.get_specific_port_mapping) == "function" then
         actual = client:get_specific_port_mapping(addr.protocol, ext_port)
       end
-      if actual
-          and actual.internal_client ~= ""
-          and (actual.internal_client ~= addr.ip or actual.internal_port ~= addr.port) then
+      if
+        actual
+        and actual.internal_client ~= ""
+        and (actual.internal_client ~= addr.ip or actual.internal_port ~= addr.port)
+      then
         local mismatch_err = error_mod.new("state", "UPnP mapping points at a different internal address", {
           expected_internal_client = addr.ip,
           expected_internal_port = addr.port,
@@ -256,7 +259,8 @@ function Service:map_ip_addresses()
       end
       local mapping_key = addr.protocol .. ":" .. tostring(addr.port)
       local previous = self.mappings[mapping_key]
-      if previous
+      if
+        previous
         and previous.external_addr
         and previous.external_addr ~= ext_addr
         and self.host
@@ -343,7 +347,9 @@ function Service:stop()
   log.debug("upnp nat service stopped", {
     mappings = (function()
       local n = 0
-      for _ in pairs(self.mappings) do n = n + 1 end
+      for _ in pairs(self.mappings) do
+        n = n + 1
+      end
       return n
     end)(),
   })

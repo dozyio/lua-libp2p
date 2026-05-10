@@ -24,6 +24,15 @@ local function sleep_seconds(seconds)
   end
 end
 
+local function debug_perf_add(host, key, elapsed_seconds)
+  local perf = type(host) == "table" and rawget(host, "_debug_perf") or nil
+  if type(perf) ~= "table" then
+    return
+  end
+  perf[key .. "_calls"] = (perf[key .. "_calls"] or 0) + 1
+  perf[key .. "_ms"] = (perf[key .. "_ms"] or 0) + (elapsed_seconds * 1000)
+end
+
 local function map_size(map)
   local n = 0
   for _ in pairs(map or {}) do
@@ -199,7 +208,7 @@ function M.tick(host)
   end
 
   if #host._pending_inbound > 0 then
-      ok, err = M.poll_once(host, 0)
+    ok, err = M.poll_once(host, 0)
     if not ok then
       host:_set_runtime_error("luv", err)
       return nil, err
@@ -229,7 +238,7 @@ function M.tick(host)
   end
 
   if map_size(host._luv_ready) > 0 then
-      ok, err = M.poll_once(host, 0)
+    ok, err = M.poll_once(host, 0)
     if not ok then
       host:_set_runtime_error("luv", err)
       return nil, err
@@ -254,7 +263,13 @@ function M.poll_once(host, timeout)
     return nil, error_mod.new("input", "host table is required")
   end
 
+  local perf = rawget(host, "_debug_perf")
+  local phase_started = perf and now_seconds() or nil
   local sync_ok, sync_err = M.sync_watchers(host)
+  if phase_started then
+    debug_perf_add(host, "poll_sync_watchers", now_seconds() - phase_started)
+    phase_started = now_seconds()
+  end
   if not sync_ok then
     return nil, sync_err
   end
@@ -276,10 +291,18 @@ function M.poll_once(host, timeout)
     end
     sleep_seconds(math.min(0.001, math.max(0, deadline - now_seconds())))
   until false
+  if phase_started then
+    debug_perf_add(host, "poll_uv_wait", now_seconds() - phase_started)
+    phase_started = now_seconds()
+  end
 
   local ready_map = host._luv_ready
   host._luv_ready = {}
-  return host:_process_runtime_events(timeout, ready_map)
+  local ok, err = host:_process_runtime_events(timeout, ready_map)
+  if phase_started then
+    debug_perf_add(host, "poll_process_events", now_seconds() - phase_started)
+  end
+  return ok, err
 end
 
 function M.close_watchers(host)
@@ -382,10 +405,11 @@ function M.sync_watchers(host)
           end
         end)
         if not ok then
-          return nil, error_mod.new("io", "failed to register luv readable watcher", {
-            kind = item.kind,
-            cause = unwatch_or_err,
-          })
+          return nil,
+            error_mod.new("io", "failed to register luv readable watcher", {
+              kind = item.kind,
+              cause = unwatch_or_err,
+            })
         end
         if type(unwatch_or_err) ~= "function" then
           goto continue_targets
@@ -404,18 +428,22 @@ function M.sync_watchers(host)
 
         local poll_handle, poll_err = uv.new_poll(fd)
         if not poll_handle then
-          return nil, error_mod.new("io", "failed to create luv poll handle", {
-            kind = item.kind,
-            cause = poll_err,
-          })
+          return nil,
+            error_mod.new("io", "failed to create luv poll handle", {
+              kind = item.kind,
+              cause = poll_err,
+            })
         end
 
         local ok, start_err = poll_handle:start(item.events or "r", function(err)
           if err then
-            host:_set_runtime_error("luv", error_mod.new("io", "luv poll callback error", {
-              kind = item.kind,
-              cause = err,
-            }))
+            host:_set_runtime_error(
+              "luv",
+              error_mod.new("io", "luv poll callback error", {
+                kind = item.kind,
+                cause = err,
+              })
+            )
             return
           end
           host._luv_ready[target] = true
@@ -436,10 +464,11 @@ function M.sync_watchers(host)
           pcall(function()
             poll_handle:close()
           end)
-          return nil, error_mod.new("io", "failed to start luv poll handle", {
-            kind = item.kind,
-            cause = start_err,
-          })
+          return nil,
+            error_mod.new("io", "failed to start luv poll handle", {
+              kind = item.kind,
+              cause = start_err,
+            })
         end
 
         host._luv_watchers[target] = {

@@ -44,7 +44,12 @@ local function run()
     return nil, "expected relay addr"
   end
   local relay_meta = am:get_reachability("/ip4/198.51.100.1/tcp/4001/p2p/relay/p2p-circuit")
-  if not relay_meta or relay_meta.type ~= "transport" or relay_meta.verified ~= true or relay_meta.status ~= "public" then
+  if
+    not relay_meta
+    or relay_meta.type ~= "transport"
+    or relay_meta.verified ~= true
+    or relay_meta.status ~= "public"
+  then
     return nil, "relay addr should be marked as verified transport addr"
   end
 
@@ -88,7 +93,12 @@ local function run()
     return nil, "expected public mapping verification"
   end
   local mapped_meta = am:get_reachability(mapped)
-  if not mapped_meta or mapped_meta.verified ~= true or mapped_meta.status ~= "public" or mapped_meta.source ~= "autonat_v2" then
+  if
+    not mapped_meta
+    or mapped_meta.verified ~= true
+    or mapped_meta.status ~= "public"
+    or mapped_meta.source ~= "autonat_v2"
+  then
     return nil, "verified public mapping should store AutoNAT metadata"
   end
   advertised = am:get_advertise_addrs()
@@ -103,8 +113,36 @@ local function run()
     source = "upnp_nat",
   })
   mapped_meta = am:get_reachability(mapped)
-  if not mapped_meta or mapped_meta.verified ~= true or mapped_meta.status ~= "public" or mapped_meta.source ~= "autonat_v2" then
+  if
+    not mapped_meta
+    or mapped_meta.verified ~= true
+    or mapped_meta.status ~= "public"
+    or mapped_meta.source ~= "autonat_v2"
+  then
     return nil, "unverified UPnP refresh should not downgrade verified mapping"
+  end
+
+  local announced_wildcard = address_manager.new({
+    listen_addrs = {
+      "/ip4/0.0.0.0/tcp/4001",
+      "/ip6/::/tcp/4001",
+    },
+    announce_addrs = {
+      "/ip4/203.0.113.10/tcp/4001",
+      "/ip6/2001:db8::10/tcp/4001",
+    },
+  })
+  announced_wildcard:set_listen_addrs({
+    "/ip4/0.0.0.0/tcp/4001",
+    "/ip6/::/tcp/4001",
+  })
+  advertised = announced_wildcard:get_advertise_addrs()
+  if
+    #advertised ~= 2
+    or advertised[1] ~= "/ip4/203.0.113.10/tcp/4001"
+    or advertised[2] ~= "/ip6/2001:db8::10/tcp/4001"
+  then
+    return nil, "explicit announce addrs should stay stable across wildcard listen recompute"
   end
 
   return true

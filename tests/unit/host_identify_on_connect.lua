@@ -66,11 +66,22 @@ local function run()
       return nil, nil, nil, nil, "unexpected identify protocol selection"
     end
     local stream = new_buffer_conn(payload)
-    return stream, identify.ID, { close = function() return true end }, { remote_peer_id = "peer-a" }
+    return stream,
+      identify.ID,
+      {
+        close = function()
+          return true
+        end,
+      },
+      { remote_peer_id = "peer-a" }
   end
 
   local sub = assert(host:subscribe("peer_identified"))
-  local entry, register_err = host:_register_connection({ close = function() return true end }, {
+  local entry, register_err = host:_register_connection({
+    close = function()
+      return true
+    end,
+  }, {
     remote_peer_id = "peer-a",
   })
   if not entry then

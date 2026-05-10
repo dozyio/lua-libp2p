@@ -195,10 +195,11 @@ function M.handle(conn, opts)
     return nil, error_mod.new("input", "perf write_block_size must be positive")
   end
   if write_block_size > M.MAX_WRITE_BLOCK_SIZE then
-    return nil, error_mod.new("input", "perf write_block_size too large", {
-      max = M.MAX_WRITE_BLOCK_SIZE,
-      got = write_block_size,
-    })
+    return nil,
+      error_mod.new("input", "perf write_block_size too large", {
+        max = M.MAX_WRITE_BLOCK_SIZE,
+        got = write_block_size,
+      })
   end
 
   local requested_bytes_be, read_err = conn:read(8)
@@ -253,10 +254,11 @@ function M.measure_once(conn, send_bytes, recv_bytes, opts)
     return nil, error_mod.new("input", "perf write_block_size must be positive")
   end
   if write_block_size > M.MAX_WRITE_BLOCK_SIZE then
-    return nil, error_mod.new("input", "perf write_block_size too large", {
-      max = M.MAX_WRITE_BLOCK_SIZE,
-      got = write_block_size,
-    })
+    return nil,
+      error_mod.new("input", "perf write_block_size too large", {
+        max = M.MAX_WRITE_BLOCK_SIZE,
+        got = write_block_size,
+      })
   end
   if type(send_bytes) ~= "number" or send_bytes < 0 or send_bytes % 1 ~= 0 then
     return nil, error_mod.new("input", "perf send_bytes must be a non-negative integer")

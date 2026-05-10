@@ -19,14 +19,16 @@ function M.validate_provider_key(key, context)
     return nil, error_mod.new("input", (context or "provider") .. " key must be non-empty multihash bytes")
   end
   if #key > M.MAX_PROVIDER_KEY_BYTES then
-    return nil, error_mod.new("input", (context or "provider") .. " key exceeds 80 byte limit", {
-      limit = M.MAX_PROVIDER_KEY_BYTES,
-      actual = #key,
-    })
+    return nil,
+      error_mod.new("input", (context or "provider") .. " key exceeds 80 byte limit", {
+        limit = M.MAX_PROVIDER_KEY_BYTES,
+        actual = #key,
+      })
   end
   local decoded, decode_err = multihash.decode(key)
   if not decoded then
-    return nil, error_mod.new("input", (context or "provider") .. " key must be a valid multihash", { cause = decode_err })
+    return nil,
+      error_mod.new("input", (context or "provider") .. " key must be a valid multihash", { cause = decode_err })
   end
   return true
 end
@@ -94,7 +96,9 @@ end
 function M.handle_add_provider(dht, req)
   local key = req.key
   local valid_key, key_err = M.validate_provider_key(key, "ADD_PROVIDER")
-  if not valid_key then return nil, key_err end
+  if not valid_key then
+    return nil, key_err
+  end
   if dht.mode ~= "server" then
     return nil, error_mod.new("unsupported", "client-mode dht does not accept provider records")
   end
@@ -114,17 +118,16 @@ function M.handle_add_provider(dht, req)
     end
   end
 
-  local closer, closer_err = dht:_closest_peer_records(key, dht.k)
-  if not closer then
-    return nil, closer_err
-  end
+  -- ADD_PROVIDER has no response payload; avoid building unused closer peers.
   return nil
 end
 
 function M.handle_get_providers(dht, req)
   local key = req.key
   local valid_key, key_err = M.validate_provider_key(key, "GET_PROVIDERS")
-  if not valid_key then return nil, key_err end
+  if not valid_key then
+    return nil, key_err
+  end
   local local_providers, providers_err = dht:get_local_providers(key, { limit = dht.k })
   if not local_providers then
     return nil, providers_err
@@ -137,12 +140,19 @@ function M.handle_get_providers(dht, req)
   if not closer then
     return nil, closer_err
   end
-  return { type = protocol.MESSAGE_TYPE.GET_PROVIDERS, key = key, provider_peers = provider_peers, closer_peers = closer }
+  return {
+    type = protocol.MESSAGE_TYPE.GET_PROVIDERS,
+    key = key,
+    provider_peers = provider_peers,
+    closer_peers = closer,
+  }
 end
 
 function M.add_provider(dht, peer_or_addr, key, provider_info, opts)
   local valid_key, key_err = M.validate_provider_key(key, "ADD_PROVIDER")
-  if not valid_key then return nil, key_err end
+  if not valid_key then
+    return nil, key_err
+  end
   local rpc_opts = {}
   for k, v in pairs(opts or {}) do
     rpc_opts[k] = v
@@ -162,7 +172,9 @@ end
 
 function M.get_providers(dht, peer_or_addr, key, opts)
   local valid_key, key_err = M.validate_provider_key(key, "GET_PROVIDERS")
-  if not valid_key then return nil, key_err end
+  if not valid_key then
+    return nil, key_err
+  end
   local response, err = dht:_rpc(peer_or_addr, {
     type = protocol.MESSAGE_TYPE.GET_PROVIDERS,
     key = key,
@@ -180,10 +192,11 @@ local function seed_candidates_from_routing_table(dht, key, count)
   for _, entry in ipairs(nearest) do
     local addrs = {}
     if dht.host and dht.host.peerstore then
-      local filtered, filtered_err = dht:_dialable_tcp_addrs(dht:_filter_addrs(dht.host.peerstore:get_addrs(entry.peer_id), {
-        peer_id = entry.peer_id,
-        purpose = "client_query_seed",
-      }))
+      local filtered, filtered_err =
+        dht:_dialable_tcp_addrs(dht:_filter_addrs(dht.host.peerstore:get_addrs(entry.peer_id), {
+          peer_id = entry.peer_id,
+          purpose = "client_query_seed",
+        }))
       if not filtered then
         return nil, filtered_err
       end
@@ -199,7 +212,9 @@ end
 function M.find_providers(dht, key, opts)
   local options = opts or {}
   local valid_key, key_err = M.validate_provider_key(key, "find_providers")
-  if not valid_key then return nil, key_err end
+  if not valid_key then
+    return nil, key_err
+  end
   log.debug("kad dht find providers started", {
     key_size = #key,
     limit = options.limit or 1,
@@ -207,6 +222,7 @@ function M.find_providers(dht, key, opts)
   local providers = {}
   local seed_peers = options.peers
   if not seed_peers then
+    local lookup_err
     seed_peers, lookup_err = seed_candidates_from_routing_table(dht, key, dht.k)
     if not seed_peers then
       return nil, lookup_err
@@ -216,11 +232,19 @@ function M.find_providers(dht, key, opts)
     local query_options = options
     if ctx then
       query_options = {}
-      for k, v in pairs(options) do query_options[k] = v end
+      for k, v in pairs(options) do
+        query_options[k] = v
+      end
       query_options.ctx = ctx
     end
-    local result, err = dht:_get_providers(peer.addr or (peer.addrs and peer.addrs[1]) or { peer_id = peer.peer_id, addrs = peer.addrs }, key, query_options)
-    if not result then return nil, err end
+    local result, err = dht:_get_providers(
+      peer.addr or (peer.addrs and peer.addrs[1]) or { peer_id = peer.peer_id, addrs = peer.addrs },
+      key,
+      query_options
+    )
+    if not result then
+      return nil, err
+    end
     for _, provider in ipairs(result.providers or {}) do
       providers[#providers + 1] = provider
       log.debug("kad dht provider found", {
@@ -243,13 +267,21 @@ function M.find_providers(dht, key, opts)
     queried = lookup.queried,
     termination = lookup.termination,
   })
-  return { providers = providers, provider_peers = providers, closer_peers = lookup.closest_peers, lookup = lookup, errors = lookup.errors }
+  return {
+    providers = providers,
+    provider_peers = providers,
+    closer_peers = lookup.closest_peers,
+    lookup = lookup,
+    errors = lookup.errors,
+  }
 end
 
 function M.provide(dht, key, opts)
   local options = opts or {}
   local valid_key, key_err = M.validate_provider_key(key, "provide")
-  if not valid_key then return nil, key_err end
+  if not valid_key then
+    return nil, key_err
+  end
   local provider_info, provider_err = dht:_local_provider_info(options.provider or options)
   if not provider_info then
     return nil, provider_err
@@ -282,12 +314,23 @@ function M.provide(dht, key, opts)
       query_timeout_seconds = options.query_timeout_seconds,
       max_query_rounds = options.max_query_rounds,
     })
-    if not closest then return nil, closest_lookup_or_err end
+    if not closest then
+      return nil, closest_lookup_or_err
+    end
     peers = closest
     lookup = closest_lookup_or_err
   end
 
-  local report = { key = key, provider = provider_info, lookup = lookup, attempted = 0, succeeded = 0, failed = 0, peers = {}, errors = {} }
+  local report = {
+    key = key,
+    provider = provider_info,
+    lookup = lookup,
+    attempted = 0,
+    succeeded = 0,
+    failed = 0,
+    peers = {},
+    errors = {},
+  }
   local limit = options.count or dht.k
   log.debug("kad dht provide announcing", {
     key_size = #key,
@@ -295,7 +338,9 @@ function M.provide(dht, key, opts)
     limit = limit,
   })
   for _, peer in ipairs(peers or {}) do
-    if limit and report.attempted >= limit then break end
+    if limit and report.attempted >= limit then
+      break
+    end
     local target = peer.addr or (peer.addrs and peer.addrs[1]) or { peer_id = peer.peer_id, addrs = peer.addrs }
     report.attempted = report.attempted + 1
     local result, err = dht:_add_provider(target, key, provider_info, options.add_provider_opts or options)
@@ -314,7 +359,9 @@ function M.provide(dht, key, opts)
         peer_id = peer.peer_id or target,
         cause = tostring(err),
       })
-      if options.fail_fast then return nil, err end
+      if options.fail_fast then
+        return nil, err
+      end
     end
   end
   log.debug("kad dht provide completed", {

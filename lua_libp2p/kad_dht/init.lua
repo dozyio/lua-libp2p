@@ -20,6 +20,9 @@ local reprovider = require("lua_libp2p.kad_dht.reprovider")
 local values = require("lua_libp2p.kad_dht.values")
 local protocol = require("lua_libp2p.kad_dht.protocol")
 local log = require("lua_libp2p.log").subsystem("kad_dht")
+local table_utils = require("lua_libp2p.util.tables")
+
+local copy_list = table_utils.copy_list
 
 local M = {}
 M.provides = { "peer_routing", "content_routing", "value_routing", "kad_dht" }
@@ -33,6 +36,8 @@ M.DEFAULT_MAX_CONCURRENT_QUERIES = 32
 M.DEFAULT_ADDRESS_FILTER = "public"
 M.DEFAULT_MAINTENANCE_ENABLED = maintenance.DEFAULT_ENABLED
 M.DEFAULT_MAINTENANCE_INTERVAL_SECONDS = maintenance.DEFAULT_INTERVAL_SECONDS
+M.DEFAULT_MAINTENANCE_STARTUP_RETRY_SECONDS = maintenance.DEFAULT_STARTUP_RETRY_SECONDS
+M.DEFAULT_MAINTENANCE_STARTUP_RETRY_MAX_SECONDS = maintenance.DEFAULT_STARTUP_RETRY_MAX_SECONDS
 M.DEFAULT_MAINTENANCE_MIN_RECHECK_SECONDS = maintenance.DEFAULT_MIN_RECHECK_SECONDS
 M.DEFAULT_MAINTENANCE_MAX_CHECKS = maintenance.DEFAULT_MAX_CHECKS
 M.DEFAULT_MAINTENANCE_WALK_EVERY = maintenance.DEFAULT_WALK_EVERY
@@ -47,9 +52,53 @@ M.DEFAULT_REPROVIDER_JITTER_SECONDS = reprovider.DEFAULT_JITTER_SECONDS
 M.DEFAULT_REPROVIDER_BATCH_SIZE = reprovider.DEFAULT_BATCH_SIZE
 M.DEFAULT_REPROVIDER_MAX_PARALLEL = reprovider.DEFAULT_MAX_PARALLEL
 M.DEFAULT_REPROVIDER_TIMEOUT = reprovider.DEFAULT_TIMEOUT
+M.DEFAULT_PEER_ID_BYTES_CACHE_SIZE = 4096
+M.DEFAULT_FILTERED_ADDR_CACHE_SIZE = 4096
+M.DEFAULT_FILTERED_ADDR_CACHE_TTL_SECONDS = 2
 M.MODE_CLIENT = "client"
 M.MODE_SERVER = "server"
 M.MODE_AUTO = "auto"
+
+local function now_seconds()
+  local ok_socket, socket = pcall(require, "socket")
+  if ok_socket and type(socket.gettime) == "function" then
+    return socket.gettime()
+  end
+  return os.time()
+end
+
+local function debug_perf(dht)
+  return dht and dht.host and rawget(dht.host, "_debug_perf") or nil
+end
+
+local function debug_perf_add(dht, key, elapsed_seconds)
+  local perf = debug_perf(dht)
+  if type(perf) ~= "table" then
+    return
+  end
+  perf[key .. "_calls"] = (perf[key .. "_calls"] or 0) + 1
+  perf[key .. "_ms"] = (perf[key .. "_ms"] or 0) + (elapsed_seconds * 1000)
+end
+
+local function debug_perf_add_group(dht, group_key, item_key, elapsed_seconds)
+  local perf = debug_perf(dht)
+  if type(perf) ~= "table" then
+    return
+  end
+  local group = perf[group_key]
+  if type(group) ~= "table" then
+    group = {}
+    perf[group_key] = group
+  end
+  local key = tostring(item_key or "unknown")
+  local item = group[key]
+  if type(item) ~= "table" then
+    item = { calls = 0, ms = 0 }
+    group[key] = item
+  end
+  item.calls = (item.calls or 0) + 1
+  item.ms = (item.ms or 0) + (elapsed_seconds * 1000)
+end
 
 --- Create default bootstrap peer discovery source.
 -- `opts.bootstrappers` (`table<string>`) overrides bootstrap list.
@@ -69,7 +118,8 @@ end
 
 local function has_public_direct_addr(addrs)
   for _, addr in ipairs(addrs or {}) do
-    if type(addr) == "string"
+    if
+      type(addr) == "string"
       and addr ~= ""
       and not multiaddr.is_private_addr(addr)
       and not multiaddr.is_relay_addr(addr)
@@ -334,19 +384,21 @@ function DHT:_check_ip_group_diversity(peer_id, opts)
   end
   for group in pairs(wanted) do
     if max_global and max_global > 0 and (counts[group] or 0) >= max_global then
-      return nil, error_mod.new("filtered", "peer rejected by ip group diversity limit", {
-        peer_id = peer_id,
-        ip_group = group,
-        max_peers_per_ip_group = max_global,
-      })
+      return nil,
+        error_mod.new("filtered", "peer rejected by ip group diversity limit", {
+          peer_id = peer_id,
+          ip_group = group,
+          max_peers_per_ip_group = max_global,
+        })
     end
     if max_per_bucket and max_per_bucket > 0 and (bucket_counts[group] or 0) >= max_per_bucket then
-      return nil, error_mod.new("filtered", "peer rejected by bucket ip group diversity limit", {
-        peer_id = peer_id,
-        ip_group = group,
-        bucket = candidate_bucket,
-        max_peers_per_ip_group_per_bucket = max_per_bucket,
-      })
+      return nil,
+        error_mod.new("filtered", "peer rejected by bucket ip group diversity limit", {
+          peer_id = peer_id,
+          ip_group = group,
+          bucket = candidate_bucket,
+          max_peers_per_ip_group_per_bucket = max_per_bucket,
+        })
     end
   end
   return true
@@ -360,13 +412,19 @@ end
 -- @treturn[opt] table err
 function DHT:add_peer(peer_id, opts)
   local options = opts or {}
-  if options.skip_kad_protocol_filter ~= true and self.host and self.host.peerstore and type(self.host.peerstore.get_protocols) == "function" then
+  if
+    options.skip_kad_protocol_filter ~= true
+    and self.host
+    and self.host.peerstore
+    and type(self.host.peerstore.get_protocols) == "function"
+  then
     local protocols = self.host.peerstore:get_protocols(peer_id)
     if type(protocols) == "table" and #protocols > 0 and not self:_peerstore_supports_kad(peer_id) then
-      return nil, error_mod.new("filtered", "peer rejected because it does not support kad-dht", {
-        peer_id = peer_id,
-        protocol_id = self.protocol_id,
-      })
+      return nil,
+        error_mod.new("filtered", "peer rejected because it does not support kad-dht", {
+          peer_id = peer_id,
+          protocol_id = self.protocol_id,
+        })
     end
   end
   local diversity_ok, diversity_err = self:_check_ip_group_diversity(peer_id, options)
@@ -417,6 +475,7 @@ function DHT:add_peer(peer_id, opts)
       return nil, error_mod.new("filtered", "peer rejected by diversity filter", { peer_id = peer_id })
     end
   end
+  local had_routing_peers = #(self.routing_table:all_peers() or {}) > 0
   local added, err = self.routing_table:try_add_peer(peer_id, options)
   if added and type(peer_id) == "string" and peer_id ~= "" then
     local now = os.time()
@@ -427,6 +486,9 @@ function DHT:add_peer(peer_id, opts)
     log.debug("kad dht peer added", {
       peer_id = peer_id,
     })
+    if not had_routing_peers then
+      maintenance.trigger(self)
+    end
   elseif err then
     log.debug("kad dht peer rejected", {
       peer_id = tostring(peer_id),
@@ -575,7 +637,9 @@ end
 -- @treturn[opt] table err
 function DHT:add_provider(key, peer_info, opts)
   local valid_key, key_err = provider_routing.validate_provider_key(key, "provider")
-  if not valid_key then return nil, key_err end
+  if not valid_key then
+    return nil, key_err
+  end
   return self.provider_store:add(key, peer_info, opts)
 end
 
@@ -586,7 +650,9 @@ end
 -- @treturn[opt] table err
 function DHT:get_local_providers(key, opts)
   local valid_key, key_err = provider_routing.validate_provider_key(key, "provider")
-  if not valid_key then return nil, key_err end
+  if not valid_key then
+    return nil, key_err
+  end
   return self.provider_store:get(key, opts)
 end
 
@@ -625,10 +691,16 @@ end
 -- @treturn[opt] table err
 function DHT:put_local_record(key, record, opts)
   local validated, validate_err = self:_validate_record(key, record)
-  if not validated then return nil, validate_err end
+  if not validated then
+    return nil, validate_err
+  end
   local selected, select_err = self:_select_record(key, record)
-  if selected == nil then return nil, select_err end
-  if selected == false then return true end
+  if selected == nil then
+    return nil, select_err
+  end
+  if selected == false then
+    return true
+  end
   return self.record_store:put(key, record, opts)
 end
 
@@ -705,10 +777,11 @@ local function normalize_address_filter(filter)
   if filter == "public" or filter == "private" or filter == "all" then
     return filter
   end
-  return nil, error_mod.new("input", "unsupported kad-dht address filter", {
-    filter = filter,
-    supported = { "public", "private", "all" },
-  })
+  return nil,
+    error_mod.new("input", "unsupported kad-dht address filter", {
+      filter = filter,
+      supported = { "public", "private", "all" },
+    })
 end
 
 function DHT:_addr_allowed(addr, ctx)
@@ -769,16 +842,68 @@ function DHT:_peer_record(peer_id, purpose)
   if type(peer_id) ~= "string" or peer_id == "" then
     return nil
   end
-  local id_bytes, id_err = protocol.peer_bytes(peer_id)
+  local phase_started = debug_perf(self) and now_seconds() or nil
+  local id_bytes = self._peer_id_bytes_cache and self._peer_id_bytes_cache[peer_id] or nil
+  local id_err = nil
+  if not id_bytes then
+    id_bytes, id_err = protocol.peer_bytes(peer_id)
+    if id_bytes and self._peer_id_bytes_cache then
+      self._peer_id_bytes_cache[peer_id] = id_bytes
+      self._peer_id_bytes_cache_count = (self._peer_id_bytes_cache_count or 0) + 1
+      if self._peer_id_bytes_cache_count > (self._peer_id_bytes_cache_size or M.DEFAULT_PEER_ID_BYTES_CACHE_SIZE) then
+        self._peer_id_bytes_cache = { [peer_id] = id_bytes }
+        self._peer_id_bytes_cache_count = 1
+      end
+    end
+  end
+  if phase_started then
+    debug_perf_add(self, "kad_peer_record_peer_bytes", now_seconds() - phase_started)
+    phase_started = now_seconds()
+  end
   if not id_bytes then
     return nil, id_err
   end
   local addrs = {}
   if self.host and self.host.peerstore and type(self.host.peerstore.get_addrs) == "function" then
-    addrs = self:_filter_addrs(self.host.peerstore:get_addrs(peer_id), {
-      peer_id = peer_id,
-      purpose = purpose or "response",
-    })
+    local cache_key = tostring(purpose or "response") .. "\0" .. peer_id
+    local cache = self._filtered_addr_cache
+    local cached = cache and cache[cache_key] or nil
+    local now = now_seconds()
+    if cached and cached.expires_at and cached.expires_at > now then
+      addrs = copy_list(cached.addrs)
+      if phase_started then
+        debug_perf_add(self, "kad_peer_record_addr_cache_hit", now_seconds() - phase_started)
+      end
+    else
+      local raw_addrs = self.host.peerstore:get_addrs(peer_id)
+      if phase_started then
+        debug_perf_add(self, "kad_peer_record_get_addrs", now_seconds() - phase_started)
+        phase_started = now_seconds()
+      end
+      addrs = self:_filter_addrs(raw_addrs, {
+        peer_id = peer_id,
+        purpose = purpose or "response",
+      })
+      if phase_started then
+        debug_perf_add(self, "kad_peer_record_filter_addrs", now_seconds() - phase_started)
+      end
+      if cache and self._filtered_addr_cache_ttl_seconds and self._filtered_addr_cache_ttl_seconds > 0 then
+        cache[cache_key] = {
+          addrs = copy_list(addrs),
+          expires_at = now + self._filtered_addr_cache_ttl_seconds,
+        }
+        self._filtered_addr_cache_count = (self._filtered_addr_cache_count or 0) + 1
+        if self._filtered_addr_cache_count > (self._filtered_addr_cache_size or M.DEFAULT_FILTERED_ADDR_CACHE_SIZE) then
+          self._filtered_addr_cache = {
+            [cache_key] = {
+              addrs = copy_list(addrs),
+              expires_at = now + self._filtered_addr_cache_ttl_seconds,
+            },
+          }
+          self._filtered_addr_cache_count = 1
+        end
+      end
+    end
   end
   return {
     id = id_bytes,
@@ -790,7 +915,12 @@ function DHT:_closest_peer_records(target_key, count, opts)
   local options = opts or {}
   local exclude = options.exclude or {}
   local want = tonumber(count) or self.k
+  local phase_started = debug_perf(self) and now_seconds() or nil
   local nearest, nearest_err = self:find_closest_peers(target_key, want + 2)
+  if phase_started then
+    debug_perf_add(self, "kad_closest_lookup", now_seconds() - phase_started)
+    phase_started = now_seconds()
+  end
   if not nearest then
     return nil, nearest_err
   end
@@ -801,7 +931,11 @@ function DHT:_closest_peer_records(target_key, count, opts)
     if exclude[peer_id] or seen[peer_id] then
       return true
     end
+    local record_started = debug_perf(self) and now_seconds() or nil
     local record, record_err = self:_peer_record(peer_id, purpose)
+    if record_started then
+      debug_perf_add(self, "kad_closest_peer_record", now_seconds() - record_started)
+    end
     if not record then
       return nil, record_err
     end
@@ -813,15 +947,28 @@ function DHT:_closest_peer_records(target_key, count, opts)
   end
 
   local target_peer_id = find_node_target_peer_id(target_key)
+  if phase_started then
+    debug_perf_add(self, "kad_closest_parse_target", now_seconds() - phase_started)
+    phase_started = now_seconds()
+  end
   if target_peer_id then
     local ok, err = add_peer_record(target_peer_id, "find_node_target", true)
-    if not ok then return nil, err end
+    if not ok then
+      return nil, err
+    end
   end
 
   for _, entry in ipairs(nearest) do
-    if #peers >= want then break end
+    if #peers >= want then
+      break
+    end
     local ok, err = add_peer_record(entry.peer_id, "response", false)
-    if not ok then return nil, err end
+    if not ok then
+      return nil, err
+    end
+  end
+  if phase_started then
+    debug_perf_add(self, "kad_closest_build", now_seconds() - phase_started)
   end
   return peers
 end
@@ -910,7 +1057,12 @@ local function message_type_name(message_type)
 end
 
 function DHT:_handle_rpc(stream, ctx)
+  local phase_started = debug_perf(self) and now_seconds() or nil
   local req, req_err = protocol.read(stream, { max_message_size = self.max_message_size })
+  if phase_started then
+    debug_perf_add(self, "kad_rpc_read", now_seconds() - phase_started)
+    phase_started = now_seconds()
+  end
   if not req then
     reset_stream(stream)
     return nil, req_err
@@ -941,6 +1093,12 @@ function DHT:_handle_rpc(stream, ctx)
     })
     return nil, error_mod.new("unsupported", "kad-dht message type is not supported", { type = req.type })
   end
+  if phase_started then
+    local dispatch_elapsed = now_seconds() - phase_started
+    debug_perf_add(self, "kad_rpc_dispatch", dispatch_elapsed)
+    debug_perf_add_group(self, "kad_rpc_dispatch_by_type", message_type_name(req.type), dispatch_elapsed)
+    phase_started = now_seconds()
+  end
   if not response then
     if response_err then
       reset_stream(stream)
@@ -957,6 +1115,9 @@ function DHT:_handle_rpc(stream, ctx)
         return nil, close_err
       end
     end
+    if phase_started then
+      debug_perf_add(self, "kad_rpc_close_write", now_seconds() - phase_started)
+    end
     log.debug("kad dht inbound rpc completed", {
       peer_id = ctx and (ctx.peer_id or (ctx.state and ctx.state.remote_peer_id)) or nil,
       message_type = message_type_name(req.type),
@@ -966,6 +1127,10 @@ function DHT:_handle_rpc(stream, ctx)
   end
 
   local wrote, write_err = protocol.write(stream, response, { max_message_size = self.max_message_size })
+  if phase_started then
+    debug_perf_add(self, "kad_rpc_write", now_seconds() - phase_started)
+    phase_started = now_seconds()
+  end
   if not wrote then
     log.debug("kad dht inbound rpc write failed", {
       peer_id = ctx and (ctx.peer_id or (ctx.state and ctx.state.remote_peer_id)) or nil,
@@ -980,6 +1145,9 @@ function DHT:_handle_rpc(stream, ctx)
     if not ok then
       return nil, close_err
     end
+  end
+  if phase_started then
+    debug_perf_add(self, "kad_rpc_close_write", now_seconds() - phase_started)
   end
 
   log.debug("kad dht inbound rpc completed", {
@@ -998,7 +1166,8 @@ end
 -- `opts.timeout`, `opts.ctx`, `opts.stream_opts`, `opts.max_message_size`.
 function DHT:_find_node(peer_or_addr, target_key, opts)
   opts = opts or {}
-  if not opts.ctx
+  if
+    not opts.ctx
     and not opts._internal_task_ctx
     and self.host
     and type(self.host.spawn_task) == "function"
@@ -1062,10 +1231,11 @@ function DHT:_find_node(peer_or_addr, target_key, opts)
   end
 
   if response.type ~= protocol.MESSAGE_TYPE.FIND_NODE then
-    return nil, error_mod.new("protocol", "unexpected kad-dht response type", {
-      expected = protocol.MESSAGE_TYPE.FIND_NODE,
-      got = response.type,
-    })
+    return nil,
+      error_mod.new("protocol", "unexpected kad-dht response type", {
+        expected = protocol.MESSAGE_TYPE.FIND_NODE,
+        got = response.type,
+      })
   end
 
   local out = {}
@@ -1118,7 +1288,8 @@ end
 -- `opts.timeout`, `opts.ctx`, `opts.stream_opts`, `opts.max_message_size`.
 function DHT:_rpc(peer_or_addr, request, expected_type, opts)
   opts = opts or {}
-  if not opts.ctx
+  if
+    not opts.ctx
     and not opts._internal_task_ctx
     and self.host
     and type(self.host.spawn_task) == "function"
@@ -1176,10 +1347,11 @@ function DHT:_rpc(peer_or_addr, request, expected_type, opts)
     return nil, response_err
   end
   if response.type ~= expected_type then
-    return nil, error_mod.new("protocol", "unexpected kad-dht response type", {
-      expected = expected_type,
-      got = response.type,
-    })
+    return nil,
+      error_mod.new("protocol", "unexpected kad-dht response type", {
+        expected = expected_type,
+        got = response.type,
+      })
   end
   local target_peer_id = rpc_target_peer_id(peer_or_addr)
   if target_peer_id then
@@ -1215,10 +1387,11 @@ local function seed_candidates_from_routing_table(self, key, count)
   for _, entry in ipairs(nearest) do
     local addrs = {}
     if self.host and self.host.peerstore then
-      local filtered, filtered_err = self:_dialable_tcp_addrs(self:_filter_addrs(self.host.peerstore:get_addrs(entry.peer_id), {
-        peer_id = entry.peer_id,
-        purpose = "client_query_seed",
-      }))
+      local filtered, filtered_err =
+        self:_dialable_tcp_addrs(self:_filter_addrs(self.host.peerstore:get_addrs(entry.peer_id), {
+          peer_id = entry.peer_id,
+          purpose = "client_query_seed",
+        }))
       if not filtered then
         return nil, filtered_err
       end
@@ -1258,6 +1431,7 @@ function DHT:_get_closest_peers(key, opts)
   local options = opts or {}
   local seed_peers = options.peers
   if not seed_peers then
+    local lookup_err
     seed_peers, lookup_err = seed_candidates_from_routing_table(self, key, self.k)
     if not seed_peers then
       return nil, lookup_err
@@ -1272,7 +1446,8 @@ function DHT:_get_closest_peers(key, opts)
       end
       query_options.ctx = ctx
     end
-    local target = peer.peer_id and { peer_id = peer.peer_id, addrs = peer.addrs } or (peer.addr or (peer.addrs and peer.addrs[1]))
+    local target = peer.peer_id and { peer_id = peer.peer_id, addrs = peer.addrs }
+      or (peer.addr or (peer.addrs and peer.addrs[1]))
     local target_bytes, key_err = protocol.peer_bytes(key)
     if not target_bytes then
       return nil, key_err
@@ -1637,7 +1812,8 @@ end
 -- `opts.timeout`, `opts.ctx`, and `opts.stream_opts` tune identify query.
 function DHT:_supports_kad_protocol(peer_or_addr, opts)
   opts = opts or {}
-  if not opts.ctx
+  if
+    not opts.ctx
     and not opts._internal_task_ctx
     and self.host
     and type(self.host.spawn_task) == "function"
@@ -1750,8 +1926,11 @@ end
 -- `max_message_size`, and protocol-check tuning values.
 -- `mode="auto"` starts in client mode and switches to server mode when the
 -- host advertises a public direct address, matching js-libp2p DHT behavior.
--- `opts.maintenance_enabled` defaults to `false`; interval/check knobs use
+-- `opts.maintenance_enabled` defaults to `true`; interval/check knobs use
 -- `maintenance_*` names from module defaults.
+-- Maintenance eviction semantics follow go-libp2p-kad-dht: after the
+-- recheck grace window, one failed liveness/protocol maintenance probe evicts
+-- the peer.
 -- @tparam table host Host instance.
 -- @tparam[opt] table opts
 -- @treturn table|nil dht
@@ -1759,7 +1938,8 @@ end
 function M.new(host, opts)
   local options = opts or {}
 
-  local address_filter, address_filter_err = normalize_address_filter(options.address_filter or options.address_filter_mode)
+  local address_filter, address_filter_err =
+    normalize_address_filter(options.address_filter or options.address_filter_mode)
   if not address_filter then
     return nil, address_filter_err
   end
@@ -1780,7 +1960,8 @@ function M.new(host, opts)
   elseif max_peers_per_ip_group_per_bucket ~= nil then
     max_peers_per_ip_group_per_bucket = tonumber(max_peers_per_ip_group_per_bucket)
     if not max_peers_per_ip_group_per_bucket or max_peers_per_ip_group_per_bucket < 0 then
-      return nil, error_mod.new("input", "peer_diversity_max_peers_per_ip_group_per_bucket must be a non-negative number")
+      return nil,
+        error_mod.new("input", "peer_diversity_max_peers_per_ip_group_per_bucket must be a non-negative number")
     end
   end
 
@@ -1843,6 +2024,14 @@ function M.new(host, opts)
     end
   end
 
+  local mode = options.mode == "auto" and "client" or (options.mode or "client")
+  local maintenance_enabled
+  if options.maintenance_enabled == nil then
+    maintenance_enabled = M.DEFAULT_MAINTENANCE_ENABLED
+  else
+    maintenance_enabled = options.maintenance_enabled == true
+  end
+
   local self_obj = setmetatable({
     host = host,
     local_peer_id = local_peer_id,
@@ -1852,7 +2041,7 @@ function M.new(host, opts)
     disjoint_paths = options.disjoint_paths or M.DEFAULT_DISJOINT_PATHS,
     max_concurrent_queries = options.max_concurrent_queries or M.DEFAULT_MAX_CONCURRENT_QUERIES,
     max_message_size = options.max_message_size or protocol.MAX_MESSAGE_SIZE,
-    mode = options.mode == "auto" and "client" or (options.mode or "client"),
+    mode = mode,
     address_filter = address_filter,
     bootstrappers = options.bootstrappers,
     peer_discovery = options.peer_discovery,
@@ -1861,7 +2050,8 @@ function M.new(host, opts)
     peer_diversity_filter = options.peer_diversity_filter,
     peer_diversity_max_peers_per_ip_group = max_peers_per_ip_group,
     peer_diversity_max_peers_per_ip_group_per_bucket = max_peers_per_ip_group_per_bucket,
-    provider_addr_ttl_seconds = options.provider_addr_ttl_seconds == nil and M.DEFAULT_PROVIDER_ADDR_TTL_SECONDS or options.provider_addr_ttl_seconds,
+    provider_addr_ttl_seconds = options.provider_addr_ttl_seconds == nil and M.DEFAULT_PROVIDER_ADDR_TTL_SECONDS
+      or options.provider_addr_ttl_seconds,
     provider_store = provider_store,
     record_store = record_store,
     record_validator = options.record_validator,
@@ -1874,24 +2064,46 @@ function M.new(host, opts)
     _host_on_protocols_updated = nil,
     _host_on_self_peer_update = nil,
     _auto_server_mode = options.auto_server_mode == true or options.mode == "auto",
-    _maintenance_enabled = options.maintenance_enabled == true or M.DEFAULT_MAINTENANCE_ENABLED,
+    _maintenance_enabled = maintenance_enabled,
     _maintenance_interval_seconds = options.maintenance_interval_seconds or M.DEFAULT_MAINTENANCE_INTERVAL_SECONDS,
-    _maintenance_min_recheck_seconds = options.maintenance_min_recheck_seconds or M.DEFAULT_MAINTENANCE_MIN_RECHECK_SECONDS,
+    _maintenance_startup_retry_seconds = options.maintenance_startup_retry_seconds
+      or M.DEFAULT_MAINTENANCE_STARTUP_RETRY_SECONDS,
+    _maintenance_startup_retry_max_seconds = options.maintenance_startup_retry_max_seconds
+      or M.DEFAULT_MAINTENANCE_STARTUP_RETRY_MAX_SECONDS,
+    _maintenance_startup_retry_current_seconds = options.maintenance_startup_retry_seconds
+      or M.DEFAULT_MAINTENANCE_STARTUP_RETRY_SECONDS,
+    _maintenance_established = false,
+    _maintenance_running = false,
+    _maintenance_min_recheck_seconds = options.maintenance_min_recheck_seconds
+      or M.DEFAULT_MAINTENANCE_MIN_RECHECK_SECONDS,
     _maintenance_max_checks = options.maintenance_max_checks or M.DEFAULT_MAINTENANCE_MAX_CHECKS,
     _maintenance_walk_every = options.maintenance_walk_every or M.DEFAULT_MAINTENANCE_WALK_EVERY,
     _maintenance_walk_timeout = options.maintenance_walk_timeout or maintenance.DEFAULT_WALK_TIMEOUT,
-    _maintenance_protocol_check_timeout = options.maintenance_protocol_check_timeout or maintenance.DEFAULT_PROTOCOL_CHECK_TIMEOUT,
-    _max_failed_checks_before_evict = options.max_failed_checks_before_evict or M.DEFAULT_MAX_FAILED_CHECKS_BEFORE_EVICT,
+    _maintenance_protocol_check_timeout = options.maintenance_protocol_check_timeout
+      or maintenance.DEFAULT_PROTOCOL_CHECK_TIMEOUT,
+    _max_failed_checks_before_evict = options.max_failed_checks_before_evict
+      or M.DEFAULT_MAX_FAILED_CHECKS_BEFORE_EVICT,
     _maintenance_task = nil,
+    _maintenance_trigger_task = nil,
     _reprovider_enabled = options.reprovider_enabled == true or M.DEFAULT_REPROVIDER_ENABLED,
     _reprovider_interval_seconds = options.reprovider_interval_seconds or M.DEFAULT_REPROVIDER_INTERVAL_SECONDS,
-    _reprovider_initial_delay_seconds = options.reprovider_initial_delay_seconds or M.DEFAULT_REPROVIDER_INITIAL_DELAY_SECONDS,
+    _reprovider_initial_delay_seconds = options.reprovider_initial_delay_seconds
+      or M.DEFAULT_REPROVIDER_INITIAL_DELAY_SECONDS,
     _reprovider_jitter_seconds = options.reprovider_jitter_seconds or M.DEFAULT_REPROVIDER_JITTER_SECONDS,
     _reprovider_random = options.reprovider_random,
     _reprovider_batch_size = options.reprovider_batch_size or M.DEFAULT_REPROVIDER_BATCH_SIZE,
     _reprovider_max_parallel = options.reprovider_max_parallel or reprovider.DEFAULT_MAX_PARALLEL,
     _reprovider_timeout = options.reprovider_timeout or M.DEFAULT_REPROVIDER_TIMEOUT,
     _reprovider_task = nil,
+    _peer_id_bytes_cache = {},
+    _peer_id_bytes_cache_count = 0,
+    _peer_id_bytes_cache_size = options.peer_id_bytes_cache_size or M.DEFAULT_PEER_ID_BYTES_CACHE_SIZE,
+    _filtered_addr_cache = {},
+    _filtered_addr_cache_count = 0,
+    _filtered_addr_cache_size = options.filtered_addr_cache_size or M.DEFAULT_FILTERED_ADDR_CACHE_SIZE,
+    _filtered_addr_cache_ttl_seconds = options.filtered_addr_cache_ttl_seconds == nil
+        and M.DEFAULT_FILTERED_ADDR_CACHE_TTL_SECONDS
+      or options.filtered_addr_cache_ttl_seconds,
     _running = false,
   }, DHT)
 

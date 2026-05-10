@@ -619,10 +619,11 @@ function M.reserve(stream, opts)
     return nil, error_mod.new("protocol", "unexpected relay reserve response type", { got = response.type })
   end
   if response.status ~= M.STATUS.OK then
-    return nil, error_mod.new("protocol", "relay reservation failed", {
-      status = response.status,
-      status_name = M.status_name(response.status),
-    })
+    return nil,
+      error_mod.new("protocol", "relay reservation failed", {
+        status = response.status,
+        status_name = M.status_name(response.status),
+      })
   end
   return response.reservation or {}, response
 end
@@ -651,10 +652,11 @@ function M.connect(stream, destination_peer_id, opts)
     return nil, error_mod.new("protocol", "unexpected relay connect response type", { got = response.type })
   end
   if response.status ~= M.STATUS.OK then
-    return nil, error_mod.new("protocol", "relay connect failed", {
-      status = response.status,
-      status_name = M.status_name(response.status),
-    })
+    return nil,
+      error_mod.new("protocol", "relay connect failed", {
+        status = response.status,
+        status_name = M.status_name(response.status),
+      })
   end
   return true, response
 end

@@ -51,8 +51,10 @@ local function is_link_local_ip(ip)
     return true
   end
   local normalized = ip:gsub("%%.+$", ""):lower()
-  return normalized:match("^fe8") ~= nil or normalized:match("^fe9") ~= nil
-    or normalized:match("^fea") ~= nil or normalized:match("^feb") ~= nil
+  return normalized:match("^fe8") ~= nil
+    or normalized:match("^fe9") ~= nil
+    or normalized:match("^fea") ~= nil
+    or normalized:match("^feb") ~= nil
 end
 
 local function external_addr(ip, protocol, port)
@@ -168,7 +170,13 @@ function Service:_eligible_addrs(gateway)
         goto continue_addr
       end
       if parsed.ip == "0.0.0.0" or parsed.ip == "::" then
-        if self.internal_client and ((required_ip_proto == "ip6" and is_ipv6(self.internal_client)) or (required_ip_proto == "ip4" and not is_ipv6(self.internal_client))) then
+        if
+          self.internal_client
+          and (
+            (required_ip_proto == "ip6" and is_ipv6(self.internal_client))
+            or (required_ip_proto == "ip4" and not is_ipv6(self.internal_client))
+          )
+        then
           parsed.ip = self.internal_client
         else
           goto continue_addr
@@ -177,9 +185,7 @@ function Service:_eligible_addrs(gateway)
       if self.internal_client and parsed.ip ~= self.internal_client then
         goto continue_addr
       end
-      if not is_loopback_ip(parsed.ip)
-        and not is_link_local_ip(parsed.ip)
-      then
+      if not is_loopback_ip(parsed.ip) and not is_link_local_ip(parsed.ip) then
         out[#out + 1] = parsed
       end
     end
@@ -232,77 +238,78 @@ function Service:map_ip_addresses()
       goto continue_gateway
     end
     for _, addr in ipairs(candidates) do
-    local key = mapping_key("tcp", addr.ip, addr.port)
-    if self.mappings[key] then
-      log.debug("pcp mapping skipped", {
+      local key = mapping_key("tcp", addr.ip, addr.port)
+      if self.mappings[key] then
+        log.debug("pcp mapping skipped", {
+          gateway = gateway,
+          internal_client = addr.ip,
+          internal_port = addr.port,
+          reason = "already_mapped",
+        })
+        goto continue_map
+      end
+      local requested_external_port = self.external_port or addr.port
+      local suggested_external_ip = addr.ip_proto == "ip6" and "::" or "0.0.0.0"
+      log.debug("pcp mapping attempt", {
         gateway = gateway,
         internal_client = addr.ip,
         internal_port = addr.port,
-        reason = "already_mapped",
-      })
-      goto continue_map
-    end
-    local requested_external_port = self.external_port or addr.port
-    local suggested_external_ip = addr.ip_proto == "ip6" and "::" or "0.0.0.0"
-    log.debug("pcp mapping attempt", {
-      gateway = gateway,
-      internal_client = addr.ip,
-      internal_port = addr.port,
-      protocol = "tcp",
-      requested_external_port = requested_external_port,
-    })
-    local mapping, map_err = client:map_port("tcp", addr.port, requested_external_port, self.ttl, suggested_external_ip, {
-      source_ip = addr.ip,
-    })
-    if mapping then
-      local ext_addr = external_addr(mapping.external_ip, "tcp", mapping.external_port)
-      local info = {
-        internal_addr = addr.addr,
-        internal_client = addr.ip,
-        internal_port = addr.port,
-        external_addr = ext_addr,
-        external_port = mapping.external_port,
         protocol = "tcp",
-        expires = os.time() + (mapping.lifetime or self.ttl),
-        verified = self.auto_confirm_address == true,
-        status = self.auto_confirm_address and "public" or "unknown",
-        source = "pcp",
-      }
-      if self.host and self.host.address_manager then
-        self.host.address_manager:add_public_address_mapping(info)
+        requested_external_port = requested_external_port,
+      })
+      local mapping, map_err =
+        client:map_port("tcp", addr.port, requested_external_port, self.ttl, suggested_external_ip, {
+          source_ip = addr.ip,
+        })
+      if mapping then
+        local ext_addr = external_addr(mapping.external_ip, "tcp", mapping.external_port)
+        local info = {
+          internal_addr = addr.addr,
+          internal_client = addr.ip,
+          internal_port = addr.port,
+          external_addr = ext_addr,
+          external_port = mapping.external_port,
+          protocol = "tcp",
+          expires = os.time() + (mapping.lifetime or self.ttl),
+          verified = self.auto_confirm_address == true,
+          status = self.auto_confirm_address and "public" or "unknown",
+          source = "pcp",
+        }
+        if self.host and self.host.address_manager then
+          self.host.address_manager:add_public_address_mapping(info)
+        end
+        self.last_error = nil
+        self._selected_gateway = gateway
+        self.mappings[key] = info
+        mapped[#mapped + 1] = info
+        log.info("pcp mapping active", {
+          gateway = gateway,
+          internal_client = addr.ip,
+          internal_port = addr.port,
+          external_addr = ext_addr,
+          external_port = mapping.external_port,
+        })
+        emit_event(self.host, "pcp:mapping:active", info)
+        if self.host and type(self.host._emit_self_peer_update_if_changed) == "function" then
+          self.host:_emit_self_peer_update_if_changed()
+        end
+      else
+        self.last_error = map_err
+        last_err = map_err
+        log.warn("pcp mapping failed", {
+          gateway = gateway,
+          internal_client = addr.ip,
+          internal_port = addr.port,
+          cause = tostring(map_err),
+        })
+        emit_event(self.host, "pcp:mapping:failed", {
+          internal_addr = addr.addr,
+          internal_client = addr.ip,
+          error = map_err,
+          error_message = tostring(map_err),
+        })
       end
-      self.last_error = nil
-      self._selected_gateway = gateway
-      self.mappings[key] = info
-      mapped[#mapped + 1] = info
-      log.info("pcp mapping active", {
-        gateway = gateway,
-        internal_client = addr.ip,
-        internal_port = addr.port,
-        external_addr = ext_addr,
-        external_port = mapping.external_port,
-      })
-      emit_event(self.host, "pcp:mapping:active", info)
-      if self.host and type(self.host._emit_self_peer_update_if_changed) == "function" then
-        self.host:_emit_self_peer_update_if_changed()
-      end
-    else
-      self.last_error = map_err
-      last_err = map_err
-      log.warn("pcp mapping failed", {
-        gateway = gateway,
-        internal_client = addr.ip,
-        internal_port = addr.port,
-        cause = tostring(map_err),
-      })
-      emit_event(self.host, "pcp:mapping:failed", {
-        internal_addr = addr.addr,
-        internal_client = addr.ip,
-        error = map_err,
-        error_message = tostring(map_err),
-      })
-    end
-    ::continue_map::
+      ::continue_map::
     end
     ::continue_gateway::
   end
@@ -397,7 +404,9 @@ function Service:stop()
   log.debug("pcp service stopped", {
     mappings = (function()
       local n = 0
-      for _ in pairs(self.mappings) do n = n + 1 end
+      for _ in pairs(self.mappings) do
+        n = n + 1
+      end
       return n
     end)(),
   })

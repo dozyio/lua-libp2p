@@ -210,7 +210,8 @@ local function run()
     end,
   }
   local pump_task_closed = false
-  local pump_task_scope, pump_task_scope_err = pump_task_host:_open_connection_resource("inbound", nil, { transient = true })
+  local pump_task_scope, pump_task_scope_err =
+    pump_task_host:_open_connection_resource("inbound", nil, { transient = true })
   if not pump_task_scope then
     return nil, pump_task_scope_err
   end

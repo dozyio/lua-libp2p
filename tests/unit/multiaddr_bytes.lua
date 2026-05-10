@@ -15,7 +15,8 @@ local function run()
     return nil, "multiaddr binary roundtrip mismatch"
   end
 
-  local relay_text = "/ip4/127.0.0.1/tcp/4001/p2p/12D3KooWCryG7Mon9orvQxcS1rYZjotPgpwoJNHHKcLLfE4Hf5mV/p2p-circuit/p2p/12D3KooWQWZLu9qXWPTDnF9rTRrAiVGZrXCbHAvkqYrsG8cW4UHg"
+  local relay_text =
+    "/ip4/127.0.0.1/tcp/4001/p2p/12D3KooWCryG7Mon9orvQxcS1rYZjotPgpwoJNHHKcLLfE4Hf5mV/p2p-circuit/p2p/12D3KooWQWZLu9qXWPTDnF9rTRrAiVGZrXCbHAvkqYrsG8cW4UHg"
   local relay_bytes, relay_bytes_err = multiaddr.to_bytes(relay_text)
   if not relay_bytes then
     return nil, relay_bytes_err

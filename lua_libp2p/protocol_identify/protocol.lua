@@ -344,10 +344,11 @@ function M.read(conn)
     return nil, len_err
   end
   if length > M.MAX_MESSAGE_SIZE then
-    return nil, error_mod.new("decode", "identify message too large", {
-      max = M.MAX_MESSAGE_SIZE,
-      got = length,
-    })
+    return nil,
+      error_mod.new("decode", "identify message too large", {
+        max = M.MAX_MESSAGE_SIZE,
+        got = length,
+      })
   end
 
   local payload, payload_err = read_exact(conn, length)
@@ -412,7 +413,10 @@ function M.enable_run_on_connection_open(host, opts)
 
   host._identify_on_connect_handler = function(payload)
     local peer_id = payload and payload.peer_id
-    return host:_schedule_identify_for_peer(peer_id)
+    return host:_schedule_identify_for_peer(peer_id, {
+      connection = payload and payload.connection,
+      state = payload and payload.state,
+    })
   end
 
   return host:on("peer_connected", host._identify_on_connect_handler)

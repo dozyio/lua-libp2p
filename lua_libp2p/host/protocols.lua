@@ -97,9 +97,7 @@ function M.install(Host)
       return false
     end
     local options = opts or {}
-    if options.allow_limited_connection == true
-      or options.run_on_limited_connection == true
-    then
+    if options.allow_limited_connection == true or options.run_on_limited_connection == true then
       return true
     end
     local handler_options = self._handler_options[protocol_id]
@@ -114,9 +112,10 @@ function M.install(Host)
   function Host:_protocols_allowed_on_limited_connection(protocols, opts)
     for _, protocol_id in ipairs(normalize_protocol_list(protocols) or {}) do
       if not self:_protocol_allowed_on_limited_connection(protocol_id, opts) then
-        return nil, error_mod.new("permission", "protocol is not allowed over limited connection", {
-          protocol = protocol_id,
-        })
+        return nil,
+          error_mod.new("permission", "protocol is not allowed over limited connection", {
+            protocol = protocol_id,
+          })
       end
     end
     return true
@@ -142,7 +141,10 @@ function M.install(Host)
     end
 
     local function wrapped(payload, event)
-      if list_contains(payload and payload.protocols, protocol_id) or list_contains(payload and payload.added_protocols, protocol_id) then
+      if
+        list_contains(payload and payload.protocols, protocol_id)
+        or list_contains(payload and payload.added_protocols, protocol_id)
+      then
         return handler(payload.peer_id, payload, event)
       end
       return true

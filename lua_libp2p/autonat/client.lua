@@ -107,7 +107,12 @@ end
 local function candidate_addrs(host, opts)
   local options = opts or {}
   local source = options.addrs
-  if source == nil and host and host.address_manager and type(host.address_manager.get_observed_addrs) == "function" then
+  if
+    source == nil
+    and host
+    and host.address_manager
+    and type(host.address_manager.get_observed_addrs) == "function"
+  then
     source = host.address_manager:get_observed_addrs()
   end
   if source == nil and host and type(host.get_multiaddrs_raw) == "function" then
@@ -163,7 +168,8 @@ function Client:_record_result(result)
       response_status = result.response_status,
       dial_status = result.dial_status,
     }
-    if result.type == "ip-mapping"
+    if
+      result.type == "ip-mapping"
       and metadata.verified
       and type(self.host.address_manager.verify_public_address_mapping) == "function"
     then
@@ -202,10 +208,11 @@ function Client:_handle_dial_data_request(stream, request)
       requested_bytes = total,
       max_bytes = self.max_dial_data_bytes,
     })
-    return nil, error_mod.new("permission", "autonat dial data request too large", {
-      requested = total,
-      max = self.max_dial_data_bytes,
-    })
+    return nil,
+      error_mod.new("permission", "autonat dial data request too large", {
+        requested = total,
+        max = self.max_dial_data_bytes,
+      })
   end
   local chunk_size = math.min(self.dial_data_chunk_size, autonat_proto.DIAL_DATA_CHUNK_SIZE)
   local chunk = string.rep("\0", chunk_size)
@@ -235,7 +242,8 @@ end
 -- @treturn[opt] table err
 function Client:check(server, opts)
   local options = opts or {}
-  if (not options.stream_opts or options.stream_opts.ctx == nil)
+  if
+    (not options.stream_opts or options.stream_opts.ctx == nil)
     and self.host
     and type(self.host.spawn_task) == "function"
     and type(self.host.run_until_task) == "function"
@@ -288,7 +296,8 @@ function Client:check(server, opts)
     started_at = os.time(),
   }
 
-  local stream, selected, _, stream_err = self.host:new_stream(server, { autonat_proto.DIAL_REQUEST_ID }, options.stream_opts)
+  local stream, selected, _, stream_err =
+    self.host:new_stream(server, { autonat_proto.DIAL_REQUEST_ID }, options.stream_opts)
   if not stream then
     self._pending[request_nonce] = nil
     log.debug("autonat check stream failed", {
@@ -312,7 +321,9 @@ function Client:check(server, opts)
   })
   if not wrote then
     self._pending[request_nonce] = nil
-    pcall(function() stream:close() end)
+    pcall(function()
+      stream:close()
+    end)
     log.debug("autonat dial request write failed", {
       server_peer_id = peer_id_from_target(server),
       nonce = request_nonce,
@@ -333,7 +344,9 @@ function Client:check(server, opts)
     })
     if not message then
       self._pending[request_nonce] = nil
-      pcall(function() stream:close() end)
+      pcall(function()
+        stream:close()
+      end)
       log.debug("autonat response read failed", {
         server_peer_id = peer_id_from_target(server),
         nonce = request_nonce,
@@ -350,7 +363,9 @@ function Client:check(server, opts)
       local ok, err = self:_handle_dial_data_request(stream, message.dialDataRequest)
       if not ok then
         self._pending[request_nonce] = nil
-        pcall(function() stream:close() end)
+        pcall(function()
+          stream:close()
+        end)
         log.debug("autonat dial data failed", {
           server_peer_id = peer_id_from_target(server),
           nonce = request_nonce,
@@ -370,7 +385,9 @@ function Client:check(server, opts)
       break
     else
       self._pending[request_nonce] = nil
-      pcall(function() stream:close() end)
+      pcall(function()
+        stream:close()
+      end)
       log.debug("autonat unexpected response", {
         server_peer_id = peer_id_from_target(server),
         nonce = request_nonce,
@@ -379,7 +396,9 @@ function Client:check(server, opts)
     end
   end
 
-  pcall(function() stream:close() end)
+  pcall(function()
+    stream:close()
+  end)
   self._pending[request_nonce] = nil
 
   if response.status ~= autonat_proto.RESPONSE_STATUS.OK then
@@ -493,7 +512,9 @@ function Client:_discover_servers(limit, opts)
       local backed_off = backed_off_at == true
         or (type(backed_off_at) == "number" and backoff_seconds > 0 and (now - backed_off_at) < backoff_seconds)
       local peer_addrs = addrs_for_proto(host.peerstore:get_addrs(peer.peer_id), required_addr_proto)
-      if not recently_checked and not backed_off
+      if
+        not recently_checked
+        and not backed_off
         and host.peerstore:supports_protocol(peer.peer_id, autonat_proto.DIAL_REQUEST_ID)
         and #peer_addrs > 0
       then
@@ -534,7 +555,13 @@ function Client:_discover_servers(limit, opts)
 
   local out, proto_candidates, peerstore_peers = collect_candidates()
 
-  if #out == 0 and host and host.kad_dht and options.enable_walk ~= false and type(host.kad_dht.random_walk) == "function" then
+  if
+    #out == 0
+    and host
+    and host.kad_dht
+    and options.enable_walk ~= false
+    and type(host.kad_dht.random_walk) == "function"
+  then
     walk_triggered = true
     log.debug("autonat discovery random walk started", {
       required_addr_proto = required_addr_proto,
@@ -625,30 +652,39 @@ function Client:_discover(opts)
   local logged_no_candidates = false
   local function run_check(server, check_opts)
     local timeout = tonumber(check_opts.timeout)
-    if not (options.ctx
-      and type(options.ctx.await_any_task) == "function"
-      and host
-      and type(host.spawn_task) == "function"
-      and type(host.cancel_task) == "function")
+    if
+      not (
+        options.ctx
+        and type(options.ctx.await_any_task) == "function"
+        and host
+        and type(host.spawn_task) == "function"
+        and type(host.cancel_task) == "function"
+      )
     then
       return self:check(server, check_opts)
     end
 
     local check_task, check_task_err = host:spawn_task("autonat.check.discovery", function(task_ctx)
       local task_opts = {}
-      for k, v in pairs(check_opts) do task_opts[k] = v end
+      for k, v in pairs(check_opts) do
+        task_opts[k] = v
+      end
       task_opts.stream_opts = task_opts.stream_opts or {}
       task_opts.stream_opts.ctx = task_opts.stream_opts.ctx or task_ctx
       return self:check(server, task_opts)
     end, { service = "autonat" })
-    if not check_task then return nil, check_task_err end
+    if not check_task then
+      return nil, check_task_err
+    end
 
     local timeout_task
     if timeout and timeout > 0 then
       local timeout_task_err
       timeout_task, timeout_task_err = host:spawn_task("autonat.check.timeout", function(timeout_ctx)
         local slept, sleep_err = timeout_ctx:sleep(timeout)
-        if slept == nil and sleep_err then return nil, sleep_err end
+        if slept == nil and sleep_err then
+          return nil, sleep_err
+        end
         return true
       end, { service = "autonat" })
       if not timeout_task then
@@ -666,31 +702,33 @@ function Client:_discover(opts)
       end
       if timeout_task.status == "completed" and check_task.status ~= "completed" and check_task.status ~= "failed" then
         host:cancel_task(check_task.id)
-        return nil, error_mod.new("timeout", "autonat check timed out", {
-          peer_id = server.peer_id,
-          timeout = timeout,
-        })
+        return nil,
+          error_mod.new("timeout", "autonat check timed out", {
+            peer_id = server.peer_id,
+            timeout = timeout,
+          })
       end
       if check_task.status == "completed" then
         host:cancel_task(timeout_task.id)
       end
     else
       local _, wait_err = options.ctx:await_task(check_task)
-      if wait_err then return nil, wait_err end
+      if wait_err then
+        return nil, wait_err
+      end
     end
 
     if check_task.status ~= "completed" then
-      return nil, check_task.error or error_mod.new("state", "autonat check did not complete", {
-        peer_id = server.peer_id,
-        status = check_task.status,
-      })
+      return nil,
+        check_task.error or error_mod.new("state", "autonat check did not complete", {
+          peer_id = server.peer_id,
+          status = check_task.status,
+        })
     end
     return check_task.result
   end
 
-  while stats.checked < max_servers
-    and (stats.responses < target_responses or stats.reachable == 0)
-  do
+  while stats.checked < max_servers and (stats.responses < target_responses or stats.reachable == 0) do
     if options.stop_on_first_reachable and stats.reachable > 0 then
       break
     end
@@ -851,7 +889,12 @@ function Client:start_monitor(opts)
   if not (self.host and type(self.host.spawn_task) == "function") then
     return nil, error_mod.new("state", "autonat start_monitor requires host task scheduler")
   end
-  if self._monitor_task and self._monitor_task.status ~= "completed" and self._monitor_task.status ~= "failed" and self._monitor_task.status ~= "cancelled" then
+  if
+    self._monitor_task
+    and self._monitor_task.status ~= "completed"
+    and self._monitor_task.status ~= "failed"
+    and self._monitor_task.status ~= "cancelled"
+  then
     return self._monitor_task
   end
   local options = opts or {}
@@ -862,7 +905,9 @@ function Client:start_monitor(opts)
     local healthy_interval = options.healthy_interval_seconds or DEFAULT_MONITOR_HEALTHY_INTERVAL
     local round_timeout = options.round_timeout_seconds or 30
     local initial_delay = options.initial_delay_seconds
-    if initial_delay == nil then initial_delay = options.seed_wait_seconds end
+    if initial_delay == nil then
+      initial_delay = options.seed_wait_seconds
+    end
     local success_rounds = 0
     local rounds = 0
     emit_event(self.host, "autonat:monitor:started", {
@@ -912,7 +957,9 @@ function Client:start_monitor(opts)
         poll_interval = options.poll_interval,
         check_opts_builder = options.check_opts_builder,
         backoff_peers = backoff_peers,
-        peer_backoff_seconds = options.peer_backoff_seconds or options.checked_peer_cooldown_seconds or DEFAULT_CHECKED_PEER_COOLDOWN,
+        peer_backoff_seconds = options.peer_backoff_seconds
+          or options.checked_peer_cooldown_seconds
+          or DEFAULT_CHECKED_PEER_COOLDOWN,
         checked_peer_cooldown_seconds = options.checked_peer_cooldown_seconds or DEFAULT_CHECKED_PEER_COOLDOWN,
         required_addr_proto = options.required_addr_proto,
       })
@@ -1007,7 +1054,9 @@ function Client:_handle_dial_back(stream)
     return nil, write_err
   end
   if type(stream.close) == "function" then
-    pcall(function() stream:close() end)
+    pcall(function()
+      stream:close()
+    end)
   end
   return true
 end

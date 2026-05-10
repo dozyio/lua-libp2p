@@ -60,6 +60,7 @@ build = {
     ["lua_libp2p.host.events"] = "lua_libp2p/host/events.lua",
     ["lua_libp2p.host.identify"] = "lua_libp2p/host/identify.lua",
     ["lua_libp2p.host.listeners"] = "lua_libp2p/host/listeners.lua",
+    ["lua_libp2p.host.perf"] = "lua_libp2p/host/perf.lua",
     ["lua_libp2p.host.protocols"] = "lua_libp2p/host/protocols.lua",
     ["lua_libp2p.host.service_manager"] = "lua_libp2p/host/service_manager.lua",
     ["lua_libp2p.host.tasks"] = "lua_libp2p/host/tasks.lua",

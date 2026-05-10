@@ -267,8 +267,8 @@ function Stream:read(length)
   end
 
   while #self.recv_buf < length do
-      if #self.recvq > 0 then
-        self.recv_buf = self.recv_buf .. table.remove(self.recvq, 1)
+    if #self.recvq > 0 then
+      self.recv_buf = self.recv_buf .. table.remove(self.recvq, 1)
     else
       if self.remote_closed then
         if #self.recv_buf > 0 then

@@ -15,6 +15,7 @@ local host_dialer = require("lua_libp2p.host.dialer")
 local host_events = require("lua_libp2p.host.events")
 local host_identify = require("lua_libp2p.host.identify")
 local host_listeners = require("lua_libp2p.host.listeners")
+local host_perf = require("lua_libp2p.host.perf")
 local host_protocols = require("lua_libp2p.host.protocols")
 local host_service_manager = require("lua_libp2p.host.service_manager")
 local host_tasks = require("lua_libp2p.host.tasks")
@@ -43,6 +44,7 @@ host_dialer.install(Host)
 host_events.install(Host)
 host_identify.install(Host)
 host_listeners.install(Host)
+host_perf.install(Host)
 host_protocols.install(Host)
 host_tasks.install(Host)
 
@@ -51,6 +53,36 @@ local function sleep_seconds(seconds)
   if ok_socket and type(socket.sleep) == "function" then
     socket.sleep(seconds)
   end
+end
+
+local function now_seconds()
+  local ok_socket, socket = pcall(require, "socket")
+  if ok_socket and type(socket.gettime) == "function" then
+    return socket.gettime()
+  end
+  return os.time()
+end
+
+local function debug_perf_add(host, key, elapsed_seconds)
+  local perf = type(host) == "table" and rawget(host, "_debug_perf") or nil
+  if type(perf) ~= "table" then
+    return
+  end
+  perf[key .. "_calls"] = (perf[key .. "_calls"] or 0) + 1
+  perf[key .. "_ms"] = (perf[key .. "_ms"] or 0) + (elapsed_seconds * 1000)
+end
+
+function Host:_bump_debug_counter(key, amount)
+  if type(key) ~= "string" or key == "" then
+    return false
+  end
+  local counters = rawget(self, "_debug_counters")
+  if type(counters) ~= "table" then
+    counters = {}
+    rawset(self, "_debug_counters", counters)
+  end
+  counters[key] = (tonumber(counters[key]) or 0) + (amount or 1)
+  return true
 end
 
 local function is_nonfatal_stream_error(err)
@@ -85,6 +117,31 @@ local function flatten_error_fields(err, prefix, fields, depth)
       elseif type(v) ~= "table" and type(v) ~= "function" and type(v) ~= "thread" then
         out[key .. "_" .. tostring(k)] = v
       end
+    end
+  end
+  return out
+end
+
+local function raw_conn_log_fields(raw_conn, fields)
+  local out = fields or {}
+  if raw_conn and type(raw_conn.debug_id) == "function" then
+    local ok, raw_id = pcall(raw_conn.debug_id, raw_conn)
+    if ok then
+      out.raw_id = raw_id
+    end
+  elseif raw_conn and raw_conn._debug_id ~= nil then
+    out.raw_id = raw_conn._debug_id
+  end
+  if raw_conn and type(raw_conn.remote_multiaddr) == "function" then
+    local ok, addr = pcall(raw_conn.remote_multiaddr, raw_conn)
+    if ok then
+      out.remote_addr = addr
+    end
+  end
+  if raw_conn and type(raw_conn.local_multiaddr) == "function" then
+    local ok, addr = pcall(raw_conn.local_multiaddr, raw_conn)
+    if ok then
+      out.local_addr = addr
     end
   end
   return out
@@ -147,6 +204,8 @@ local function tcp_options_from_config(cfg)
     nodelay = options.nodelay,
     keepalive = options.keepalive,
     keepalive_initial_delay = options.keepalive_initial_delay,
+    listen_backlog = options.listen_backlog or cfg.listen_backlog,
+    accept_batch = options.accept_batch or cfg.accept_batch,
   }
 end
 
@@ -172,10 +231,11 @@ function Host:new(config)
   end
   local runtime_impl = RUNTIME_IMPLS[runtime_name]
   if runtime_impl == nil then
-    return nil, error_mod.new("input", "unsupported host runtime", {
-      runtime = runtime_name,
-      supported = { "auto", "luv" },
-    })
+    return nil,
+      error_mod.new("input", "unsupported host runtime", {
+        runtime = runtime_name,
+        supported = { "auto", "luv" },
+      })
   end
   local start_blocking = cfg.blocking
   if start_blocking == nil then
@@ -218,14 +278,21 @@ function Host:new(config)
     capabilities = {},
     _tasks = {},
     _task_queue = {},
+    _task_queue_head = 1,
+    _task_queue_tail = 0,
+    _sleeping_tasks = {},
     _task_read_waiters = {},
     _task_dial_waiters = {},
     _task_write_waiters = {},
     _task_completion_waiters = {},
     _next_task_id = 1,
     _task_resume_budget = cfg.task_resume_budget or host_tasks.DEFAULT_TASK_RESUME_BUDGET,
+    _task_retention = cfg.task_retention or host_tasks.DEFAULT_TASK_RETENTION,
+    _task_prune_interval = cfg.task_prune_interval or host_tasks.DEFAULT_TASK_PRUNE_INTERVAL,
     _pending_inbound = {},
     _pending_relay_inbound = {},
+    _debug_counters = {},
+    _debug_maps = {},
     _debug_connection_events = cfg.debug_connection_events == true,
     _identify_on_connect_handler = nil,
     _runtime = runtime_name,
@@ -293,7 +360,10 @@ function Host:new(config)
   })
 
   local services = cfg.services
-  if contains_circuit_listen_addr(self_obj.listen_addrs) and not (type(services) == "table" and services.autorelay ~= nil) then
+  if
+    contains_circuit_listen_addr(self_obj.listen_addrs)
+    and not (type(services) == "table" and services.autorelay ~= nil)
+  then
     return nil, error_mod.new("input", "/p2p-circuit listen addr requires autorelay service")
   end
   local services_ok, services_err = host_service_manager.install(self_obj, services)
@@ -324,9 +394,13 @@ function Host:_spawn_stream_negotiation_task(stream, conn, entry)
     local stream_scope, resource_err = self:_open_stream_resource(entry, "inbound")
     if resource_err then
       if type(stream.reset_now) == "function" then
-        pcall(function() stream:reset_now() end)
+        pcall(function()
+          stream:reset_now()
+        end)
       elseif type(stream.close) == "function" then
-        pcall(function() stream:close() end)
+        pcall(function()
+          stream:close()
+        end)
       end
       return nil, resource_err
     end
@@ -343,9 +417,13 @@ function Host:_spawn_stream_negotiation_task(stream, conn, entry)
     local set_ok, set_err = self:_set_stream_resource_protocol(stream_scope, protocol_id)
     if not set_ok then
       if type(stream.reset_now) == "function" then
-        pcall(function() stream:reset_now() end)
+        pcall(function()
+          stream:reset_now()
+        end)
       elseif type(stream.close) == "function" then
-        pcall(function() stream:close() end)
+        pcall(function()
+          stream:close()
+        end)
       end
       self:_close_stream_resource(stream_scope)
       log.debug("host inbound stream resource protocol failed", {
@@ -357,13 +435,18 @@ function Host:_spawn_stream_negotiation_task(stream, conn, entry)
       return nil, set_err
     end
     stream = self:_wrap_stream_resource(stream, stream_scope)
-    if self:_connection_is_limited(entry.state)
+    if
+      self:_connection_is_limited(entry.state)
       and not self:_protocol_allowed_on_limited_connection(protocol_id, handler_options)
     then
       if type(stream.reset_now) == "function" then
-        pcall(function() stream:reset_now() end)
+        pcall(function()
+          stream:reset_now()
+        end)
       elseif type(stream.close) == "function" then
-        pcall(function() stream:close() end)
+        pcall(function()
+          stream:close()
+        end)
       end
       self:_release_stream_resource(stream)
       log.debug("host inbound stream blocked on limited connection", {
@@ -578,7 +661,8 @@ function Host:_register_connection(conn, state)
   local function rollback_registration()
     host_connections.remove(self, entry)
     self:_close_connection_resource(entry.state and entry.state.resource_scope)
-    if entry._connection_manager_tracked
+    if
+      entry._connection_manager_tracked
       and self.connection_manager
       and type(self.connection_manager.on_connection_closed) == "function"
     then
@@ -628,7 +712,8 @@ function Host:_register_connection(conn, state)
     end
   end
 
-  if host_runtime_luv_native.is_native_host(self)
+  if
+    host_runtime_luv_native.is_native_host(self)
     and (type(entry.conn.pump_once) == "function" or type(entry.conn.process_one) == "function")
   then
     local _, pump_err = host_runtime_luv_native.start_connection_pump_task(self, entry, is_nonfatal_stream_error)
@@ -723,6 +808,119 @@ function Host:stats()
   }
 end
 
+local function count_map(values)
+  local n = 0
+  for _ in pairs(values or {}) do
+    n = n + 1
+  end
+  return n
+end
+
+local function top_count_string(map, limit)
+  local items = {}
+  for key, value in pairs(map or {}) do
+    items[#items + 1] = { key = tostring(key), value = tonumber(value) or 0 }
+  end
+  table.sort(items, function(a, b)
+    if a.value == b.value then
+      return a.key < b.key
+    end
+    return a.value > b.value
+  end)
+
+  local parts = {}
+  local max_items = math.min(limit or 5, #items)
+  for i = 1, max_items do
+    local item = items[i]
+    parts[#parts + 1] = string.format("%s=%d", item.key, item.value)
+  end
+  if #parts == 0 then
+    return "none"
+  end
+  return table.concat(parts, ",")
+end
+
+--- Return a reusable host diagnostic snapshot.
+-- This intentionally exposes aggregate counters rather than private tables so
+-- examples and operators can log health without reaching into host internals.
+function Host:health_stats()
+  local connmgr = self.connection_manager
+  local dial_queue = 0
+  local pending_by_key = 0
+  if connmgr then
+    dial_queue = #(connmgr.queue or {})
+    pending_by_key = count_map(connmgr.pending_by_key)
+  end
+
+  local listener_pending = 0
+  local listener_callbacks = 0
+  local listener_accepted = 0
+  local listener_accept_failed = 0
+  local listener_callback_errors = 0
+  for _, listener in ipairs(self._listeners or {}) do
+    if listener and type(listener.stats) == "function" then
+      local stats = listener:stats()
+      listener_pending = listener_pending + (tonumber(stats.pending) or 0)
+      listener_callbacks = listener_callbacks + (tonumber(stats.callback_total) or 0)
+      listener_accepted = listener_accepted + (tonumber(stats.accepted_total) or 0)
+      listener_accept_failed = listener_accept_failed + (tonumber(stats.accept_failed_total) or 0)
+      listener_callback_errors = listener_callback_errors + (tonumber(stats.callback_error_total) or 0)
+    end
+  end
+
+  local counters = rawget(self, "_debug_counters") or {}
+  local debug_maps = rawget(self, "_debug_maps") or {}
+  local task_stats = nil
+  if type(self.task_stats) == "function" then
+    task_stats = self:task_stats()
+  end
+  task_stats = task_stats or {}
+
+  return {
+    health = {
+      tasks_total = count_map(self._tasks),
+      queue = type(self._task_queue_depth) == "function" and self:_task_queue_depth() or #(self._task_queue or {}),
+      wait_read = count_map(self._task_read_waiters),
+      wait_dial = count_map(self._task_dial_waiters),
+      wait_write = count_map(self._task_write_waiters),
+      wait_done = count_map(self._task_completion_waiters),
+      pending_inbound = #(self._pending_inbound or {}),
+      pending_relay_inbound = #(self._pending_relay_inbound or {}),
+      listener_pending = listener_pending,
+      conns = #(self._connections or {}),
+      dial_queue = dial_queue,
+      pending_keys = pending_by_key,
+      mem_kb = collectgarbage("count"),
+    },
+    listener = {
+      callbacks = listener_callbacks,
+      accepted = listener_accepted,
+      accept_failed = listener_accept_failed,
+      callback_errors = listener_callback_errors,
+      pending = listener_pending,
+    },
+    inbound = {
+      accept = tonumber(counters.inbound_accept) or 0,
+      upgrade_started = tonumber(counters.inbound_upgrade_started) or 0,
+      upgrade_completed = tonumber(counters.inbound_upgrade_completed) or 0,
+      upgrade_failed = tonumber(counters.inbound_upgrade_failed) or 0,
+      upgrade_task_ended = tonumber(counters.inbound_upgrade_task_ended) or 0,
+      resource_reject = tonumber(counters.inbound_resource_reject) or 0,
+      registration_failed = tonumber(counters.inbound_registration_failed) or 0,
+      pump_terminal = tonumber(counters.connection_pump_terminal) or 0,
+    },
+    inbound_fail = {
+      kinds = top_count_string(debug_maps.inbound_upgrade_failed_by_kind, 4),
+      causes = top_count_string(debug_maps.inbound_upgrade_failed_by_cause, 4),
+    },
+    task_top = {
+      status = top_count_string(task_stats.by_status, 4),
+      service = top_count_string(task_stats.by_service, 4),
+      names = top_count_string(task_stats.by_name, 6),
+    },
+  }
+end
+
 function Host:_set_runtime_error(runtime_name, err)
   self._runtime_last_error = err
   self._running = false
@@ -744,6 +942,9 @@ function Host:_set_runtime_error(runtime_name, err)
 end
 
 function Host:_process_runtime_events(timeout, ready_map)
+  local perf = rawget(self, "_debug_perf")
+  local phase_started = perf and now_seconds() or nil
+
   if ready_map then
     for connection in pairs(self._task_read_waiters) do
       if ready_map[connection] then
@@ -759,6 +960,154 @@ function Host:_process_runtime_events(timeout, ready_map)
       if ready_map[connection] then
         self:_wake_task_dialers(connection)
       end
+    end
+  end
+  if phase_started then
+    debug_perf_add(self, "process_ready_waiters", now_seconds() - phase_started)
+    phase_started = now_seconds()
+  end
+
+  local function drain_listener_accepts()
+    for _, listener in ipairs(self._listeners) do
+      local should_accept = true
+      if ready_map then
+        should_accept = ready_map[listener] == true
+        if not should_accept and host_runtime_luv_native.is_native_host(self) then
+          should_accept = true
+        end
+      end
+
+      local max_accepts = host_runtime_luv_native.is_native_host(self) and self._max_accepts_per_tick or 1
+      local accepted_this_tick = 0
+      while should_accept and accepted_this_tick < max_accepts do
+        local accept_timeout = timeout or self._accept_timeout
+        if ready_map or accepted_this_tick > 0 then
+          accept_timeout = 0
+        end
+        local raw_conn, accept_err = listener:accept(accept_timeout)
+        if not raw_conn then
+          if accept_err and error_mod.is_error(accept_err) and accept_err.kind ~= "timeout" then
+            return nil, accept_err
+          end
+          break
+        end
+        accepted_this_tick = accepted_this_tick + 1
+        self:_bump_debug_counter("inbound_accept")
+        log.debug("host inbound raw connection accepted", raw_conn_log_fields(raw_conn))
+        local resource_scope, resource_err = self:_open_connection_resource("inbound", nil, { transient = true })
+        if resource_err then
+          self:_bump_debug_counter("inbound_resource_reject")
+          log.debug(
+            "host inbound raw connection closing after resource failure",
+            raw_conn_log_fields(raw_conn, {
+              cause = tostring(resource_err),
+            })
+          )
+          raw_conn:close()
+          log.debug(
+            "host inbound connection resource failed",
+            flatten_error_fields(
+              resource_err,
+              "cause",
+              raw_conn_log_fields(raw_conn, {
+                cause = tostring(resource_err),
+              })
+            )
+          )
+          if not (error_mod.is_error(resource_err) and resource_err.kind == "resource") then
+            return nil, resource_err
+          end
+          goto continue_accept_loop
+        end
+        log.debug("host inbound connection resource opened", raw_conn_log_fields(raw_conn))
+        if host_runtime_luv_native.is_native_host(self) then
+          self._pending_inbound[#self._pending_inbound + 1] = { raw_conn = raw_conn, resource_scope = resource_scope }
+          log.debug(
+            "host inbound upgrade pending",
+            raw_conn_log_fields(raw_conn, {
+              pending_inbound = #self._pending_inbound,
+            })
+          )
+          goto continue_accept_loop
+        end
+
+        if raw_conn and type(raw_conn.begin_read_tx) == "function" then
+          raw_conn:begin_read_tx()
+        end
+        local conn, state, up_err = upgrader.upgrade_inbound(raw_conn, {
+          local_keypair = self.identity,
+          security_protocols = self.security_transports,
+          muxer_protocols = self.muxers,
+        })
+        if not conn then
+          self:_bump_debug_counter("inbound_upgrade_failed")
+          if
+            up_err
+            and error_mod.is_error(up_err)
+            and up_err.kind == "timeout"
+            and self._runtime == "luv"
+            and self._tcp_transport
+            and self._tcp_transport.BACKEND == "luv-native"
+          then
+            if raw_conn and type(raw_conn.rollback_read_tx) == "function" then
+              raw_conn:rollback_read_tx()
+            end
+            self._pending_inbound[#self._pending_inbound + 1] = { raw_conn = raw_conn, resource_scope = resource_scope }
+            goto continue_accept_loop
+          end
+
+          if raw_conn and type(raw_conn.rollback_read_tx) == "function" then
+            raw_conn:rollback_read_tx()
+          end
+          self:_close_connection_resource(resource_scope)
+          log.debug(
+            "host inbound raw connection closing after upgrade failure",
+            raw_conn_log_fields(raw_conn, {
+              cause = tostring(up_err),
+            })
+          )
+          raw_conn:close()
+          log.debug(
+            "host inbound upgrade failed",
+            raw_conn_log_fields(raw_conn, {
+              cause = tostring(up_err),
+            })
+          )
+          if not is_nonfatal_stream_error(up_err) then
+            return nil, up_err
+          end
+          goto continue_accept_loop
+        end
+        if raw_conn and type(raw_conn.commit_read_tx) == "function" then
+          raw_conn:commit_read_tx()
+        end
+        state.direction = state.direction or "inbound"
+        state.resource_scope = resource_scope
+        local entry, register_err = self:_register_connection(conn, state)
+        if not entry then
+          self:_bump_debug_counter("inbound_registration_failed")
+          conn:close()
+          log.debug("host inbound registration failed", {
+            cause = tostring(register_err),
+          })
+          return nil, register_err
+        end
+
+        ::continue_accept_loop::
+      end
+    end
+
+    return true
+  end
+
+  if host_runtime_luv_native.is_native_host(self) then
+    local listeners_ok, listeners_err = drain_listener_accepts()
+    if not listeners_ok then
+      return nil, listeners_err
+    end
+    if phase_started then
+      debug_perf_add(self, "process_listeners", now_seconds() - phase_started)
+      phase_started = now_seconds()
     end
   end
 
@@ -815,17 +1164,18 @@ function Host:_process_runtime_events(timeout, ready_map)
     end
     ::continue_pending_relay_inbound::
   end
+  if phase_started then
+    debug_perf_add(self, "process_pending_relay_inbound", now_seconds() - phase_started)
+    phase_started = now_seconds()
+  end
 
   for i = #self._pending_inbound, 1, -1 do
     local pending_entry = self._pending_inbound[i]
     local raw_conn = host_runtime_luv_native.pending_raw(pending_entry)
 
     if host_runtime_luv_native.is_native_host(self) then
-      local status, _, resume_err, normalized_entry = host_runtime_luv_native.resume_inbound_upgrade(
-        self,
-        pending_entry,
-        is_nonfatal_stream_error
-      )
+      local status, _, resume_err, normalized_entry =
+        host_runtime_luv_native.resume_inbound_upgrade(self, pending_entry, is_nonfatal_stream_error)
       self._pending_inbound[i] = normalized_entry
       if status == "pending" then
         goto continue_pending_inbound
@@ -887,100 +1237,20 @@ function Host:_process_runtime_events(timeout, ready_map)
 
     ::continue_pending_inbound::
   end
+  if phase_started then
+    debug_perf_add(self, "process_pending_inbound", now_seconds() - phase_started)
+    phase_started = now_seconds()
+  end
 
-  for _, listener in ipairs(self._listeners) do
-    local should_accept = true
-    if ready_map then
-      should_accept = ready_map[listener] == true
-      if not should_accept and host_runtime_luv_native.is_native_host(self) then
-        should_accept = true
-      end
+  if not host_runtime_luv_native.is_native_host(self) then
+    local listeners_ok, listeners_err = drain_listener_accepts()
+    if not listeners_ok then
+      return nil, listeners_err
     end
-
-    local raw_conn, accept_err
-    if should_accept then
-      local accept_timeout = timeout or self._accept_timeout
-      if ready_map then
-        accept_timeout = 0
-      end
-      raw_conn, accept_err = listener:accept(accept_timeout)
-    end
-
-    if raw_conn then
-      log.debug("host inbound raw connection accepted")
-      local resource_scope, resource_err = self:_open_connection_resource("inbound", nil, { transient = true })
-      if resource_err then
-        raw_conn:close()
-        log.debug("host inbound connection resource failed", flatten_error_fields(resource_err, "cause", {
-          cause = tostring(resource_err),
-        }))
-        if error_mod.is_error(resource_err) and resource_err.kind == "resource" then
-          goto continue_listeners
-        end
-        return nil, resource_err
-      end
-      if host_runtime_luv_native.is_native_host(self) then
-        self._pending_inbound[#self._pending_inbound + 1] = { raw_conn = raw_conn, resource_scope = resource_scope }
-        log.debug("host inbound upgrade pending", {
-          pending_inbound = #self._pending_inbound,
-        })
-        goto continue_listeners
-      end
-
-      if raw_conn and type(raw_conn.begin_read_tx) == "function" then
-        raw_conn:begin_read_tx()
-      end
-      local conn, state, up_err = upgrader.upgrade_inbound(raw_conn, {
-        local_keypair = self.identity,
-        security_protocols = self.security_transports,
-        muxer_protocols = self.muxers,
-      })
-      if not conn then
-        if up_err and error_mod.is_error(up_err)
-          and up_err.kind == "timeout"
-          and self._runtime == "luv"
-          and self._tcp_transport
-          and self._tcp_transport.BACKEND == "luv-native"
-        then
-          if raw_conn and type(raw_conn.rollback_read_tx) == "function" then
-            raw_conn:rollback_read_tx()
-          end
-          self._pending_inbound[#self._pending_inbound + 1] = { raw_conn = raw_conn, resource_scope = resource_scope }
-          goto continue_listeners
-        end
-
-        if raw_conn and type(raw_conn.rollback_read_tx) == "function" then
-          raw_conn:rollback_read_tx()
-        end
-        self:_close_connection_resource(resource_scope)
-        raw_conn:close()
-        log.debug("host inbound upgrade failed", {
-          cause = tostring(up_err),
-        })
-        if is_nonfatal_stream_error(up_err) then
-          goto continue_listeners
-        end
-        return nil, up_err
-      end
-      if raw_conn and type(raw_conn.commit_read_tx) == "function" then
-        raw_conn:commit_read_tx()
-      end
-      state.direction = state.direction or "inbound"
-      state.resource_scope = resource_scope
-      local entry, register_err = self:_register_connection(conn, state)
-      if not entry then
-        conn:close()
-        log.debug("host inbound registration failed", {
-          cause = tostring(register_err),
-        })
-        return nil, register_err
-      end
-      break
-    elseif accept_err and error_mod.is_error(accept_err) and accept_err.kind ~= "timeout" then
-      return nil, accept_err
-    end
-
-    ::continue_listeners::
+  end
+  if phase_started then
+    debug_perf_add(self, "process_listeners", now_seconds() - phase_started)
+    phase_started = now_seconds()
   end
 
   local router = nil
@@ -990,6 +1260,10 @@ function Host:_process_runtime_events(timeout, ready_map)
     if not router then
       return nil, router_err
     end
+  end
+  if phase_started then
+    debug_perf_add(self, "process_router", now_seconds() - phase_started)
+    phase_started = now_seconds()
   end
 
   for i = #self._connections, 1, -1 do
@@ -1002,12 +1276,7 @@ function Host:_process_runtime_events(timeout, ready_map)
 
     if should_process then
       if host_runtime_luv_native.is_native_host(self) then
-        local ok, native_err = host_runtime_luv_native.process_connection(
-          self,
-          entry,
-          router,
-          is_nonfatal_stream_error
-        )
+        local ok, native_err = host_runtime_luv_native.process_connection(self, entry, router, is_nonfatal_stream_error)
         if not ok then
           return nil, native_err
         end
@@ -1078,9 +1347,13 @@ function Host:_process_runtime_events(timeout, ready_map)
         local stream_scope, resource_err = self:_open_stream_resource(entry, "inbound", protocol_id)
         if resource_err then
           if type(stream.reset_now) == "function" then
-            pcall(function() stream:reset_now() end)
+            pcall(function()
+              stream:reset_now()
+            end)
           elseif type(stream.close) == "function" then
-            pcall(function() stream:close() end)
+            pcall(function()
+              stream:close()
+            end)
           end
           log.debug("host inbound stream resource failed", {
             peer_id = entry.state and entry.state.remote_peer_id or nil,
@@ -1091,13 +1364,18 @@ function Host:_process_runtime_events(timeout, ready_map)
           return nil, resource_err
         end
         stream = self:_wrap_stream_resource(stream, stream_scope)
-        if self:_connection_is_limited(entry.state)
+        if
+          self:_connection_is_limited(entry.state)
           and not self:_protocol_allowed_on_limited_connection(protocol_id, handler_options)
         then
           if type(stream.reset_now) == "function" then
-            pcall(function() stream:reset_now() end)
+            pcall(function()
+              stream:reset_now()
+            end)
           elseif type(stream.close) == "function" then
-            pcall(function() stream:close() end)
+            pcall(function()
+              stream:close()
+            end)
           end
           log.debug("host inbound stream blocked on limited connection", {
             peer_id = entry.state and entry.state.remote_peer_id or nil,
@@ -1118,10 +1396,17 @@ function Host:_process_runtime_events(timeout, ready_map)
 
     ::continue_connections::
   end
+  if phase_started then
+    debug_perf_add(self, "process_connections", now_seconds() - phase_started)
+    phase_started = now_seconds()
+  end
 
   local bg_ok, bg_err = self:_run_background_tasks()
   if not bg_ok then
     return nil, bg_err
+  end
+  if phase_started then
+    debug_perf_add(self, "process_background", now_seconds() - phase_started)
   end
 
   return true
@@ -1244,7 +1529,9 @@ function Host:close()
     listeners = #self._listeners,
     tasks = (function()
       local n = 0
-      for _ in pairs(self._tasks) do n = n + 1 end
+      for _ in pairs(self._tasks) do
+        n = n + 1
+      end
       return n
     end)(),
   })
@@ -1272,6 +1559,9 @@ function Host:close()
   end
   self._tasks = {}
   self._task_queue = {}
+  self._task_queue_head = 1
+  self._task_queue_tail = 0
+  self._sleeping_tasks = {}
   self._task_read_waiters = {}
   self._task_dial_waiters = {}
   self._task_write_waiters = {}

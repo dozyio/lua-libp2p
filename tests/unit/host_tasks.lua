@@ -45,7 +45,12 @@ local function run()
   end, {
     stream = {},
     protocol = "/tests/handler/1.0.0",
-    connection = { close = function() closed = true return true end },
+    connection = {
+      close = function()
+        closed = true
+        return true
+      end,
+    },
   }))
   assert(h:_run_background_tasks({ max_resumes = 1 }))
   if handler.status ~= "completed" or not closed then

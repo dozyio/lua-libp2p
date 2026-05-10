@@ -54,11 +54,7 @@ local function trim(value)
 end
 
 local function xml_escape(value)
-  return tostring(value or "")
-    :gsub("&", "&amp;")
-    :gsub("<", "&lt;")
-    :gsub(">", "&gt;")
-    :gsub('"', "&quot;")
+  return tostring(value or ""):gsub("&", "&amp;"):gsub("<", "&lt;"):gsub(">", "&gt;"):gsub('"', "&quot;")
 end
 
 local function parse_url(url)
@@ -140,12 +136,13 @@ local function http_request(url, opts)
     })
   end
   if not code or code < 200 or code >= 300 then
-    return nil, error_mod.new("protocol", "HTTP request returned non-success status", {
-      url = url,
-      code = code,
-      status = status,
-      body = body,
-    })
+    return nil,
+      error_mod.new("protocol", "HTTP request returned non-success status", {
+        url = url,
+        code = code,
+        status = status,
+        body = body,
+      })
   end
   return body, headers, code
 end
@@ -209,8 +206,8 @@ function M.soap_envelope(action, args, service_type)
   local parts = {
     '<?xml version="1.0"?>',
     '<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/" s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/">',
-    '<s:Body>',
-    '<u:' .. action .. ' xmlns:u="' .. xml_escape(ns) .. '">',
+    "<s:Body>",
+    "<u:" .. action .. ' xmlns:u="' .. xml_escape(ns) .. '">',
   }
   local used = {}
   for _, name in ipairs(ACTION_ARG_ORDER[action] or {}) do
@@ -246,7 +243,7 @@ function Client:soap(action, args)
   local body = M.soap_envelope(action, args, self.service_type)
   if self.debug_soap then
     io.stderr:write("\n[upnp soap] POST " .. tostring(self.control_url) .. "\n")
-    io.stderr:write("[upnp soap] SOAPAction: \"" .. tostring(self.service_type) .. "#" .. action .. "\"\n")
+    io.stderr:write('[upnp soap] SOAPAction: "' .. tostring(self.service_type) .. "#" .. action .. '"\n')
     io.stderr:write(body .. "\n")
   end
   return http_request(self.control_url, {

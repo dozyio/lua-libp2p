@@ -49,9 +49,7 @@ local function run()
   if #addrs ~= 2 then
     return nil, "merge should add addresses without replacing existing addresses"
   end
-  if not ps:supports_protocol("peer-a", "/ipfs/id/1.0.0")
-    or not ps:supports_protocol("peer-a", "/ipfs/ping/1.0.0")
-  then
+  if not ps:supports_protocol("peer-a", "/ipfs/id/1.0.0") or not ps:supports_protocol("peer-a", "/ipfs/ping/1.0.0") then
     return nil, "merge should add protocols without replacing existing protocols"
   end
   local merged_view = ps:get("peer-a")

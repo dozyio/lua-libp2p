@@ -122,7 +122,13 @@ function M.reprovide(dht, opts)
     report.attempted = report.attempted + 1
   end
 
-  if max_parallel > 1 and dht.host and type(dht.host.spawn_task) == "function" and options.ctx and type(options.ctx.await_any_task) == "function" then
+  if
+    max_parallel > 1
+    and dht.host
+    and type(dht.host.spawn_task) == "function"
+    and options.ctx
+    and type(options.ctx.await_any_task) == "function"
+  then
     local running = {}
     local index = 1
     local function reap_done()
@@ -131,7 +137,9 @@ function M.reprovide(dht, opts)
         local task = item.task
         if task.status == "completed" or task.status == "failed" or task.status == "cancelled" then
           local ok, err = record_result(item.key, task.result, task.error)
-          if not ok then return nil, err end
+          if not ok then
+            return nil, err
+          end
         else
           kept[#kept + 1] = item
         end
@@ -146,18 +154,26 @@ function M.reprovide(dht, opts)
         local task, task_err = dht.host:spawn_task("kad.reprovide.item", function()
           return provide_key(key)
         end, { service = "kad_dht" })
-        if not task then return nil, task_err end
+        if not task then
+          return nil, task_err
+        end
         running[#running + 1] = { key = key, task = task }
       end
       local reaped, reap_err = reap_done()
-      if not reaped then return nil, reap_err end
+      if not reaped then
+        return nil, reap_err
+      end
       if #running > 0 then
         local waited, wait_err = options.ctx:await_any_task((function()
           local tasks = {}
-          for _, item in ipairs(running) do tasks[#tasks + 1] = item.task end
+          for _, item in ipairs(running) do
+            tasks[#tasks + 1] = item.task
+          end
           return tasks
         end)())
-        if waited == nil and wait_err then return nil, wait_err end
+        if waited == nil and wait_err then
+          return nil, wait_err
+        end
       end
     end
     log.debug("kad dht reprovide completed", {
@@ -171,7 +187,9 @@ function M.reprovide(dht, opts)
   for _, key in ipairs(keys) do
     local result, err = provide_key(key)
     local ok, record_err = record_result(key, result, err)
-    if not ok then return nil, record_err end
+    if not ok then
+      return nil, record_err
+    end
   end
 
   log.debug("kad dht reprovide completed", {

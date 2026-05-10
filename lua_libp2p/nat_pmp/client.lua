@@ -137,10 +137,11 @@ function Client:_exchange(op, payload)
           result = result,
           epoch = epoch,
         })
-        return nil, error_mod.new("protocol", "nat-pmp non-success result", {
-          result = result,
-          epoch = epoch,
-        })
+        return nil,
+          error_mod.new("protocol", "nat-pmp non-success result", {
+            result = result,
+            epoch = epoch,
+          })
       end
       return {
         data = data,

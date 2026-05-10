@@ -48,7 +48,14 @@ local function run()
     if type(protocols) ~= "table" or protocols[1] ~= ping.ID then
       return nil, nil, nil, nil, "unexpected ping protocol selection"
     end
-    return new_ping_stream(), ping.ID, { close = function() return true end }, { remote_peer_id = "peer-a" }
+    return new_ping_stream(),
+      ping.ID,
+      {
+        close = function()
+          return true
+        end,
+      },
+      { remote_peer_id = "peer-a" }
   end
 
   local result, ping_err = host.services.ping:ping("peer-a")

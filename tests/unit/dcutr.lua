@@ -31,8 +31,12 @@ local function loopback_stream_pair()
     b_in = b_in:sub(n + 1)
     return out
   end
-  function a:close() return true end
-  function b:close() return true end
+  function a:close()
+    return true
+  end
+  function b:close()
+    return true
+  end
   return a, b
 end
 
@@ -138,7 +142,11 @@ local function run()
   end
   function host:spawn_task(name, fn)
     spawned_task_names[#spawned_task_names + 1] = name
-    return { id = #spawned_task_names, status = "completed", result = fn({ sleep = function() return true end }) }
+    return { id = #spawned_task_names, status = "completed", result = fn({
+      sleep = function()
+        return true
+      end,
+    }) }
   end
   function host:wait_task(task)
     return task and task.result
@@ -174,7 +182,9 @@ local function run()
       relay = { limit_kind = "limited" },
     },
   })
-  if #spawned_task_names ~= before_auto + 1 or spawned_task_names[#spawned_task_names] ~= "services.dcutr.auto_start" then
+  if
+    #spawned_task_names ~= before_auto + 1 or spawned_task_names[#spawned_task_names] ~= "services.dcutr.auto_start"
+  then
     return nil, "expected unilateral upgrade to run from async auto task"
   end
   if #dialed_addrs == 0 then
@@ -243,7 +253,8 @@ local function run()
     return nil, "expected dcutr to close relay connection after successful upgrade"
   end
   local selected_addr = dialed_addrs[#dialed_addrs]
-  if type(selected_addr) ~= "string"
+  if
+    type(selected_addr) ~= "string"
     or selected_addr:sub(1, 5) ~= "/ip6/"
     or string.find(selected_addr, "/p2p%-circuit", 1, false)
     or not multiaddr.is_public_addr(selected_addr)
@@ -270,7 +281,11 @@ local function run()
 
   local saw_retry_reason = false
   for _, ev in ipairs(emitted_events) do
-    if ev[1] == "dcutr:attempt:failed" and type(ev[2]) == "table" and ev[2].reason == dcutr_service.FAILURE_REASON.STREAM_OPEN_FAILED then
+    if
+      ev[1] == "dcutr:attempt:failed"
+      and type(ev[2]) == "table"
+      and ev[2].reason == dcutr_service.FAILURE_REASON.STREAM_OPEN_FAILED
+    then
       saw_retry_reason = true
       break
     end

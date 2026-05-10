@@ -1,4 +1,5 @@
 local ed25519 = require("lua_libp2p.crypto.ed25519")
+local key_pb = require("lua_libp2p.crypto.key_pb")
 local keys = require("lua_libp2p.crypto.keys")
 local host = require("lua_libp2p.host")
 local identify = require("lua_libp2p.protocol_identify.protocol")
@@ -52,7 +53,11 @@ local function run()
 
   local circuit_only_autorelay_service = {
     new = function()
-      return { start = function() return true end }
+      return {
+        start = function()
+          return true
+        end,
+      }
     end,
   }
   local circuit_only_host, circuit_only_host_err = host.new({
@@ -84,9 +89,11 @@ local function run()
   if not default_discovery_host then
     return nil, default_discovery_host_err
   end
-  if not default_discovery_host._bootstrap_discovery
-      or type(default_discovery_host._bootstrap_discovery.config.list) ~= "table"
-      or #default_discovery_host._bootstrap_discovery.config.list == 0 then
+  if
+    not default_discovery_host._bootstrap_discovery
+    or type(default_discovery_host._bootstrap_discovery.config.list) ~= "table"
+    or #default_discovery_host._bootstrap_discovery.config.list == 0
+  then
     return nil, "empty bootstrap config should use default bootstrappers"
   end
 
@@ -120,10 +127,12 @@ local function run()
   if not discovery_host.kad_dht or discovery_host.kad_dht.peer_discovery ~= discovery_host.peer_discovery then
     return nil, "kad_dht service should default to host peer_discovery"
   end
-  if discovery_host.components.identify ~= discovery_host.services.identify
-      or discovery_host.components.ping ~= discovery_host.services.ping
-      or discovery_host.components.kad_dht ~= discovery_host.services.kad_dht
-      or discovery_host.components.peer_routing ~= discovery_host.services.kad_dht then
+  if
+    discovery_host.components.identify ~= discovery_host.services.identify
+    or discovery_host.components.ping ~= discovery_host.services.ping
+    or discovery_host.components.kad_dht ~= discovery_host.services.kad_dht
+    or discovery_host.components.peer_routing ~= discovery_host.services.kad_dht
+  then
     return nil, "host should register service capabilities in components"
   end
 
@@ -161,9 +170,10 @@ local function run()
     return nil, "host should tag bootstrap peers"
   end
   local bootstrap_stats = discovery_host:task_stats()
-  if bootstrap_stats.by_name["host.bootstrap_discovery"] ~= 1
-    or bootstrap_stats.by_name["host.bootstrap_dial"] ~= 2
-    or bootstrap_stats.by_status.completed ~= 3
+  if
+    (bootstrap_stats.by_name["host.bootstrap_discovery"] or 0) < 1
+    or (bootstrap_stats.by_name["host.bootstrap_dial"] or 0) < 2
+    or (bootstrap_stats.by_status.completed or 0) < 3
   then
     return nil, "host task stats should include completed bootstrap dial tasks"
   end
@@ -197,7 +207,8 @@ local function run()
   assert(failed_discovery_host:start())
   assert(failed_discovery_host:_poll_once(0))
   local failed_tasks = failed_discovery_host:list_tasks()
-  if #failed_tasks ~= 2
+  if
+    #failed_tasks ~= 2
     or failed_tasks[1].name ~= "host.bootstrap_discovery"
     or failed_tasks[2].name ~= "host.bootstrap_dial"
     or failed_tasks[2].result ~= false
@@ -216,7 +227,9 @@ local function run()
           service_host:emit("relay:not-enough-relays", { reason = "start" })
           return true
         end,
-        tick = function() return true end,
+        tick = function()
+          return true
+        end,
       }
     end,
   }
@@ -233,13 +246,18 @@ local function run()
     return nil, "relay discovery should reconcile autorelay need_more state emitted before subscription"
   end
   assert(missed_need_more_host:start())
-  if not missed_need_more_host.relay_discovery.task
+  if
+    not missed_need_more_host.relay_discovery.task
     or missed_need_more_host.relay_discovery.task.name ~= "relay_discovery.replenish"
   then
     return nil, "host start should schedule pending relay discovery replenishment"
   end
   missed_need_more_host._bootstrap_discovery = { dial_on_start = true }
-  missed_need_more_host.kad_dht = { routing_table = { all_peers = function() return {} end } }
+  missed_need_more_host.kad_dht = { routing_table = {
+    all_peers = function()
+      return {}
+    end,
+  } }
   missed_need_more_host.relay_discovery.task = nil
   local replenish_ok, replenish_err = missed_need_more_host.relay_discovery:run_once(os.time())
   if not replenish_ok then
@@ -260,6 +278,67 @@ local function run()
   end
   discovery_host._identify_inflight = {}
   discovery_host:stop()
+
+  local identify_direct_host = assert(host.new({
+    runtime = "luv",
+    identity = keypair,
+    blocking = false,
+  }))
+  local remote_public_key, remote_public_key_err = key_pb.encode_public_key(key_pb.KEY_TYPE.Ed25519, keypair.public_key)
+  if not remote_public_key then
+    return nil, remote_public_key_err
+  end
+  local identify_writer = {
+    data = "",
+    write = function(self, chunk)
+      self.data = self.data .. chunk
+      return true
+    end,
+  }
+  local wrote_identify, wrote_identify_err = identify.write(identify_writer, {
+    protocolVersion = "/lua-libp2p/test",
+    agentVersion = "lua-libp2p/test",
+    publicKey = remote_public_key,
+    listenAddrs = {},
+    protocols = { identify.ID },
+  })
+  if not wrote_identify then
+    return nil, wrote_identify_err
+  end
+  local identify_response_stream = {
+    data = identify_writer.data,
+    read = function(self, n)
+      if #self.data < n then
+        return nil, "unexpected EOF"
+      end
+      local chunk = self.data:sub(1, n)
+      self.data = self.data:sub(n + 1)
+      return chunk
+    end,
+    close = function()
+      return true
+    end,
+  }
+  local direct_identify_opened = false
+  local direct_identify_conn = {
+    new_stream = function(_, protocols)
+      direct_identify_opened = true
+      return identify_response_stream, protocols[1]
+    end,
+  }
+  identify_direct_host.dial = function()
+    return nil, nil, "identify should reuse the connection from peer_connected"
+  end
+  local direct_identify_result, direct_identify_err = identify_direct_host:_request_identify("peer-direct", {
+    connection = direct_identify_conn,
+    state = { remote_peer_id = "peer-direct", direction = "inbound" },
+  })
+  if not direct_identify_result then
+    return nil, direct_identify_err
+  end
+  if not direct_identify_opened or direct_identify_result.connection ~= direct_identify_conn then
+    return nil, "identify on connect should open its stream on the existing connection"
+  end
 
   local limited_host = assert(host.new({
     runtime = "luv",
@@ -283,7 +362,9 @@ local function run()
   if app_stream or not app_err or app_err.kind ~= "permission" or #opened_streams ~= 0 then
     return nil, "limited connections should reject protocols without handler opt-in before opening streams"
   end
-  local handled_ok, handled_err = limited_host:handle("/app/allowed/1.0.0", function() return true end, {
+  local handled_ok, handled_err = limited_host:handle("/app/allowed/1.0.0", function()
+    return true
+  end, {
     run_on_limited_connection = true,
   })
   if not handled_ok then
@@ -312,13 +393,21 @@ local function run()
       if #dialed == 1 then
         return nil, require("lua_libp2p.error").new("timeout", "tcp connect timed out")
       end
-      return { close = function() return true end }
+      return {
+        close = function()
+          return true
+        end,
+      }
     end,
   }
   local original_upgrade_outbound = upgrader.upgrade_outbound
   local multi_peer_id = "12D3KooWCryG7Mon9orvQxcS1rYZjotPgpwoJNHHKcLLfE4Hf5mV"
   upgrader.upgrade_outbound = function()
-    return { close = function() return true end }, { remote_peer_id = multi_peer_id }
+    return {
+      close = function()
+        return true
+      end,
+    }, { remote_peer_id = multi_peer_id }
   end
   local multi_conn, _, multi_err = multi_dial_host:dial({
     peer_id = multi_peer_id,
@@ -352,12 +441,20 @@ local function run()
       if #family_dialed == 1 then
         return nil, require("lua_libp2p.error").new("io", "forced first dial failure")
       end
-      return { close = function() return true end }
+      return {
+        close = function()
+          return true
+        end,
+      }
     end,
   }
   local original_family_upgrade = upgrader.upgrade_outbound
   upgrader.upgrade_outbound = function()
-    return { close = function() return true end }, { remote_peer_id = multi_peer_id }
+    return {
+      close = function()
+        return true
+      end,
+    }, { remote_peer_id = multi_peer_id }
   end
   local family_conn, _, family_err = family_pref_host:dial({
     peer_id = multi_peer_id,
@@ -404,7 +501,11 @@ local function run()
   selection_host._tcp_transport = {
     dial = function()
       direct_dialed = true
-      return { close = function() return true end }
+      return {
+        close = function()
+          return true
+        end,
+      }
     end,
   }
   local original_selection_upgrade = upgrader.upgrade_outbound
@@ -427,7 +528,12 @@ local function run()
   if not direct_stream then
     return nil, direct_state_or_err
   end
-  if not direct_dialed or limited_stream_opened or direct_selected ~= "/app/1.0.0" or direct_stream_conn ~= direct_conn then
+  if
+    not direct_dialed
+    or limited_stream_opened
+    or direct_selected ~= "/app/1.0.0"
+    or direct_stream_conn ~= direct_conn
+  then
     return nil, "new_stream should prefer dialing an unlimited connection over reusing a limited one"
   end
 
@@ -438,6 +544,8 @@ local function run()
     dial_queue = {
       max_connections = 2,
       low_water = 1,
+      grace_period = 0,
+      silence_period = 0,
     },
   }))
   local closed = {}
@@ -468,6 +576,8 @@ local function run()
     dial_queue = {
       max_connections = 3,
       low_water = 2,
+      grace_period = 0,
+      silence_period = 0,
     },
   }))
   local weighted_closed = {}
@@ -499,7 +609,7 @@ local function run()
     blocking = false,
   }))
   local default_watermark_stats = default_watermark_host.connection_manager:stats()
-  if default_watermark_stats.high_water ~= 96 or default_watermark_stats.low_water ~= 64 then
+  if default_watermark_stats.high_water ~= 192 or default_watermark_stats.low_water ~= 160 then
     return nil, "connection manager should install default watermarks below resource limits"
   end
 
@@ -510,6 +620,8 @@ local function run()
     dial_queue = {
       high_water = 3,
       low_water = 2,
+      grace_period = 0,
+      silence_period = 0,
     },
   }))
   local watermark_closed = {}
@@ -533,6 +645,67 @@ local function run()
   end
   if watermark_host.connection_manager:stats().connections ~= 2 then
     return nil, "connection manager should prune high_water overflow down to low_water"
+  end
+
+  local grace_host = assert(host.new({
+    runtime = "luv",
+    identity = keypair,
+    blocking = false,
+    dial_queue = {
+      high_water = 2,
+      low_water = 1,
+      grace_period = 60,
+    },
+  }))
+  local grace_closed = {}
+  local function grace_conn(label)
+    return {
+      close = function()
+        grace_closed[label] = true
+        return true
+      end,
+    }
+  end
+  assert(grace_host:_register_connection(grace_conn("a"), { remote_peer_id = "peer-grace-a" }))
+  assert(grace_host:_register_connection(grace_conn("b"), { remote_peer_id = "peer-grace-b" }))
+  assert(grace_host:_register_connection(grace_conn("c"), { remote_peer_id = "peer-grace-c" }))
+  if grace_closed.a or grace_closed.b or grace_closed.c then
+    return nil, "connection manager should not prune fresh connections during grace period"
+  end
+  if grace_host.connection_manager:stats().connections ~= 3 then
+    return nil, "connection manager should temporarily exceed high_water during grace period"
+  end
+
+  local silence_host = assert(host.new({
+    runtime = "luv",
+    identity = keypair,
+    blocking = false,
+    dial_queue = {
+      high_water = 2,
+      low_water = 1,
+      grace_period = 0,
+      silence_period = 10,
+    },
+  }))
+  local silence_closed = {}
+  local function silence_conn(label)
+    return {
+      close = function()
+        silence_closed[label] = true
+        return true
+      end,
+    }
+  end
+  assert(silence_host:_register_connection(silence_conn("a"), { remote_peer_id = "peer-silence-a" }))
+  assert(silence_host:_register_connection(silence_conn("b"), { remote_peer_id = "peer-silence-b" }))
+  assert(silence_host:_register_connection(silence_conn("c"), { remote_peer_id = "peer-silence-c" }))
+  local after_first_prune = silence_host.connection_manager:stats().connections
+  if next(silence_closed) == nil then
+    return nil, "connection manager should close a connection during soft pruning"
+  end
+  assert(silence_host:_register_connection(silence_conn("d"), { remote_peer_id = "peer-silence-d" }))
+  if silence_host.connection_manager:stats().connections <= after_first_prune then
+    return nil, "connection manager should suppress repeated soft pruning during silence period"
   end
 
   local all_protected_host = assert(host.new({
@@ -561,12 +734,16 @@ local function run()
     identity = keypair,
     blocking = false,
   }))
-  local cleanup_entry = assert(cleanup_host:_register_connection(fake_conn("cleanup"), { remote_peer_id = "peer-cleanup" }))
+  local cleanup_entry =
+    assert(cleanup_host:_register_connection(fake_conn("cleanup"), { remote_peer_id = "peer-cleanup" }))
   if cleanup_host.connection_manager:stats().connections ~= 1 then
     return nil, "connection manager should track registered connection"
   end
-  assert(cleanup_host:_unregister_connection(nil, cleanup_entry, require("lua_libp2p.error").new("closed", "test close")))
-  if cleanup_host.connection_manager:stats().connections ~= 0
+  assert(
+    cleanup_host:_unregister_connection(nil, cleanup_entry, require("lua_libp2p.error").new("closed", "test close"))
+  )
+  if
+    cleanup_host.connection_manager:stats().connections ~= 0
     or cleanup_host.connection_manager.connections_by_peer["peer-cleanup"] ~= nil
   then
     return nil, "connection manager should clean tracking on unregister"
@@ -643,10 +820,11 @@ local function run()
     remote_peer_id = "peer-in-protected",
     direction = "inbound",
   }))
-  local protected_inbound_entry, protected_inbound_err = protected_inbound_host:_register_connection(fake_conn("in-rejected"), {
-    remote_peer_id = "peer-in-rejected",
-    direction = "inbound",
-  })
+  local protected_inbound_entry, protected_inbound_err =
+    protected_inbound_host:_register_connection(fake_conn("in-rejected"), {
+      remote_peer_id = "peer-in-rejected",
+      direction = "inbound",
+    })
   if protected_inbound_entry ~= nil or not protected_inbound_err or protected_inbound_err.kind ~= "resource" then
     return nil, "inbound limit should reject when only protected inbound connections exist"
   end

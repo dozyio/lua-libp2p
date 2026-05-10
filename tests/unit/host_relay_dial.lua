@@ -111,7 +111,11 @@ local function run()
   upgrader.upgrade_inbound = function(raw_conn, opts)
     upgraded_stream = raw_conn
     upgraded_opts = opts
-    return { close = function() return true end }, { remote_peer_id = dst_peer }
+    return {
+      close = function()
+        return true
+      end,
+    }, { remote_peer_id = dst_peer }
   end
   local handled, handle_err = h:_handle_relay_stop(stop_stream, {
     state = { remote_peer_id = relay_peer },
