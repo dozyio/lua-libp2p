@@ -397,6 +397,25 @@ function ConnectionManager:tag_peer(peer_id, tag, value)
   return true
 end
 
+function ConnectionManager:untag_peer(peer_id, tag)
+  if type(peer_id) ~= "string" or peer_id == "" then
+    return nil, error_mod.new("input", "peer id is required")
+  end
+  local tags = self.peer_tags[peer_id]
+  if not tags then
+    return false
+  end
+  if tag == nil then
+    self.peer_tags[peer_id] = nil
+    return true
+  end
+  tags[tag] = nil
+  if next(tags) == nil then
+    self.peer_tags[peer_id] = nil
+  end
+  return true
+end
+
 function ConnectionManager:peer_value(peer_id)
   local total = 0
   for _, value in pairs(self.peer_tags[peer_id] or {}) do
