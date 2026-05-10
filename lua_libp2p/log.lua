@@ -1,5 +1,7 @@
 --- Lightweight structured logging helpers.
 -- @module lua_libp2p.log
+local tables = require("lua_libp2p.util.tables")
+
 local M = {}
 
 local LEVELS = {
@@ -53,14 +55,6 @@ local function level_name_for(level)
     if value == level then return name end
   end
   return nil
-end
-
-local function copy_table(input)
-  local out = {}
-  for k, v in pairs(input or {}) do
-    out[k] = v
-  end
-  return out
 end
 
 local function configure_from_spec(spec)
@@ -164,7 +158,7 @@ end
 function M.snapshot()
   return {
     current_level = current_level,
-    subsystem_levels = copy_table(subsystem_levels),
+    subsystem_levels = tables.copy_table(subsystem_levels),
     default_subsystem_level = default_subsystem_level,
   }
 end
@@ -180,7 +174,7 @@ function M.restore(snapshot)
   current_level = tonumber(snapshot.current_level) or LEVELS.info
   subsystem_levels = nil
   if type(snapshot.subsystem_levels) == "table" then
-    subsystem_levels = copy_table(snapshot.subsystem_levels)
+    subsystem_levels = tables.copy_table(snapshot.subsystem_levels)
   end
   default_subsystem_level = snapshot.default_subsystem_level
   return true
