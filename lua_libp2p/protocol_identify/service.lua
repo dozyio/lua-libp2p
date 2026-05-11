@@ -1,6 +1,13 @@
 --- Identify protocol service.
 -- Registers `/ipfs/id/*` handlers and provides request helpers.
 -- @module lua_libp2p.protocol_identify.service
+---@class Libp2pIdentifyConfig
+---@field include_push? boolean Register `/ipfs/id/push/1.0.0`. Default: true.
+---@field run_on_connection_open? boolean Run identify after peer connection open. Default: true.
+---@field timeout? number Identify request timeout.
+---@field io_timeout? number Identify stream IO timeout.
+---@field poll_interval? number Scheduler poll interval while waiting.
+
 local identify = require("lua_libp2p.protocol_identify.protocol")
 
 local M = {}

@@ -5,6 +5,35 @@
 -- and protocol scopes. Memory and file-descriptor accounting can be layered on
 -- top of this API later without changing host integration points.
 -- @module lua_libp2p.resource_manager
+---@class Libp2pResourceLimits
+---@field connections? integer
+---@field connections_inbound? integer
+---@field connections_outbound? integer
+---@field transient_connections? integer
+---@field connections_per_peer? integer
+---@field connections_inbound_per_peer? integer
+---@field connections_outbound_per_peer? integer
+---@field streams? integer
+---@field streams_inbound? integer
+---@field streams_outbound? integer
+---@field transient_streams? integer
+---@field streams_per_peer? integer
+---@field streams_inbound_per_peer? integer
+---@field streams_outbound_per_peer? integer
+---@field protocol? table<string, Libp2pResourceLimits>
+---@field protocol_peer? table<string, Libp2pResourceLimits>
+---@field peer? table<string, Libp2pResourceLimits>
+
+---@class Libp2pResourceManagerConfig: Libp2pResourceLimits
+---@field default_limits? boolean Start from default limits unless false.
+---@field limits? Libp2pResourceLimits Explicit nested limits map.
+
+---@class Libp2pResourceManagerInstance
+---@field open_connection fun(self: Libp2pResourceManagerInstance, opts?: table): table|nil, table|nil
+---@field open_stream? fun(self: Libp2pResourceManagerInstance, opts?: table): table|nil, table|nil
+---@field stats? fun(self: Libp2pResourceManagerInstance): table
+---@field close? fun(self: Libp2pResourceManagerInstance): any
+
 local error_mod = require("lua_libp2p.error")
 
 local M = {}

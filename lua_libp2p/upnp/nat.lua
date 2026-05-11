@@ -1,5 +1,19 @@
 --- UPnP NAT mapping service.
 -- @module lua_libp2p.upnp.nat
+---@class Libp2pUpnpNatConfig
+---@field client? table Prebuilt IGD client.
+---@field discover_client? table Prebuilt discovery client.
+---@field internal_client? string Internal client IP override.
+---@field external_port? integer External port override.
+---@field replace_existing? boolean Remove stale mappings before adding. Default: false.
+---@field debug_soap? boolean Enable SOAP diagnostics.
+---@field debug_raw? boolean Enable raw HTTP/SSDP diagnostics.
+---@field ttl? number Mapping TTL seconds. Default: 720.
+---@field auto_confirm_address? boolean Advertise confirmed external address. Default: false.
+---@field description? string Port mapping description.
+---@field fail_on_start_error? boolean Fail service start on mapping error. Default: false.
+---@field wanppp_only? boolean Prefer/restrict to WANPPP service.
+
 local error_mod = require("lua_libp2p.error")
 local igd = require("lua_libp2p.upnp.igd")
 local log = require("lua_libp2p.log").subsystem("upnp")

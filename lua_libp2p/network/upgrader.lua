@@ -9,14 +9,6 @@ local mss = require("lua_libp2p.multistream_select.protocol")
 
 local M = {}
 
-local function default_security_protocols()
-  return security_registry.default_protocols()
-end
-
-local function default_muxer_protocols()
-  return muxer_registry.protocol_ids()
-end
-
 local function select_early_muxer(selected_security, muxer_protocols, sec_state, is_outbound)
   if selected_security ~= security_registry.NOISE then
     if selected_security == security_registry.TLS and type(sec_state) == "table" then
@@ -55,17 +47,21 @@ local function select_early_muxer(selected_security, muxer_protocols, sec_state,
   return nil
 end
 
-local function pick_protocol_list(value, fallback)
-  if value == nil then
-    return fallback
+local function pick_security_protocols(value)
+  return security_registry.normalize_protocols(value)
+end
+
+local function pick_muxer_protocols(value)
+  return muxer_registry.normalize_protocols(value)
+end
+
+local function options_with_muxer_protocols(options, muxer_protocols)
+  local out = {}
+  for k, v in pairs(options or {}) do
+    out[k] = v
   end
-  if type(value) == "string" then
-    return { value }
-  end
-  if type(value) == "table" and #value > 0 then
-    return value
-  end
-  return nil
+  out.muxer_protocols = muxer_protocols
+  return out
 end
 
 local function negotiate_inbound(conn, supported)
@@ -206,8 +202,8 @@ end
 -- @tparam[opt] table opts Upgrader options.
 -- `opts.local_keypair` (`table`): local identity keypair.
 -- `opts.expected_remote_peer_id` (`string`): optional remote peer id check.
--- `opts.security_protocols` (`table<string>`): security protocol preference list.
--- `opts.muxer_protocols` (`table<string>`): muxer protocol preference list.
+-- `opts.security_protocols` (`table`): security transport map, e.g. `{ noise = true }`.
+-- `opts.muxer_protocols` (`table`): muxer map, e.g. `{ yamux = true }`.
 -- `opts.initial_stream_window` (`number`): yamux initial stream window.
 -- `opts.max_ack_backlog` (`number`): yamux outbound ack backlog limit.
 -- `opts.max_accept_backlog` (`number`): yamux inbound accept backlog limit.
@@ -217,12 +213,12 @@ end
 function M.upgrade_outbound(raw_conn, opts)
   local options = opts or {}
 
-  local security_protocols = pick_protocol_list(options.security_protocols, default_security_protocols())
+  local security_protocols = pick_security_protocols(options.security_protocols)
   if not security_protocols then
     return nil, nil, error_mod.new("input", "invalid security_protocols option")
   end
 
-  local muxer_protocols = pick_protocol_list(options.muxer_protocols, default_muxer_protocols())
+  local muxer_protocols = pick_muxer_protocols(options.muxer_protocols)
   if not muxer_protocols then
     return nil, nil, error_mod.new("input", "invalid muxer_protocols option")
   end
@@ -232,7 +228,12 @@ function M.upgrade_outbound(raw_conn, opts)
     return nil, nil, sec_err
   end
 
-  local secure_conn, sec_state, handshake_err = run_security_handshake(raw_conn, true, selected_security, options)
+  local secure_conn, sec_state, handshake_err = run_security_handshake(
+    raw_conn,
+    true,
+    selected_security,
+    options_with_muxer_protocols(options, muxer_protocols)
+  )
   if not secure_conn then
     return nil, nil, handshake_err
   end
@@ -278,12 +279,12 @@ end
 function M.upgrade_inbound(raw_conn, opts)
   local options = opts or {}
 
-  local security_protocols = pick_protocol_list(options.security_protocols, default_security_protocols())
+  local security_protocols = pick_security_protocols(options.security_protocols)
   if not security_protocols then
     return nil, nil, error_mod.new("input", "invalid security_protocols option")
   end
 
-  local muxer_protocols = pick_protocol_list(options.muxer_protocols, default_muxer_protocols())
+  local muxer_protocols = pick_muxer_protocols(options.muxer_protocols)
   if not muxer_protocols then
     return nil, nil, error_mod.new("input", "invalid muxer_protocols option")
   end
@@ -293,7 +294,12 @@ function M.upgrade_inbound(raw_conn, opts)
     return nil, nil, sec_err
   end
 
-  local secure_conn, sec_state, handshake_err = run_security_handshake(raw_conn, false, selected_security, options)
+  local secure_conn, sec_state, handshake_err = run_security_handshake(
+    raw_conn,
+    false,
+    selected_security,
+    options_with_muxer_protocols(options, muxer_protocols)
+  )
   if not secure_conn then
     return nil, nil, handshake_err
   end

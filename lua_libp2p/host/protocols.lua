@@ -1,5 +1,10 @@
 --- Host protocol handler registry and limited-connection policy.
 -- @module lua_libp2p.host.protocols
+---@class Libp2pProtocolHandlerOptions
+---@field run_on_limited_connection? boolean Allow handler execution on limited relay connections.
+
+---@alias Libp2pProtocolHandler fun(stream: table, ctx: table): any
+
 local error_mod = require("lua_libp2p.error")
 local log = require("lua_libp2p.log").subsystem("host")
 local multistream = require("lua_libp2p.multistream_select.protocol")
@@ -28,13 +33,12 @@ function M.init(host)
 end
 
 function M.install(Host)
-  --- Register a stream handler for a protocol ID.
-  -- @tparam string protocol_id Protocol multistream ID.
-  -- @tparam function handler Stream handler `(stream, ctx)`.
-  -- @tparam[opt] table opts Handler options.
-  -- `opts.run_on_limited_connection=true` allows this protocol on limited relay links.
-  -- @treturn true|nil ok True on success, otherwise nil.
-  -- @treturn[opt] table err Structured error on failure.
+  ---Register a stream handler for a protocol ID.
+  ---@param protocol_id string Protocol multistream ID.
+  ---@param handler Libp2pProtocolHandler Stream handler `(stream, ctx)`.
+  ---@param opts? Libp2pProtocolHandlerOptions Handler options.
+  ---@return true|nil ok True on success, otherwise nil.
+  ---@return table|nil err Structured error on failure.
   function Host:handle(protocol_id, handler, opts)
     if type(protocol_id) ~= "string" or protocol_id == "" then
       return nil, error_mod.new("input", "protocol id must be non-empty")

@@ -4,7 +4,7 @@ source = {
   url = "git://github.com/dozyio/lua-libp2p",
 }
 description = {
-  summary = "Minimal libp2p building blocks for Lua",
+  summary = "libp2p port for Lua",
   detailed = "Rockspec for lua-libp2p and its runtime dependencies.",
   homepage = "https://github.com/dozyio/lua-libp2p",
   license = "MIT",

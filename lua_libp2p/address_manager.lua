@@ -1,5 +1,19 @@
 --- Address manager and advertisement policy.
 -- @module lua_libp2p.address_manager
+---@class Libp2pAddressManagerConfig
+---@field listen_addrs? string[]
+---@field announce_addrs? string[]
+---@field no_announce_addrs? string[]
+---@field observed_addrs? string[]
+---@field relay_addrs? string[]
+---@field public_mapping_addrs? string[]
+---@field advertise_observed? boolean
+
+---@class Libp2pAddressManagerInstance
+---@field get_listen_addrs fun(self: Libp2pAddressManagerInstance): string[]
+---@field set_listen_addrs? fun(self: Libp2pAddressManagerInstance, addrs: string[]): boolean|nil, table|nil
+---@field get_advertised_addrs? fun(self: Libp2pAddressManagerInstance): string[]
+
 local multiaddr = require("lua_libp2p.multiaddr")
 local table_utils = require("lua_libp2p.util.tables")
 

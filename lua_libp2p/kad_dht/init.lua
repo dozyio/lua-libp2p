@@ -1,5 +1,63 @@
 --- Kademlia DHT service and client operations.
 -- @module lua_libp2p.kad_dht
+---@class Libp2pKadDhtConfig
+---@field local_peer_id? string Override local peer ID; normally derived from host.
+---@field protocol_id? string DHT protocol ID override.
+---@field mode? 'client'|'server'|'auto' DHT mode. Default: `client`.
+---@field k? integer Bucket size / result count. Default: module default.
+---@field bucket_size? integer Alias for `k` when creating routing table.
+---@field alpha? integer Query parallelism. Default: module default.
+---@field disjoint_paths? integer Number of disjoint query paths.
+---@field max_concurrent_queries? integer
+---@field max_message_size? integer
+---@field bootstrappers? string[] Bootstrap peer multiaddrs.
+---@field peer_discovery? table Peer discovery source.
+---@field datastore? table Shared datastore for provider/record stores.
+---@field provider_store? table Prebuilt provider store.
+---@field provider_datastore? table Provider datastore override.
+---@field provider_ttl_seconds? number Provider record TTL.
+---@field provider_addr_ttl_seconds? number Provider address TTL.
+---@field record_store? table Prebuilt record store.
+---@field record_datastore? table Record datastore override.
+---@field record_ttl_seconds? number Value record TTL.
+---@field record_validator? function
+---@field record_selector? function
+---@field record_validators? table
+---@field record_selectors? table
+---@field routing_table? table Prebuilt routing table.
+---@field hash_function? function Routing table hash function.
+---@field address_filter? string|function|table Address filter or filter mode.
+---@field address_filter_mode? string Alias for `address_filter`.
+---@field query_filter? function
+---@field routing_table_filter? function
+---@field peer_diversity_filter? function
+---@field peer_diversity_max_peers_per_ip_group? integer|false
+---@field peer_diversity_max_peers_per_ip_group_per_bucket? integer|false
+---@field dnsaddr_resolver? function
+---@field auto_server_mode? boolean Enable automatic server-mode advertisement.
+---@field maintenance_enabled? boolean Default: true.
+---@field maintenance_interval_seconds? number
+---@field maintenance_startup_retry_seconds? number
+---@field maintenance_startup_retry_max_seconds? number
+---@field maintenance_min_recheck_seconds? number
+---@field maintenance_max_checks? integer
+---@field maintenance_walk_every? integer
+---@field maintenance_walk_timeout? number
+---@field maintenance_protocol_check_timeout? number
+---@field max_failed_checks_before_evict? integer
+---@field reprovider_enabled? boolean
+---@field reprovider_interval_seconds? number
+---@field reprovider_initial_delay_seconds? number
+---@field reprovider_jitter_seconds? number
+---@field reprovider_random? function
+---@field reprovider_batch_size? integer
+---@field reprovider_max_parallel? integer
+---@field reprovider_timeout? number
+---@field peer_id_bytes_cache_size? integer
+---@field filtered_addr_cache_size? integer
+---@field filtered_addr_cache_ttl_seconds? number
+---@field now? fun(): number
+
 local error_mod = require("lua_libp2p.error")
 local bootstrap = require("lua_libp2p.bootstrap")
 local bootstrap_dht = require("lua_libp2p.kad_dht.bootstrap")

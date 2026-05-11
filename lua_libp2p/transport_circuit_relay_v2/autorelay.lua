@@ -1,6 +1,23 @@
 --- AutoRelay service.
 -- Maintains relay reservations and candidate discovery.
 -- @module lua_libp2p.transport_circuit_relay_v2.autorelay
+---@class Libp2pAutoRelayConfig
+---@field relays? table[] Static bootstrap relay target list.
+---@field max_reservations? integer Maximum active relay reservations. Default: 2.
+---@field max_queue_length? integer Maximum queued reservation targets. Default: 32.
+---@field reservation_concurrency? integer Concurrent reservation attempts. Default: 1.
+---@field backoff_seconds? number Failed relay backoff. Default: 60.
+---@field keepalive_interval? number Keepalive interval; nil uses module default.
+---@field keepalive_timeout? number Keepalive ping timeout. Default: 5.
+---@field discover? boolean|table Enable/use relay discovery integration.
+---@field reserve_opts? table Options passed to relay reservation calls.
+---@field refresh_margin? number Reservation refresh margin. Default: 60.
+---@field refresh_timeout? number Refresh timeout. Default: 300.
+---@field refresh_timeout_min? number Minimum refresh timeout. Default: 30.
+---@field min_reservation_ttl? number Minimum acceptable reservation TTL. Default: 10.
+---@field tick_interval? number Maintenance tick interval. Default: 1.
+---@field fail_fast? boolean Fail host start when reservations fail. Default: false.
+
 local error_mod = require("lua_libp2p.error")
 local log = require("lua_libp2p.log").subsystem("autorelay")
 local multiaddr = require("lua_libp2p.multiaddr")

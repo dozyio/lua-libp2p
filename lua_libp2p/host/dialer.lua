@@ -1,5 +1,17 @@
 --- Host outbound dial and stream opening internals.
 -- @module lua_libp2p.host.dialer
+---@class Libp2pDialOptions
+---@field timeout? number
+---@field io_timeout? number
+---@field ctx? table
+---@field force? boolean
+---@field require_unlimited_connection? boolean
+---@field allow_limited_connection? boolean
+---@field bypass_connection_manager? boolean
+
+---@class Libp2pStreamOptions: Libp2pDialOptions
+---@field protocol_hint? string
+
 local error_mod = require("lua_libp2p.error")
 local log = require("lua_libp2p.log").subsystem("host")
 local multiaddr = require("lua_libp2p.multiaddr")
@@ -329,16 +341,12 @@ function M.install(Host)
     return nil, nil, last_err or error_mod.new("io", "all dial addresses failed")
   end
 
-  --- Open (or reuse) a connection to a peer target.
-  -- @tparam string|table peer_or_addr Peer id, multiaddr, or dial target table.
-  -- @tparam[opt] table opts Dial options.
-  -- Common options: `timeout`, `io_timeout`, `ctx`, `force`,
-  -- `require_unlimited_connection`, `allow_limited_connection`,
-  -- `bypass_connection_manager`.
-  -- `opts.allow_limited_connection=true` permits returning limited relay links.
-  -- @treturn table|nil conn
-  -- @treturn[opt] table state
-  -- @treturn[opt] table err
+  ---Open or reuse a connection to a peer target.
+  ---@param peer_or_addr string|table Peer id, multiaddr, or dial target table.
+  ---@param opts? Libp2pDialOptions Dial options.
+  ---@return table|nil conn
+  ---@return table|nil state
+  ---@return table|nil err
   function Host:dial(peer_or_addr, opts)
     local options = opts or {}
     log.debug("host dial requested", {
@@ -353,16 +361,14 @@ function M.install(Host)
     return self.connection_manager:open_connection(peer_or_addr, options)
   end
 
-  --- Open a negotiated protocol stream.
-  -- @tparam string|table peer_or_addr Peer id, multiaddr, or dial target table.
-  -- @tparam table protocols Ordered multistream protocol IDs.
-  -- @tparam[opt] table opts Stream and dial options.
-  -- Common options: all `dial` options plus stream-level negotiation controls.
-  -- `opts.protocol_hint`/`opts.allow_limited_connection` influence negotiation policy.
-  -- @treturn table|nil stream
-  -- @treturn[opt] string selected Selected protocol ID.
-  -- @treturn[opt] table conn Underlying connection.
-  -- @treturn[opt] table state_or_err Connection state or error.
+  ---Open a negotiated protocol stream.
+  ---@param peer_or_addr string|table Peer id, multiaddr, or dial target table.
+  ---@param protocols string[] Ordered multistream protocol IDs.
+  ---@param opts? Libp2pStreamOptions Stream and dial options.
+  ---@return table|nil stream
+  ---@return string|nil selected Selected protocol ID.
+  ---@return table|nil conn Underlying connection.
+  ---@return table|nil state_or_err Connection state or error.
   function Host:new_stream(peer_or_addr, protocols, opts)
     local function open_once(dial_opts)
       local conn, state, dial_err = self:dial(peer_or_addr, dial_opts)

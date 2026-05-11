@@ -1,5 +1,15 @@
 --- Host cooperative task scheduler internals.
 -- @module lua_libp2p.host.tasks
+---@class Libp2pTaskOptions
+---@field service? string
+---@field priority? 'front'
+
+---@class Libp2pRunUntilTaskOptions
+---@field timeout? number
+---@field poll_interval? number
+
+---@alias Libp2pTaskFunction fun(ctx: table): any
+
 local error_mod = require("lua_libp2p.error")
 local log = require("lua_libp2p.log").subsystem("host")
 
@@ -313,6 +323,12 @@ local function run_task_finalizer(host, task)
 end
 
 function M.install(Host)
+  ---Spawn a cooperative host task.
+  ---@param name string
+  ---@param fn Libp2pTaskFunction
+  ---@param opts? Libp2pTaskOptions
+  ---@return table|nil task
+  ---@return table|nil err
   function Host:spawn_task(name, fn, opts)
     if type(name) ~= "string" or name == "" then
       return nil, error_mod.new("input", "task name must be non-empty")
@@ -520,6 +536,11 @@ function M.install(Host)
     return true
   end
 
+  ---Run the host runtime until a task completes, fails, is cancelled, or times out.
+  ---@param task table
+  ---@param opts? Libp2pRunUntilTaskOptions
+  ---@return true|nil ok
+  ---@return table|nil err
   function Host:run_until_task(task, opts)
     if type(task) ~= "table" then
       return nil, error_mod.new("input", "task table is required")

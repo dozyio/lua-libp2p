@@ -1,5 +1,17 @@
 --- Identify protocol codec and helpers.
 -- @module lua_libp2p.protocol_identify.protocol
+---@class Libp2pIdentifyMessage
+---@field protocolVersion? string
+---@field agentVersion? string
+---@field publicKey? string
+---@field listenAddrs? string[] Multiaddr bytes or text.
+---@field observedAddr? string Multiaddr bytes or text.
+---@field protocols? string[]
+---@field signedPeerRecord? string
+
+---@class Libp2pIdentifyVerifyOptions
+---@field expected_peer_id? string
+
 local error_mod = require("lua_libp2p.error")
 local multiaddr = require("lua_libp2p.multiaddr")
 local peer_record = require("lua_libp2p.record.peer_record")
@@ -132,6 +144,10 @@ local function skip_unknown(payload, index, wire)
   return nil, error_mod.new("decode", "unsupported protobuf wire type", { wire = wire })
 end
 
+---Encode identify message payload.
+---@param message Libp2pIdentifyMessage
+---@return string|nil payload
+---@return table|nil err
 function M.encode(message)
   if type(message) ~= "table" then
     return nil, error_mod.new("input", "identify message must be a table")
@@ -205,6 +221,10 @@ function M.encode(message)
   return table.concat(parts)
 end
 
+---Decode identify message payload.
+---@param payload string
+---@return Libp2pIdentifyMessage|nil message
+---@return table|nil err
 function M.decode(payload)
   if type(payload) ~= "string" then
     return nil, error_mod.new("input", "identify payload must be bytes")
@@ -267,6 +287,10 @@ function M.decode(payload)
   return out
 end
 
+---Merge multiple identify messages, de-duplicating addrs/protocols.
+---@param messages Libp2pIdentifyMessage[]
+---@return Libp2pIdentifyMessage|nil message
+---@return table|nil err
 function M.merge(messages)
   if type(messages) ~= "table" then
     return nil, error_mod.new("input", "messages must be a table")
@@ -322,6 +346,11 @@ function M.merge(messages)
   return out
 end
 
+---Write one length-delimited identify message.
+---@param conn Libp2pStream
+---@param message Libp2pIdentifyMessage
+---@return true|nil ok
+---@return table|nil err
 function M.write(conn, message)
   local payload, payload_err = M.encode(message)
   if not payload then
@@ -338,6 +367,10 @@ function M.write(conn, message)
   return true
 end
 
+---Read one length-delimited identify message.
+---@param conn Libp2pStream
+---@return Libp2pIdentifyMessage|nil message
+---@return table|nil err
 function M.read(conn)
   local length, len_err = read_varint(conn)
   if not length then
@@ -359,14 +392,25 @@ function M.read(conn)
   return M.decode(payload)
 end
 
+---@param conn Libp2pStream
+---@param message Libp2pIdentifyMessage
+---@return true|nil ok
+---@return table|nil err
 function M.send_push(conn, message)
   return M.write(conn, message)
 end
 
+---@param conn Libp2pStream
+---@return Libp2pIdentifyMessage|nil message
+---@return table|nil err
 function M.read_push(conn)
   return M.read(conn)
 end
 
+---@param conn Libp2pStream
+---@param on_message? fun(message: Libp2pIdentifyMessage): any
+---@return Libp2pIdentifyMessage|any
+---@return table|nil err
 function M.handle_push(conn, on_message)
   local msg, err = M.read_push(conn)
   if not msg then
@@ -378,8 +422,11 @@ function M.handle_push(conn, on_message)
   return msg
 end
 
---- Verify and decode signed peer record from identify message.
--- `opts.expected_peer_id` can enforce expected peer identity.
+---Verify and decode signed peer record from identify message.
+---@param message Libp2pIdentifyMessage
+---@param opts? Libp2pIdentifyVerifyOptions
+---@return table|nil peer_record
+---@return table|nil err
 function M.verify_signed_peer_record(message, opts)
   if type(message) ~= "table" then
     return nil, error_mod.new("input", "identify message must be a table")
@@ -390,9 +437,11 @@ function M.verify_signed_peer_record(message, opts)
   return peer_record.verify_signed_envelope(message.signedPeerRecord, opts)
 end
 
---- Install identify-on-connection-open hook.
--- `opts.run_on_connection_open=false` disables hook installation.
--- `opts.timeout` and `opts.io_timeout` are forwarded to identify requests.
+---Install identify-on-connection-open hook.
+---@param host Libp2pHost
+---@param opts? Libp2pIdentifyConfig
+---@return true|nil ok
+---@return table|nil err
 function M.enable_run_on_connection_open(host, opts)
   local options = opts or {}
   if options.run_on_connection_open == false then

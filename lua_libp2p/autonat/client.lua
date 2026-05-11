@@ -1,5 +1,14 @@
 --- AutoNAT v2 client/service.
 -- @module lua_libp2p.autonat.client
+---@class Libp2pAutoNatConfig
+---@field allow_dial_data? boolean Allow AutoNAT v2 dial-data requests. Default: true.
+---@field max_dial_data_bytes? integer Maximum dial-data bytes accepted/sent.
+---@field dial_data_chunk_size? integer Dial-data chunk size.
+---@field max_message_size? integer Maximum AutoNAT message size.
+---@field monitor_on_start? boolean Start monitor when host starts. Default: false.
+---@field monitor_start_opts? table Monitor options used when `monitor_on_start=true`.
+---@field monitor_opts? table Alias for `monitor_start_opts`.
+
 local error_mod = require("lua_libp2p.error")
 local log = require("lua_libp2p.log").subsystem("autonat")
 local multiaddr = require("lua_libp2p.multiaddr")

@@ -1,5 +1,25 @@
 --- Multiaddr parsing, formatting, and helpers.
 -- @module lua_libp2p.multiaddr
+---@class Libp2pMultiaddrComponent
+---@field protocol string
+---@field value? string
+
+---@class Libp2pMultiaddr
+---@field components Libp2pMultiaddrComponent[]
+---@field text string
+
+---@class Libp2pRelayInfo
+---@field relay_peer_id string
+---@field relay_addr string
+---@field circuit_addr string
+---@field destination_peer_id? string
+---@field circuit_index integer
+
+---@class Libp2pTcpEndpoint
+---@field host string
+---@field host_protocol string
+---@field port integer
+
 local error_mod = require("lua_libp2p.error")
 local peerid = require("lua_libp2p.peerid")
 local varint = require("lua_libp2p.multiformats.varint")
@@ -288,10 +308,10 @@ local function normalize_text(text)
   return normalized
 end
 
---- Parse a multiaddr string into components.
--- @tparam string text Multiaddr text.
--- @treturn table|nil parsed
--- @treturn[opt] table err
+---Parse a multiaddr string into components.
+---@param text string Multiaddr text.
+---@return Libp2pMultiaddr|nil parsed
+---@return table|nil err
 function M.parse(text)
   if type(text) ~= "string" then
     return nil, error_mod.new("input", "multiaddr must be a string")
@@ -358,10 +378,10 @@ function M.parse(text)
   }
 end
 
---- Format a parsed multiaddr back to text.
--- @tparam table|string addr Parsed object or address string.
--- @treturn string|nil text
--- @treturn[opt] table err
+---Format a parsed multiaddr back to text.
+---@param addr Libp2pMultiaddr Parsed multiaddr object.
+---@return string|nil text
+---@return table|nil err
 function M.format(addr)
   if type(addr) ~= "table" or type(addr.components) ~= "table" then
     return nil, error_mod.new("input", "multiaddr object must contain components")
@@ -400,7 +420,11 @@ function M.format(addr)
   return "/" .. table.concat(out, "/")
 end
 
---- Encapsulate one multiaddr inside another.
+---Encapsulate one multiaddr inside another.
+---@param base string|Libp2pMultiaddr
+---@param extra string|Libp2pMultiaddr
+---@return string|nil text
+---@return table|nil err
 function M.encapsulate(base, extra)
   local left, left_err
   if type(base) == "string" then
@@ -432,7 +456,11 @@ function M.encapsulate(base, extra)
   return M.format({ components = components })
 end
 
---- Remove a trailing suffix multiaddr.
+---Remove a trailing suffix multiaddr.
+---@param base string|Libp2pMultiaddr
+---@param suffix string|Libp2pMultiaddr
+---@return string|nil text
+---@return table|nil err
 function M.decapsulate(base, suffix)
   local left, left_err = M.parse(base)
   if not left then
@@ -484,7 +512,10 @@ local function copy_components(components, first, last)
   return out
 end
 
---- Extract relay components from a relay destination address.
+---Extract relay components from a relay destination address.
+---@param input string|Libp2pMultiaddr
+---@return Libp2pRelayInfo|nil info
+---@return table|nil err
 function M.relay_info(input)
   local addr, parse_err = parse_input(input)
   if not addr then
@@ -536,12 +567,17 @@ function M.relay_info(input)
   }
 end
 
---- Check whether an address is a relay (`/p2p-circuit`) address.
+---Check whether an address is a relay (`/p2p-circuit`) address.
+---@param input string|Libp2pMultiaddr
+---@return boolean
 function M.is_relay_addr(input)
   return M.relay_info(input) ~= nil
 end
 
---- Build a relay reservation address from a relay peer address.
+---Build a relay reservation address from a relay peer address.
+---@param relay_addr string|Libp2pMultiaddr
+---@return string|nil addr
+---@return table|nil err
 function M.relay_reservation_addr(relay_addr)
   local info = M.relay_info(relay_addr)
   if info then
@@ -550,7 +586,11 @@ function M.relay_reservation_addr(relay_addr)
   return M.encapsulate(relay_addr, "/p2p-circuit")
 end
 
---- Build a relay destination address for a target peer.
+---Build a relay destination address for a target peer.
+---@param relay_addr string|Libp2pMultiaddr
+---@param destination_peer_id string
+---@return string|nil addr
+---@return table|nil err
 function M.relay_destination_addr(relay_addr, destination_peer_id)
   if type(destination_peer_id) ~= "string" or destination_peer_id == "" then
     return nil, error_mod.new("input", "destination peer id must be non-empty")
@@ -570,7 +610,10 @@ function M.relay_destination_addr(relay_addr, destination_peer_id)
   return M.encapsulate(reservation, "/p2p/" .. destination_peer_id)
 end
 
---- Convert multiaddr into `{ host, port }` TCP endpoint.
+---Convert multiaddr into `{ host, port }` TCP endpoint.
+---@param input string|Libp2pMultiaddr
+---@return Libp2pTcpEndpoint|nil endpoint
+---@return table|nil err
 function M.to_tcp_endpoint(input)
   local addr = input
   if type(addr) == "string" then
@@ -658,7 +701,9 @@ local function first_host_component(input)
   return nil
 end
 
---- Return true when address is private/loopback/link-local.
+---Return true when address is private/loopback/link-local.
+---@param input string|Libp2pMultiaddr
+---@return boolean
 function M.is_private_addr(input)
   local host = first_host_component(input)
   if not host then
@@ -726,7 +771,9 @@ function M.is_private_addr(input)
   return dns_name == "localhost" or dns_name:match("%.localhost$") ~= nil or dns_name:match("%.local$") ~= nil
 end
 
---- Return true when address is considered public-routable.
+---Return true when address is considered public-routable.
+---@param input string|Libp2pMultiaddr
+---@return boolean
 function M.is_public_addr(input)
   local host = first_host_component(input)
   if not host then
@@ -876,7 +923,10 @@ local function decode_value(protocol, bytes, offset)
   return raw, finish + 1
 end
 
---- Encode multiaddr text to binary bytes.
+---Encode multiaddr text to binary bytes.
+---@param input string|Libp2pMultiaddr
+---@return string|nil bytes
+---@return table|nil err
 function M.to_bytes(input)
   local addr = input
   if type(addr) == "string" then
@@ -918,7 +968,10 @@ function M.to_bytes(input)
   return table.concat(parts)
 end
 
---- Decode binary multiaddr bytes to text and components.
+---Decode binary multiaddr bytes to text and components.
+---@param bytes string
+---@return Libp2pMultiaddr|nil parsed
+---@return table|nil err
 function M.from_bytes(bytes)
   if type(bytes) ~= "string" or bytes == "" then
     return nil, error_mod.new("input", "multiaddr bytes must be non-empty")

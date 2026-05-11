@@ -1,5 +1,27 @@
 --- Connection manager with dial queue and reuse policy.
 -- @module lua_libp2p.connection_manager
+---@class Libp2pConnectionManagerConfig
+---@field max_parallel_dials? integer
+---@field max_dial_queue_length? integer
+---@field max_peer_addrs_to_dial? integer
+---@field max_dial_addrs? integer Alias for `max_peer_addrs_to_dial`.
+---@field address_dial_timeout? number
+---@field dial_timeout? number
+---@field max_connections? integer
+---@field max_inbound_connections? integer
+---@field max_outbound_connections? integer
+---@field max_connections_per_peer? integer
+---@field low_water? integer
+---@field high_water? integer
+---@field grace_period? number
+---@field silence_period? number
+
+---@class Libp2pConnectionManagerInstance
+---@field can_open_connection fun(self: Libp2pConnectionManagerInstance, state: table): boolean|nil, table|nil
+---@field on_connection_opened? fun(self: Libp2pConnectionManagerInstance, entry: table): boolean|nil, table|nil
+---@field on_connection_closed? fun(self: Libp2pConnectionManagerInstance, entry: table): any
+---@field open_connection? fun(self: Libp2pConnectionManagerInstance, peer_or_addr: string|table, opts?: table): table|nil, table|nil, table|nil
+---@field stats? fun(self: Libp2pConnectionManagerInstance): table
 local error_mod = require("lua_libp2p.error")
 local multiaddr = require("lua_libp2p.multiaddr")
 

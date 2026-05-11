@@ -22,6 +22,16 @@ local upload_bytes = tonumber(os.getenv("UPLOAD_BYTES")) or 128 * 1024
 local download_bytes = tonumber(os.getenv("DOWNLOAD_BYTES")) or 128 * 1024
 local write_block_size = tonumber(os.getenv("WRITE_BLOCK_SIZE")) or 16 * 1024
 
+local function security_map(protocol_id)
+  if protocol_id == "/noise" then
+    return { noise = true }
+  end
+  if protocol_id == "/tls/1.0.0" then
+    return { tls = true }
+  end
+  error("unsupported benchmark security protocol: " .. tostring(protocol_id))
+end
+
 local function percentile(values, p)
   local idx = math.max(1, math.min(#values, math.ceil(#values * p)))
   return values[idx]
@@ -39,6 +49,16 @@ local upload_bytes = tonumber(arg[3])
 local download_bytes = tonumber(arg[4])
 local write_block_size = tonumber(arg[5])
 local out_path = arg[6]
+
+local function security_map(protocol_id)
+  if protocol_id == "/noise" then
+    return { noise = true }
+  end
+  if protocol_id == "/tls/1.0.0" then
+    return { tls = true }
+  end
+  error("unsupported benchmark security protocol: " .. tostring(protocol_id))
+end
 
 local function write_out(text)
   local f = assert(io.open(out_path, "wb"))
@@ -64,7 +84,7 @@ end
 local h, h_err = host_mod.new({
   runtime = "luv",
   blocking = false,
-  security_transports = { security },
+  security_transports = security_map(security),
 })
   if not h then
   write_out("init_error:" .. err_text(h_err))
@@ -112,7 +132,7 @@ local function run_once(security)
     runtime = "luv",
     blocking = false,
     listen_addrs = { "/ip4/127.0.0.1/tcp/0" },
-    security_transports = { security },
+    security_transports = security_map(security),
     services = {
       perf = { module = perf_service, config = { write_block_size = write_block_size } },
     },

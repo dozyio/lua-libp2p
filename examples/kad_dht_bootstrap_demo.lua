@@ -435,7 +435,7 @@ local function run_server()
         },
       },
     },
-    connection_manager_options = {
+    connection_manager = {
       -- Keep the public demo comfortably below common 256-FD process limits.
       low_water = 96,
       high_water = 128,

@@ -1,5 +1,9 @@
 --- Perf protocol service.
 -- @module lua_libp2p.protocol_perf.service
+---@class Libp2pPerfConfig
+---@field write_block_size? integer Chunk size for replies.
+---@field yield_every_bytes? integer Cooperative yield cadence.
+
 local perf = require("lua_libp2p.protocol_perf.protocol")
 local log = require("lua_libp2p.log").subsystem("perf")
 

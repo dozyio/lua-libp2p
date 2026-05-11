@@ -1,5 +1,11 @@
 --- Poll-based TCP transport implementation.
 -- @module lua_libp2p.transport_tcp.transport
+---@class Libp2pTcpConfig
+---@field nodelay? boolean Defaults to enabled.
+---@field keepalive? boolean Defaults to enabled.
+---@field keepalive_initial_delay? number Defaults to 0 when keepalive is enabled.
+---@field listen_backlog? integer
+---@field accept_batch? integer
 local socket = require("socket")
 local error_mod = require("lua_libp2p.error")
 local log = require("lua_libp2p.log").subsystem("tcp")

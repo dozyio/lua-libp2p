@@ -1,5 +1,13 @@
 --- Peer ID parsing and derivation helpers.
 -- @module lua_libp2p.peerid
+---@class Libp2pPeerId
+---@field type? Libp2pIdentityType|string|integer
+---@field bytes string Raw multihash bytes.
+---@field id string Base58btc peer ID.
+---@field cid string CIDv1 libp2p-key form.
+---@field public_key? string Raw public key when inlined.
+---@field public_key_proto? string Protobuf-encoded public key when available.
+
 local error_mod = require("lua_libp2p.error")
 local key_pb = require("lua_libp2p.crypto.key_pb")
 local base58btc = require("lua_libp2p.multiformats.base58btc")
@@ -66,7 +74,11 @@ local function build_peer_id_record(multihash_bytes, key_type, public_key, publi
   }
 end
 
---- Build a peer id from protobuf-encoded public key bytes.
+---Build a peer id from protobuf-encoded public key bytes.
+---@param public_key_proto string
+---@param key_type? Libp2pIdentityType|string|integer
+---@return Libp2pPeerId|nil peer_id
+---@return table|nil err
 function M.from_public_key_proto(public_key_proto, key_type)
   if type(public_key_proto) ~= "string" then
     return nil, error_mod.new("input", "public key proto must be bytes")
@@ -97,7 +109,10 @@ function M.from_public_key_proto(public_key_proto, key_type)
   return build_peer_id_record(multihash_bytes, detected_key_type, detected_public_key, public_key_proto)
 end
 
---- Build a peer id from a raw ed25519 public key.
+---Build a peer id from a raw ed25519 public key.
+---@param raw_public_key string
+---@return Libp2pPeerId|nil peer_id
+---@return table|nil err
 function M.from_ed25519_public_key(raw_public_key)
   local public_key_proto, marshal_err = marshal_ed25519_public_key(raw_public_key)
   if not public_key_proto then
@@ -106,7 +121,10 @@ function M.from_ed25519_public_key(raw_public_key)
   return M.from_public_key_proto(public_key_proto, "ed25519")
 end
 
---- Build a peer id from DER-encoded ECDSA public key bytes.
+---Build a peer id from DER-encoded ECDSA public key bytes.
+---@param public_key_der string
+---@return Libp2pPeerId|nil peer_id
+---@return table|nil err
 function M.from_ecdsa_public_key(public_key_der)
   local public_key_proto, marshal_err = marshal_ecdsa_public_key(public_key_der)
   if not public_key_proto then
@@ -115,12 +133,18 @@ function M.from_ecdsa_public_key(public_key_der)
   return M.from_public_key_proto(public_key_proto, "ecdsa")
 end
 
---- Alias for @{from_ecdsa_public_key}.
+---Alias for @{from_ecdsa_public_key}.
+---@param public_key_der string
+---@return Libp2pPeerId|nil peer_id
+---@return table|nil err
 function M.from_ecdsa_public_key_der(public_key_der)
   return M.from_ecdsa_public_key(public_key_der)
 end
 
---- Build a peer id from secp256k1 public key bytes.
+---Build a peer id from secp256k1 public key bytes.
+---@param public_key string
+---@return Libp2pPeerId|nil peer_id
+---@return table|nil err
 function M.from_secp256k1_public_key(public_key)
   local public_key_proto, marshal_err = marshal_secp256k1_public_key(public_key)
   if not public_key_proto then
@@ -129,17 +153,25 @@ function M.from_secp256k1_public_key(public_key)
   return M.from_public_key_proto(public_key_proto, "secp256k1")
 end
 
---- Encode peer id bytes as base58btc text.
+---Encode peer id bytes as base58btc text.
+---@param peer_id_bytes string
+---@return string
 function M.to_base58(peer_id_bytes)
   return base58btc.encode(peer_id_bytes)
 end
 
---- Encode peer id bytes as CIDv1 (`libp2p-key`).
+---Encode peer id bytes as CIDv1 (`libp2p-key`).
+---@param peer_id_bytes string
+---@return string|nil cid
+---@return table|nil err
 function M.to_cid(peer_id_bytes)
   return cid.encode_v1(LIBP2P_KEY_CODEC, peer_id_bytes, "base32")
 end
 
---- Parse raw peer id multihash bytes.
+---Parse raw peer id multihash bytes.
+---@param peer_id_bytes string
+---@return Libp2pPeerId|nil peer_id
+---@return table|nil err
 function M.from_bytes(peer_id_bytes)
   if type(peer_id_bytes) ~= "string" or peer_id_bytes == "" then
     return nil, error_mod.new("input", "peer id bytes must be non-empty")
@@ -167,7 +199,10 @@ function M.from_bytes(peer_id_bytes)
   return build_peer_id_record(peer_id_bytes, key_type, public_key, public_key_proto)
 end
 
---- Parse a peer id string (base58 or CIDv1).
+---Parse a peer id string (base58 or CIDv1).
+---@param text string
+---@return Libp2pPeerId|nil peer_id
+---@return table|nil err
 function M.parse(text)
   if type(text) ~= "string" or text == "" then
     return nil, error_mod.new("input", "peer id text must be non-empty")
@@ -214,7 +249,10 @@ function M.parse(text)
   return build_peer_id_record(multihash_bytes, key_type, public_key, public_key_proto)
 end
 
---- Alias for @{parse}.
+---Alias for @{parse}.
+---@param text string
+---@return Libp2pPeerId|nil peer_id
+---@return table|nil err
 function M.from_text(text)
   return M.parse(text)
 end
