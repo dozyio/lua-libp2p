@@ -23,6 +23,7 @@ local function run()
     "lua_libp2p.autonat.client",
     "lua_libp2p.autonat.server",
     "lua_libp2p.bootstrap",
+    "lua_libp2p.connection_encrypter",
     "lua_libp2p.connection_manager",
     "lua_libp2p.datastore",
     "lua_libp2p.datastore.memory",

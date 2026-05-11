@@ -3,16 +3,14 @@
 -- @module lua_libp2p.network.upgrader
 local error_mod = require("lua_libp2p.error")
 local connection = require("lua_libp2p.network.connection")
+local security_registry = require("lua_libp2p.connection_encrypter")
 local muxer_registry = require("lua_libp2p.muxer")
 local mss = require("lua_libp2p.multistream_select.protocol")
-local noise = require("lua_libp2p.connection_encrypter_noise.protocol")
-local plaintext = require("lua_libp2p.connection_encrypter_plaintext.protocol")
-local tls = require("lua_libp2p.connection_encrypter_tls.protocol")
 
 local M = {}
 
 local function default_security_protocols()
-  return { noise.PROTOCOL_ID, tls.PROTOCOL_ID }
+  return security_registry.default_protocols()
 end
 
 local function default_muxer_protocols()
@@ -20,8 +18,8 @@ local function default_muxer_protocols()
 end
 
 local function select_early_muxer(selected_security, muxer_protocols, sec_state, is_outbound)
-  if selected_security ~= noise.PROTOCOL_ID then
-    if selected_security == tls.PROTOCOL_ID and type(sec_state) == "table" then
+  if selected_security ~= security_registry.NOISE then
+    if selected_security == security_registry.TLS and type(sec_state) == "table" then
       return sec_state.selected_muxer
     end
     return nil
@@ -91,13 +89,18 @@ end
 local function run_security_handshake(raw_conn, is_outbound, selected_security, opts)
   local options = opts or {}
 
-  if selected_security == plaintext.PROTOCOL_ID then
+  local transport, load_err = security_registry.load(selected_security)
+  if not transport then
+    return nil, nil, load_err
+  end
+
+  if selected_security == security_registry.PLAINTEXT then
     local keypair = options.local_keypair
     if type(keypair) ~= "table" or type(keypair.public_key) ~= "string" then
       return nil, nil, error_mod.new("input", "plaintext upgrader requires opts.local_keypair")
     end
 
-    local local_exchange, local_exchange_err = plaintext.make_exchange_from_identity(keypair)
+    local local_exchange, local_exchange_err = transport.make_exchange_from_identity(keypair)
     if not local_exchange then
       return nil, nil, local_exchange_err
     end
@@ -107,7 +110,7 @@ local function run_security_handshake(raw_conn, is_outbound, selected_security, 
       expected = options.expected_remote_peer_id
     end
 
-    local verified, handshake_err = plaintext.handshake(raw_conn, local_exchange, expected)
+    local verified, handshake_err = transport.handshake(raw_conn, local_exchange, expected)
     if not verified then
       return nil, nil, handshake_err
     end
@@ -122,10 +125,10 @@ local function run_security_handshake(raw_conn, is_outbound, selected_security, 
       }
   end
 
-  if selected_security == noise.PROTOCOL_ID then
+  if selected_security == security_registry.NOISE then
     local secure_conn, hs_state, hs_err
     if is_outbound then
-      secure_conn, hs_state, hs_err = noise.handshake_xx_outbound(raw_conn, {
+      secure_conn, hs_state, hs_err = transport.handshake_xx_outbound(raw_conn, {
         identity_keypair = options.local_keypair,
         expected_remote_peer_id = options.expected_remote_peer_id,
         extensions = {
@@ -133,7 +136,7 @@ local function run_security_handshake(raw_conn, is_outbound, selected_security, 
         },
       })
     else
-      secure_conn, hs_state, hs_err = noise.handshake_xx_inbound(raw_conn, {
+      secure_conn, hs_state, hs_err = transport.handshake_xx_inbound(raw_conn, {
         identity_keypair = options.local_keypair,
         expected_remote_peer_id = options.expected_remote_peer_id,
         extensions = {
@@ -158,17 +161,17 @@ local function run_security_handshake(raw_conn, is_outbound, selected_security, 
       }
   end
 
-  if selected_security == tls.PROTOCOL_ID then
+  if selected_security == security_registry.TLS then
     local secure_conn, hs_state, hs_err
     if is_outbound then
-      secure_conn, hs_state, hs_err = tls.handshake_outbound(raw_conn, {
+      secure_conn, hs_state, hs_err = transport.handshake_outbound(raw_conn, {
         identity_keypair = options.local_keypair,
         expected_remote_peer_id = options.expected_remote_peer_id,
         muxer_protocols = options.muxer_protocols,
         ctx = options.ctx,
       })
     else
-      secure_conn, hs_state, hs_err = tls.handshake_inbound(raw_conn, {
+      secure_conn, hs_state, hs_err = transport.handshake_inbound(raw_conn, {
         identity_keypair = options.local_keypair,
         expected_remote_peer_id = options.expected_remote_peer_id,
         muxer_protocols = options.muxer_protocols,

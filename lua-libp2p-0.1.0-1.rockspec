@@ -28,6 +28,7 @@ build = {
     ["lua_libp2p.autonat.client"] = "lua_libp2p/autonat/client.lua",
     ["lua_libp2p.autonat.server"] = "lua_libp2p/autonat/server.lua",
     ["lua_libp2p.bootstrap"] = "lua_libp2p/bootstrap.lua",
+    ["lua_libp2p.connection_encrypter"] = "lua_libp2p/connection_encrypter/init.lua",
     ["lua_libp2p.connection_manager"] = "lua_libp2p/connection_manager.lua",
     ["lua_libp2p.datastore"] = "lua_libp2p/datastore/init.lua",
     ["lua_libp2p.datastore.memory"] = "lua_libp2p/datastore/memory.lua",

@@ -3,6 +3,7 @@
 -- cooperative background tasks.
 -- @module lua_libp2p.host
 local address_manager = require("lua_libp2p.address_manager")
+local connection_encrypter = require("lua_libp2p.connection_encrypter")
 local connection_manager = require("lua_libp2p.connection_manager")
 local keys = require("lua_libp2p.crypto.keys")
 local error_mod = require("lua_libp2p.error")
@@ -335,7 +336,7 @@ function Host:new(config)
     or connection_manager.new(self_obj, cfg.dial_queue or cfg.connection_manager_options or {})
 
   if #self_obj.security_transports == 0 then
-    self_obj.security_transports = { "/noise", "/tls/1.0.0" }
+    self_obj.security_transports = connection_encrypter.default_protocols()
   end
   if #self_obj.muxers == 0 then
     self_obj.muxers = { "/yamux/1.0.0" }
