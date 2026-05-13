@@ -57,13 +57,6 @@ host_perf.install(Host)
 host_protocols.install(Host)
 host_tasks.install(Host)
 
-local function sleep_seconds(seconds)
-  local ok_socket, socket = pcall(require, "socket")
-  if ok_socket and type(socket.sleep) == "function" then
-    socket.sleep(seconds)
-  end
-end
-
 local function now_seconds()
   local ok_socket, socket = pcall(require, "socket")
   if ok_socket and type(socket.gettime) == "function" then
@@ -328,8 +321,6 @@ function Host:new(config)
     _luv_ready = {},
     _runtime_last_error = nil,
     _start_blocking = start_blocking ~= false,
-    _start_max_iterations = cfg.max_iterations,
-    _start_poll_interval = cfg.poll_interval or 0.01,
     _on_started = cfg.on_started,
     _running = false,
     _connect_timeout = cfg.connect_timeout or 6,
@@ -1520,27 +1511,6 @@ function Host:start()
     end
   end
 
-  local blocking = self._start_blocking
-  if blocking then
-    local iterations = 0
-    local max_iterations = self._start_max_iterations
-    local poll_interval = self._start_poll_interval
-    while self._running do
-      local ok, err = self:_poll_once(self._accept_timeout)
-      if not ok then
-        self._running = false
-        return nil, err
-      end
-      iterations = iterations + 1
-      if max_iterations and iterations >= max_iterations then
-        break
-      end
-      if poll_interval > 0 then
-        sleep_seconds(poll_interval)
-      end
-    end
-  end
-
   return true
 end
 
@@ -1663,8 +1633,6 @@ end
 ---@field connect_timeout? number
 ---@field io_timeout? number
 ---@field accept_timeout? number
----@field max_iterations? integer
----@field poll_interval? number
 ---@field task_resume_budget? integer
 ---@field task_retention? number
 ---@field task_prune_interval? number
