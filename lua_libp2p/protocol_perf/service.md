@@ -4,13 +4,9 @@ Perf protocol service.
 
 ### Libp2pPerfConfig
 
- Perf protocol service.
-
 ```lua
 Libp2pPerfConfig
 ```
-
- Perf protocol service.
 
 #### Fields
 

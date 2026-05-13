@@ -15,13 +15,9 @@ Libp2pOsRoute
 
 ### Libp2pOsRoutingOptions
 
- Cross-platform route and neighbor discovery facade.
-
 ```lua
 Libp2pOsRoutingOptions
 ```
-
- Cross-platform route and neighbor discovery facade.
 
 #### Fields
 

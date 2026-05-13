@@ -4,13 +4,9 @@ Stream muxer registry.
 
 ### Libp2pMuxerConfig
 
- Stream muxer registry.
-
 ```lua
 Libp2pMuxerConfig
 ```
-
- Stream muxer registry.
 
 #### Fields
 

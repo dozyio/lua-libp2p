@@ -22,21 +22,9 @@ Libp2pDatastore
 
 ### Libp2pDatastorePutOptions
 
- Minimal synchronous datastore/KV interface helpers.
- Datastores expose `get`, `put`, `delete`, and `list` methods.
- Backends used with the current peerstore must be local/fast enough to call
- synchronously from host/service code; remote or blocking IO backends need a
- future async adapter instead of implementing this interface directly.
-
 ```lua
 Libp2pDatastorePutOptions
 ```
-
- Minimal synchronous datastore/KV interface helpers.
- Datastores expose `get`, `put`, `delete`, and `list` methods.
- Backends used with the current peerstore must be local/fast enough to call
- synchronously from host/service code; remote or blocking IO backends need a
- future async adapter instead of implementing this interface directly.
 
 #### Fields
 

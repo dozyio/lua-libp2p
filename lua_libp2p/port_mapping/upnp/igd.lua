@@ -4,7 +4,7 @@ local ltn12 = require("ltn12")
 
 local error_mod = require("lua_libp2p.error")
 local log = require("lua_libp2p.log").subsystem("upnp")
-local ssdp = require("lua_libp2p.upnp.ssdp")
+local ssdp = require("lua_libp2p.port_mapping.upnp.ssdp")
 
 local M = {}
 

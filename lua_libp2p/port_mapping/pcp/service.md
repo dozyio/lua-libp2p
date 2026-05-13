@@ -1,16 +1,16 @@
-# lua_libp2p.pcp.service
+# lua_libp2p.port_mapping.pcp.service
 
 PCP mapping service.
 
-### Libp2pPcpServiceConfig
+PCP creates public TCP/UDP mappings for eligible private transport listen
+addresses and adds the mapped external address to the host address manager.
+The service emits `pcp:mapping:active` and `pcp:mapping:failed` events.
 
- PCP mapping service.
+### Libp2pPcpServiceConfig
 
 ```lua
 Libp2pPcpServiceConfig
 ```
-
- PCP mapping service.
 
 #### Fields
 

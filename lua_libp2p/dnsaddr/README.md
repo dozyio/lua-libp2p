@@ -4,13 +4,9 @@ DNSADDR resolver utilities.
 
 ### Libp2pDnsaddrResolveOptions
 
- DNSADDR resolver utilities.
-
 ```lua
 Libp2pDnsaddrResolveOptions
 ```
-
- DNSADDR resolver utilities.
 
 #### Fields
 

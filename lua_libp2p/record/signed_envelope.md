@@ -4,13 +4,9 @@ Signed envelope primitives.
 
 ### Libp2pSignedEnvelope
 
- Signed envelope primitives.
-
 ```lua
 Libp2pSignedEnvelope
 ```
-
- Signed envelope primitives.
 
 #### Fields
 

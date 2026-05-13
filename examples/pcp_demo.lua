@@ -11,7 +11,7 @@ local ping_service = require("lua_libp2p.protocol_ping.service")
 local autonat_service = require("lua_libp2p.autonat.client")
 local kad_dht_service = require("lua_libp2p.kad_dht")
 local peer_discovery_bootstrap = require("lua_libp2p.peer_discovery_bootstrap")
-local pcp_service = require("lua_libp2p.pcp.service")
+local pcp_service = require("lua_libp2p.port_mapping.pcp.service")
 local log = require("lua_libp2p.log")
 
 local function usage()

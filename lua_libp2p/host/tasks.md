@@ -21,13 +21,9 @@ fun(ctx: table):any
 
 ### Libp2pTaskOptions
 
- Host cooperative task scheduler internals.
-
 ```lua
 Libp2pTaskOptions
 ```
-
- Host cooperative task scheduler internals.
 
 #### Fields
 

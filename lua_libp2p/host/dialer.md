@@ -4,13 +4,9 @@ Host outbound dial and stream opening internals.
 
 ### Libp2pDialOptions
 
- Host outbound dial and stream opening internals.
-
 ```lua
 Libp2pDialOptions
 ```
-
- Host outbound dial and stream opening internals.
 
 #### Fields
 

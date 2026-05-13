@@ -1,4 +1,8 @@
 --- PCP mapping service.
+--
+-- PCP creates public TCP/UDP mappings for eligible private transport listen
+-- addresses and adds the mapped external address to the host address manager.
+-- The service emits `pcp:mapping:active` and `pcp:mapping:failed` events.
 ---@class Libp2pPcpServiceConfig
 ---@field enabled? boolean
 ---@field gateway? string
@@ -13,7 +17,7 @@ local error_mod = require("lua_libp2p.error")
 local log = require("lua_libp2p.log").subsystem("pcp")
 local multiaddr = require("lua_libp2p.multiformats.multiaddr")
 local os_routing = require("lua_libp2p.os_routing")
-local pcp_client = require("lua_libp2p.pcp.client")
+local pcp_client = require("lua_libp2p.port_mapping.pcp.client")
 
 local M = {}
 M.provides = { "pcp" }

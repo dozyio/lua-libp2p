@@ -4,13 +4,9 @@ Bootstrap peer discovery source.
 
 ### Libp2pBootstrapDiscoveryConfig
 
- Bootstrap peer discovery source.
-
 ```lua
 Libp2pBootstrapDiscoveryConfig
 ```
-
- Bootstrap peer discovery source.
 
 #### Fields
 

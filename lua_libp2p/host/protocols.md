@@ -10,13 +10,9 @@ fun(stream: table, ctx: table):any
 
 ### Libp2pProtocolHandlerOptions
 
- Host protocol handler registry and limited-connection policy.
-
 ```lua
 Libp2pProtocolHandlerOptions
 ```
-
- Host protocol handler registry and limited-connection policy.
 
 #### Fields
 

@@ -1,6 +1,7 @@
 # lua_libp2p.resource_manager
 
 Count-based resource manager.
+
 This is a small, Go-inspired resource manager. It enforces hard limits at
 reservation time for connections and streams across system, transient, peer,
 and protocol scopes. Memory and file-descriptor accounting can be layered on
@@ -8,23 +9,9 @@ top of this API later without changing host integration points.
 
 ### Libp2pResourceLimits
 
- Count-based resource manager.
-
- This is a small, Go-inspired resource manager. It enforces hard limits at
- reservation time for connections and streams across system, transient, peer,
- and protocol scopes. Memory and file-descriptor accounting can be layered on
- top of this API later without changing host integration points.
-
 ```lua
 Libp2pResourceLimits
 ```
-
- Count-based resource manager.
-
- This is a small, Go-inspired resource manager. It enforces hard limits at
- reservation time for connections and streams across system, transient, peer,
- and protocol scopes. Memory and file-descriptor accounting can be layered on
- top of this API later without changing host integration points.
 
 #### Fields
 

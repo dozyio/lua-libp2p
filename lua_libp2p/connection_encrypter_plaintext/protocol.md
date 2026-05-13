@@ -4,13 +4,9 @@ Plaintext transport handshake helpers.
 
 ### Libp2pPlaintextExchange
 
- Plaintext transport handshake helpers.
-
 ```lua
 Libp2pPlaintextExchange
 ```
-
- Plaintext transport handshake helpers.
 
 #### Fields
 

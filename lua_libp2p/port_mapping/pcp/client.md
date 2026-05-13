@@ -1,4 +1,4 @@
-# lua_libp2p.pcp.client
+# lua_libp2p.port_mapping.pcp.client
 
 PCP client.
 
@@ -15,13 +15,9 @@ Libp2pPcpClient
 
 ### Libp2pPcpClientConfig
 
- PCP client.
-
 ```lua
 Libp2pPcpClientConfig
 ```
-
- PCP client.
 
 #### Fields
 

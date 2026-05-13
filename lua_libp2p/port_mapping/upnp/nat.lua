@@ -14,7 +14,7 @@
 ---@field wanppp_only? boolean Prefer/restrict to WANPPP service.
 
 local error_mod = require("lua_libp2p.error")
-local igd = require("lua_libp2p.upnp.igd")
+local igd = require("lua_libp2p.port_mapping.upnp.igd")
 local log = require("lua_libp2p.log").subsystem("upnp")
 local multiaddr = require("lua_libp2p.multiformats.multiaddr")
 

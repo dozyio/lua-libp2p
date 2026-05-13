@@ -1,5 +1,15 @@
 --- AutoRelay service.
 -- Maintains relay reservations and candidate discovery.
+--
+-- `/p2p-circuit` listen addresses require this service; they describe relay
+-- listen capability rather than a TCP listener. AutoRelay can reserve explicitly
+-- configured relays and can discover candidates from peers advertising
+-- `/libp2p/circuit/relay/0.2.0/hop`.
+--
+-- Active reservations publish relayed `/p2p-circuit` addresses through the
+-- address manager. Removed or expired reservations remove those addresses.
+-- Reservation lifecycle is emitted through `relay:reservation:active`,
+-- `relay:reservation:removed`, and `relay:reservation:failed` events.
 ---@class Libp2pAutoRelayConfig
 ---@field relays? table[] Static bootstrap relay target list.
 ---@field max_reservations? integer Maximum active relay reservations. Default: 2.

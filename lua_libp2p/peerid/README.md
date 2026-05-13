@@ -4,13 +4,9 @@ Peer ID parsing and derivation helpers.
 
 ### Libp2pPeerId
 
- Peer ID parsing and derivation helpers.
-
 ```lua
 Libp2pPeerId
 ```
-
- Peer ID parsing and derivation helpers.
 
 #### Fields
 

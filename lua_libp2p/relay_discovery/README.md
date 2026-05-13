@@ -6,17 +6,9 @@ KAD random walks without embedding that policy in the host runtime.
 
 ### Libp2pRelayDiscoveryConfig
 
- Relay candidate discovery service.
- Coordinates AutoRelay candidate replenishment using host peer discovery and
- KAD random walks without embedding that policy in the host runtime.
-
 ```lua
 Libp2pRelayDiscoveryConfig
 ```
-
- Relay candidate discovery service.
- Coordinates AutoRelay candidate replenishment using host peer discovery and
- KAD random walks without embedding that policy in the host runtime.
 
 #### Fields
 

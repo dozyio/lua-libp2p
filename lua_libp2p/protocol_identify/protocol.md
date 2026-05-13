@@ -4,13 +4,9 @@ Identify protocol codec and helpers.
 
 ### Libp2pIdentifyMessage
 
- Identify protocol codec and helpers.
-
 ```lua
 Libp2pIdentifyMessage
 ```
-
- Identify protocol codec and helpers.
 
 #### Fields
 

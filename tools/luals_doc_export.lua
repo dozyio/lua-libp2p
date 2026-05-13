@@ -46,6 +46,10 @@ local function paragraph(out, body)
   out[#out + 1] = ""
 end
 
+local function normalize_desc(value)
+  return text(value):gsub("\r\n", "\n"):gsub("^%s+", ""):gsub("%s+$", ""):gsub("%s+", " ")
+end
+
 local function dirname(path)
   local dir = tostring(path):match("^(.*)/[^/]+$")
   return dir or "."
@@ -93,9 +97,16 @@ local function module_summary(file)
       end
     elseif doc:match("^@") or doc:match("^%-%-@") then
       -- Skip annotation/directive lines in the short module summary.
-    elseif doc ~= "" then
+    elseif doc == "" then
+      if #lines > 0 and lines[#lines] ~= "" then
+        lines[#lines + 1] = ""
+      end
+    else
       lines[#lines + 1] = doc
     end
+  end
+  while lines[#lines] == "" do
+    lines[#lines] = nil
   end
   if #lines == 0 then
     return nil
@@ -152,7 +163,7 @@ local function sort_by_name(a, b)
   return text(doc_file(a)) < text(doc_file(b))
 end
 
-local function render_define(out, define)
+local function render_define(out, define, module_desc)
   if not define then
     return
   end
@@ -161,7 +172,9 @@ local function render_define(out, define)
   elseif define.view and define.view ~= define.name then
     code_block(out, "lua", define.view)
   end
-  paragraph(out, define.desc)
+  if normalize_desc(define.desc) ~= module_desc then
+    paragraph(out, define.desc)
+  end
 end
 
 local function render_fields(out, fields)
@@ -190,16 +203,18 @@ local function render_fields(out, fields)
   out[#out + 1] = ""
 end
 
-local function render_doc(out, doc)
+local function render_doc(out, doc, module_desc)
   out[#out + 1] = "### " .. clean_heading(doc.name)
   out[#out + 1] = ""
   if doc.view and doc.view ~= doc.name then
     code_block(out, "lua", doc.view)
   end
-  paragraph(out, doc.desc)
+  if normalize_desc(doc.desc) ~= module_desc then
+    paragraph(out, doc.desc)
+  end
   if doc.defines then
     for _, define in ipairs(doc.defines) do
-      render_define(out, define)
+      render_define(out, define, module_desc)
     end
   end
   render_fields(out, doc.fields)
@@ -251,14 +266,16 @@ local function render_module_markdown(file, docs)
     "# " .. title_for_file(file),
     "",
   }
-  paragraph(out, module_summary(file))
+  local summary = module_summary(file)
+  local normalized_summary = normalize_desc(summary)
+  paragraph(out, summary)
   table.sort(docs, sort_by_name)
   if #docs == 0 then
     out[#out + 1] = "No public LuaLS symbols are documented for this module yet."
     out[#out + 1] = ""
   else
     for _, doc in ipairs(docs) do
-      render_doc(out, doc)
+      render_doc(out, doc, normalized_summary)
     end
   end
   return table.concat(out, "\n") .. "\n"

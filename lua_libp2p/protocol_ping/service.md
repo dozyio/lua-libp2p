@@ -4,11 +4,7 @@ Ping protocol service.
 
 ### Libp2pPingConfig
 
- Ping protocol service.
-
 ```lua
 Libp2pPingConfig
 ```
-
- Ping protocol service.
 

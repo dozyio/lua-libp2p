@@ -1,6 +1,6 @@
-# lua_libp2p.upnp.igd
+# lua_libp2p.port_mapping.upnp.ssdp
 
-UPnP IGD SOAP client helpers.
+SSDP discovery helpers.
 
 No public LuaLS symbols are documented for this module yet.
 

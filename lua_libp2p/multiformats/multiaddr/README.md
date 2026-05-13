@@ -15,13 +15,9 @@ Libp2pMultiaddr
 
 ### Libp2pMultiaddrComponent
 
- Multiaddr parsing, formatting, and helpers.
-
 ```lua
 Libp2pMultiaddrComponent
 ```
-
- Multiaddr parsing, formatting, and helpers.
 
 #### Fields
 

@@ -4,13 +4,9 @@ Perf protocol helpers and measurement utilities.
 
 ### Libp2pPerfOptions
 
- Perf protocol helpers and measurement utilities.
-
 ```lua
 Libp2pPerfOptions
 ```
-
- Perf protocol helpers and measurement utilities.
 
 #### Fields
 

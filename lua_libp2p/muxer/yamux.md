@@ -19,13 +19,9 @@ Libp2pYamuxFrame
 
 ### Libp2pYamuxHeader
 
- Yamux stream multiplexer implementation.
-
 ```lua
 Libp2pYamuxHeader
 ```
-
- Yamux stream multiplexer implementation.
 
 #### Fields
 

@@ -29,13 +29,9 @@ Libp2pRelayMessage
 
 ### Libp2pRelayPeer
 
- Circuit Relay v2 protocol codec and helpers.
-
 ```lua
 Libp2pRelayPeer
 ```
-
- Circuit Relay v2 protocol codec and helpers.
 
 #### Fields
 

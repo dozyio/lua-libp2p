@@ -4,13 +4,9 @@ TLS transport handshake and secure channel.
 
 ### Libp2pTlsHandshakeOptions
 
- TLS transport handshake and secure channel.
-
 ```lua
 Libp2pTlsHandshakeOptions
 ```
-
- TLS transport handshake and secure channel.
 
 #### Fields
 

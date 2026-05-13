@@ -4,13 +4,9 @@ In-memory datastore implementation.
 
 ### Libp2pMemoryDatastore
 
- In-memory datastore implementation.
-
 ```lua
 Libp2pMemoryDatastore
 ```
-
- In-memory datastore implementation.
 
 #### Fields
 

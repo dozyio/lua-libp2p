@@ -4,13 +4,9 @@ AutoNAT v2 wire protocol codec.
 
 ### Libp2pAutoNatV2Message
 
- AutoNAT v2 wire protocol codec.
-
 ```lua
 Libp2pAutoNatV2Message
 ```
-
- AutoNAT v2 wire protocol codec.
 
 #### Fields
 

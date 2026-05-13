@@ -4,13 +4,9 @@ AutoNAT v2 client/service.
 
 ### Libp2pAutoNatConfig
 
- AutoNAT v2 client/service.
-
 ```lua
 Libp2pAutoNatConfig
 ```
-
- AutoNAT v2 client/service.
 
 #### Fields
 

@@ -25,11 +25,7 @@ Libp2pDiscoveryConfig
 
 ### Libp2pDiscoverySource
 
- Discovery source aggregation.
-
 ```lua
 fun(opts?: table):table[]|nil, table|nil
 ```
-
- Discovery source aggregation.
 

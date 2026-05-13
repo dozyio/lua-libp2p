@@ -4,13 +4,9 @@ Connection manager with dial queue and reuse policy.
 
 ### Libp2pConnectionManagerConfig
 
- Connection manager with dial queue and reuse policy.
-
 ```lua
 Libp2pConnectionManagerConfig
 ```
-
- Connection manager with dial queue and reuse policy.
 
 #### Fields
 

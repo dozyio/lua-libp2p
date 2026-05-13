@@ -5,15 +5,9 @@ Coordinates unilateral and CONNECT/SYNC-based direct connection upgrades.
 
 ### Libp2pDcutrConfig
 
- DCUtR hole-punching service.
- Coordinates unilateral and CONNECT/SYNC-based direct connection upgrades.
-
 ```lua
 Libp2pDcutrConfig
 ```
-
- DCUtR hole-punching service.
- Coordinates unilateral and CONNECT/SYNC-based direct connection upgrades.
 
 #### Fields
 

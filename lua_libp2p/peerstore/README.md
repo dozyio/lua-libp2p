@@ -4,13 +4,9 @@ Peerstore.
 
 ### Libp2pPeerstoreConfig
 
- Peerstore.
-
 ```lua
 Libp2pPeerstoreConfig
 ```
-
- Peerstore.
 
 #### Fields
 

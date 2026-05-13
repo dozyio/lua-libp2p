@@ -4,8 +4,8 @@ package.path = table.concat({
   package.path,
 }, ";")
 
-local igd = require("lua_libp2p.upnp.igd")
-local ssdp = require("lua_libp2p.upnp.ssdp")
+local igd = require("lua_libp2p.port_mapping.upnp.igd")
+local ssdp = require("lua_libp2p.port_mapping.upnp.ssdp")
 
 local opts = {
   timeout = 3,

@@ -18,13 +18,9 @@ Libp2pConnection
 
 ### Libp2pStream
 
- Connection abstraction over secure muxed sessions.
-
 ```lua
 Libp2pStream
 ```
-
- Connection abstraction over secure muxed sessions.
 
 #### Fields
 

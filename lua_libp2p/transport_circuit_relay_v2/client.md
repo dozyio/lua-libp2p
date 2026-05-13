@@ -16,15 +16,9 @@ Libp2pRelayClient
 
 ### Libp2pRelayClientConfig
 
- Circuit Relay v2 client.
- Creates relay reservations and tracks local reservation state.
-
 ```lua
 Libp2pRelayClientConfig
 ```
-
- Circuit Relay v2 client.
- Creates relay reservations and tracks local reservation state.
 
 #### Fields
 

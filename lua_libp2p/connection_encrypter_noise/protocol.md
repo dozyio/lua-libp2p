@@ -28,13 +28,9 @@ Libp2pNoiseHandshakeOptions
 
 ### Libp2pNoiseStaticKeypair
 
- Noise transport handshake and secure channel.
-
 ```lua
 Libp2pNoiseStaticKeypair
 ```
-
- Noise transport handshake and secure channel.
 
 #### Fields
 

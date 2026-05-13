@@ -4,13 +4,9 @@ Multihash encode/decode helpers.
 
 ### Libp2pMultihash
 
- Multihash encode/decode helpers.
-
 ```lua
 Libp2pMultihash
 ```
-
- Multihash encode/decode helpers.
 
 #### Fields
 

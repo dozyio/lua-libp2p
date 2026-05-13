@@ -10,7 +10,7 @@ local perf = require("lua_libp2p.protocol_perf.protocol")
 local perf_service = require("lua_libp2p.protocol_perf.service")
 local ping = require("lua_libp2p.protocol_ping.protocol")
 local kad_dht_service = require("lua_libp2p.kad_dht")
-local upnp_nat_service = require("lua_libp2p.upnp.nat")
+local upnp_nat_service = require("lua_libp2p.port_mapping.upnp.nat")
 local peer_discovery_bootstrap = require("lua_libp2p.peer_discovery_bootstrap")
 local relay_discovery_service = require("lua_libp2p.relay_discovery")
 
@@ -965,7 +965,7 @@ local function run()
     return nil, "client-mode kad_dht service should not advertise/register handler"
   end
 
-  local upnp_mod = require("lua_libp2p.upnp.nat")
+  local upnp_mod = require("lua_libp2p.port_mapping.upnp.nat")
   local original_upnp_new = upnp_mod.new
   local upnp_seen_opts
   upnp_mod.new = function(_, opts)

@@ -2,15 +2,25 @@
 
 Kademlia DHT service and client operations.
 
-### Libp2pKadDhtConfig
+The default profile targets the public libp2p DHT: `k = 20`,
+`alpha = 10`, `disjoint_paths = 10`, and `max_concurrent_queries = 32`.
+DHT messages use `lua_libp2p.network.MESSAGE_SIZE_MAX` by default, matching
+the practical 4 MiB KAD RPC cap used by Go and JS implementations.
 
- Kademlia DHT service and client operations.
+Address filtering is separate from transport dialability. The built-in modes
+are `public`, `private`, and `all`; callers may also pass a function for
+custom policy. Provider records default to a 48 hour TTL, provider addresses
+learned from provider records default to 24 hours, and background reprovide
+runs every 22 hours when enabled.
+
+The DHT starts in client mode by default. Set `mode = "server"` or enable
+server-mode behavior explicitly when the node should serve and advertise KAD.
+
+### Libp2pKadDhtConfig
 
 ```lua
 Libp2pKadDhtConfig
 ```
-
- Kademlia DHT service and client operations.
 
 #### Fields
 

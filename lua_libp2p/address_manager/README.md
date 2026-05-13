@@ -2,15 +2,21 @@
 
 Address manager and advertisement policy.
 
-### Libp2pAddressManagerConfig
+The address manager combines listen addresses, explicit announce addresses,
+no-announce filters, observed addresses, public NAT mappings, and relay
+reservation addresses into the host's advertised address set.
 
- Address manager and advertisement policy.
+`host:get_multiaddrs_raw()` returns selected advertised addresses without a
+`/p2p/<peer>` suffix. `host:get_multiaddrs()` appends the local peer ID where
+needed. Observed addresses learned through identify are collected but are not
+advertised unless `advertise_observed` is enabled. Relayed `/p2p-circuit`
+addresses are advertised only while an AutoRelay reservation is active.
+
+### Libp2pAddressManagerConfig
 
 ```lua
 Libp2pAddressManagerConfig
 ```
-
- Address manager and advertisement policy.
 
 #### Fields
 

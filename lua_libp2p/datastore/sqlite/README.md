@@ -18,13 +18,9 @@ Libp2pSqliteDatastore
 
 ### Libp2pSqliteDatastoreConfig
 
- SQLite datastore implementation backed by LuaSQL (`luasql.sqlite3`).
-
 ```lua
 Libp2pSqliteDatastoreConfig
 ```
-
- SQLite datastore implementation backed by LuaSQL (`luasql.sqlite3`).
 
 #### Fields
 

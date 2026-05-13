@@ -83,10 +83,15 @@ local function run()
     "lua_libp2p.transport_tcp.luv_native",
     "lua_libp2p.connection_encrypter_tls.protocol",
     "lua_libp2p.connection_encrypter_tls.verification",
-    "lua_libp2p.nat_pmp.client",
-    "lua_libp2p.nat_pmp.service",
-    "lua_libp2p.pcp.client",
-    "lua_libp2p.pcp.service",
+    "lua_libp2p.port_mapping",
+    "lua_libp2p.port_mapping.nat_pmp.client",
+    "lua_libp2p.port_mapping.nat_pmp.service",
+    "lua_libp2p.port_mapping.pcp.client",
+    "lua_libp2p.port_mapping.pcp.service",
+    "lua_libp2p.port_mapping.upnp",
+    "lua_libp2p.port_mapping.upnp.igd",
+    "lua_libp2p.port_mapping.upnp.nat",
+    "lua_libp2p.port_mapping.upnp.ssdp",
   }
 
   for _, module_name in ipairs(required) do

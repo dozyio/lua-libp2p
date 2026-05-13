@@ -4,13 +4,9 @@ Structured error helpers.
 
 ### Libp2pError
 
- Structured error helpers.
-
 ```lua
 Libp2pError
 ```
-
- Structured error helpers.
 
 #### Fields
 

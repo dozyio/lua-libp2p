@@ -4,13 +4,9 @@ Ping protocol primitives.
 
 ### Libp2pPingHandleOptions
 
- Ping protocol primitives.
-
 ```lua
 Libp2pPingHandleOptions
 ```
-
- Ping protocol primitives.
 
 #### Fields
 

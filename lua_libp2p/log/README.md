@@ -4,8 +4,6 @@ Lightweight structured logging helpers.
 
 ### Libp2pLogLevel
 
- Lightweight structured logging helpers.
-
 ```lua
 'debug'|'error'|'info'|'warn'
 ```

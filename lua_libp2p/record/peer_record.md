@@ -16,13 +16,9 @@ Libp2pPeerRecord
 
 ### Libp2pPeerRecordAddress
 
- Peer record codec and envelope helpers.
-
 ```lua
 Libp2pPeerRecordAddress
 ```
-
- Peer record codec and envelope helpers.
 
 #### Fields
 

@@ -1,16 +1,12 @@
-# lua_libp2p.upnp.nat
+# lua_libp2p.port_mapping.upnp.nat
 
 UPnP NAT mapping service.
 
 ### Libp2pUpnpNatConfig
 
- UPnP NAT mapping service.
-
 ```lua
 Libp2pUpnpNatConfig
 ```
-
- UPnP NAT mapping service.
 
 #### Fields
 

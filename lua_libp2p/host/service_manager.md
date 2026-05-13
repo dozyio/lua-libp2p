@@ -4,13 +4,9 @@ Host service graph construction and dependency ordering.
 
 ### Libp2pServiceSpec
 
- Host service graph construction and dependency ordering.
-
 ```lua
 Libp2pServiceSpec
 ```
-
- Host service graph construction and dependency ordering.
 
 #### Fields
 

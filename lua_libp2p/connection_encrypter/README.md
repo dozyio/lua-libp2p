@@ -5,15 +5,9 @@ Keeps protocol IDs centralized while loading implementations only when used.
 
 ### Libp2pSecurityTransportConfig
 
- Security transport registry.
- Keeps protocol IDs centralized while loading implementations only when used.
-
 ```lua
 Libp2pSecurityTransportConfig
 ```
-
- Security transport registry.
- Keeps protocol IDs centralized while loading implementations only when used.
 
 #### Fields
 

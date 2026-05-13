@@ -29,8 +29,6 @@ Libp2pIdentityKeypair
 
 ### Libp2pIdentityType
 
- Key loading and signing helpers.
-
 ```lua
 'ecdsa'|'ed25519'|'rsa'|'secp256k1'
 ```

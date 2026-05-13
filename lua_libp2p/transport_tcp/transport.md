@@ -4,13 +4,9 @@ Poll-based TCP transport implementation.
 
 ### Libp2pTcpConfig
 
- Poll-based TCP transport implementation.
-
 ```lua
 Libp2pTcpConfig
 ```
-
- Poll-based TCP transport implementation.
 
 #### Fields
 

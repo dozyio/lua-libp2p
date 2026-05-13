@@ -5,15 +5,9 @@ Registers `/ipfs/id/*` handlers and provides request helpers.
 
 ### Libp2pIdentifyConfig
 
- Identify protocol service.
- Registers `/ipfs/id/*` handlers and provides request helpers.
-
 ```lua
 Libp2pIdentifyConfig
 ```
-
- Identify protocol service.
- Registers `/ipfs/id/*` handlers and provides request helpers.
 
 #### Fields
 

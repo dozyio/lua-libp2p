@@ -1,4 +1,9 @@
 --- NAT-PMP mapping service.
+--
+-- NAT-PMP creates public TCP/UDP mappings for eligible private transport listen
+-- addresses and adds the mapped external address to the host address manager.
+-- The service emits `nat_pmp:mapping:active` and `nat_pmp:mapping:failed`
+-- events.
 ---@class Libp2pNatPmpServiceConfig
 ---@field enabled? boolean
 ---@field gateway? string
@@ -11,7 +16,7 @@
 local error_mod = require("lua_libp2p.error")
 local log = require("lua_libp2p.log").subsystem("nat_pmp")
 local multiaddr = require("lua_libp2p.multiformats.multiaddr")
-local nat_pmp_client = require("lua_libp2p.nat_pmp.client")
+local nat_pmp_client = require("lua_libp2p.port_mapping.nat_pmp.client")
 
 local M = {}
 M.provides = { "nat_pmp" }

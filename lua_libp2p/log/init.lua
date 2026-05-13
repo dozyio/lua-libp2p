@@ -304,11 +304,6 @@ function M.error(message, fields)
   return M.log("error", message, fields)
 end
 
-local env_level = env("LIBP2P_LOG_LEVEL")
-if env_level and env_level ~= "" then
-  M.set_level(trim(env_level):lower())
-end
-
 local env_spec = env("LIBP2P_LOG")
 if env_spec and env_spec ~= "" then
   M.configure(env_spec)

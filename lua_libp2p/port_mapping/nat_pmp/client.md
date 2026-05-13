@@ -1,4 +1,4 @@
-# lua_libp2p.nat_pmp.client
+# lua_libp2p.port_mapping.nat_pmp.client
 
 NAT-PMP client.
 
@@ -16,13 +16,9 @@ Libp2pNatPmpClient
 
 ### Libp2pNatPmpClientConfig
 
- NAT-PMP client.
-
 ```lua
 Libp2pNatPmpClientConfig
 ```
-
- NAT-PMP client.
 
 #### Fields
 
