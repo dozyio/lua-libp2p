@@ -1090,8 +1090,6 @@ local function run()
   end
 
   h._start_blocking = false
-  h._start_max_iterations = 1
-  h._start_poll_interval = 0
   started, start_err = h:start()
   if not started then
     return nil, start_err

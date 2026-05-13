@@ -41,7 +41,6 @@ Libp2pHostConfig
 - `io_timeout`: `number?`
 - `kad_dht`: `Libp2pKadDhtConfig?` -  Kademlia DHT service and client operations.
 - `listen_addrs`: `string[]?`
-- `max_iterations`: `integer?`
 - `muxers`: `Libp2pMuxerConfig?` -  Stream muxer registry.
 - `no_announce_addrs`: `string[]?`
 - `observed_addrs`: `string[]?`
@@ -51,7 +50,6 @@ Libp2pHostConfig
 - `peerstore`: `Libp2pPeerstoreInstance?`
 - `peerstore_options`: `Libp2pPeerstoreConfig?` -  Peerstore.
 - `perf`: `Libp2pPerfConfig?` -  Perf protocol service.
-- `poll_interval`: `number?`
 - `relay_addrs`: `string[]?`
 - `resource_manager`: `(Libp2pResourceManagerConfig|Libp2pResourceManagerInstance|false)?`
 - `resource_manager_options`: `Libp2pResourceManagerConfig?`

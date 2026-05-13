@@ -100,6 +100,12 @@ local function task_queue_push_front(host, task_id)
   host._task_queue[head] = task_id
 end
 
+local function schedule_runtime_tick(host)
+  if type(host) == "table" and type(host._schedule_runtime_tick) == "function" then
+    host:_schedule_runtime_tick()
+  end
+end
+
 local function task_queue_pop_front(host)
   local head = host._task_queue_head or 1
   local tail = host._task_queue_tail or 0
@@ -360,6 +366,7 @@ function M.install(Host)
     else
       task_queue_push_back(self, id)
     end
+    schedule_runtime_tick(self)
     emit_task_event(self, "task:started", {
       task_id = id,
       name = name,
@@ -532,6 +539,7 @@ function M.install(Host)
       return false
     end
     task_queue_push_back(self, task.id)
+    schedule_runtime_tick(self)
     return true
   end
 
@@ -631,6 +639,7 @@ function M.install(Host)
     if task.read_unwatch == nil and type(connection.watch_luv_readable) == "function" then
       local ok, unwatch = pcall(connection.watch_luv_readable, connection, function()
         self:_wake_task_readers(connection)
+        schedule_runtime_tick(self)
       end)
       if ok and type(unwatch) == "function" then
         if task._read_woke_before_unwatch then
@@ -694,6 +703,7 @@ function M.install(Host)
     if task.dial_unwatch == nil and type(connection.watch_luv_connect) == "function" then
       local ok, unwatch = pcall(connection.watch_luv_connect, connection, function()
         self:_wake_task_dialers(connection)
+        schedule_runtime_tick(self)
       end)
       if ok and type(unwatch) == "function" then
         if task._dial_woke_before_unwatch then
@@ -753,6 +763,7 @@ function M.install(Host)
     if task.write_unwatch == nil and type(connection.watch_luv_write) == "function" then
       local ok, unwatch = pcall(connection.watch_luv_write, connection, function()
         self:_wake_task_writers(connection)
+        schedule_runtime_tick(self)
       end)
       if ok and type(unwatch) == "function" then
         if task._write_woke_before_unwatch then

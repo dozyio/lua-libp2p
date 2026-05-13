@@ -1,4 +1,23 @@
-.PHONY: deps lint-deps lint fmt docs-deps docs test bench check
+.PHONY: deps lint-deps lint fmt docs-deps docs test bench check interop
+
+INTEROP_TARGETS ?= \
+	interop-yamux-go \
+	interop-yamux-go-reverse \
+	interop-noise-go \
+	interop-noise-go-reverse \
+	interop-tls-go \
+	interop-tls-go-reverse \
+	interop-dcutr-go \
+	interop-dcutr-unilateral-go \
+	interop-mdns-go \
+	interop-dht-go-find-provider \
+	interop-dht-go-find-provider-reverse \
+	interop-dht-go-find-pk-value \
+	interop-dht-go-find-pk-value-reverse \
+	interop-dht-go-find-peer \
+	interop-dht-go-find-peer-reverse \
+	interop-dht-go-add-provider \
+	interop-perf-js
 
 deps:
 	luarocks make lua-libp2p-0.1.0-1.rockspec
@@ -38,6 +57,12 @@ bench:
 
 bench-security-perf:
 	lua tests/bench/perf_security.lua $${N:-5}
+
+interop:
+	@for target in $(INTEROP_TARGETS); do \
+		echo "==> $$target"; \
+		$(MAKE) $$target || exit $$?; \
+	done
 
 interop-yamux-go:
 	addr_file=$$(mktemp); err_file=$$(mktemp); bin_file=$$(mktemp); \
