@@ -140,28 +140,97 @@ function M.is_available()
   return ok_luv
 end
 
-function M.start_scheduler(repeat_ms, on_tick)
-  if not ok_luv then
-    return nil, "luv not available"
+local function close_timer(timer)
+  if timer == nil then
+    return true
   end
-  if type(on_tick) ~= "function" then
-    return nil, "on_tick callback is required"
-  end
+  pcall(function()
+    timer:stop()
+    timer:close()
+  end)
+  return true
+end
 
+local function next_sleep_delay_ms(host)
+  local now = now_seconds()
+  local next_wake = nil
+  for task_id in pairs(host._sleeping_tasks or {}) do
+    local task = host._tasks and host._tasks[task_id]
+    if task and task.status == "sleeping" and type(task.wake_at) == "number" then
+      if next_wake == nil or task.wake_at < next_wake then
+        next_wake = task.wake_at
+      end
+    end
+  end
+  if next_wake == nil then
+    return nil
+  end
+  return math.max(1, math.floor(math.max(0, next_wake - now) * 1000))
+end
+
+local function schedule_sleep_timer(host)
+  if not ok_luv or type(host) ~= "table" or not host._running then
+    return true
+  end
+  local delay_ms = next_sleep_delay_ms(host)
+  if delay_ms == nil then
+    close_timer(host._luv_sleep_timer)
+    host._luv_sleep_timer = nil
+    host._luv_sleep_delay_ms = nil
+    return true
+  end
+  if host._luv_sleep_timer ~= nil and host._luv_sleep_delay_ms == delay_ms then
+    return true
+  end
+  close_timer(host._luv_sleep_timer)
   local timer, timer_err = uv.new_timer()
   if not timer then
     return nil, timer_err
   end
-
-  local ok, start_err = timer:start(0, repeat_ms, on_tick)
+  host._luv_sleep_timer = timer
+  host._luv_sleep_delay_ms = delay_ms
+  local ok, start_err = timer:start(delay_ms, 0, function()
+    host._luv_sleep_delay_ms = nil
+    if type(host._schedule_runtime_tick) == "function" then
+      host:_schedule_runtime_tick()
+    end
+  end)
   if not ok then
-    pcall(function()
-      timer:close()
-    end)
+    close_timer(timer)
+    host._luv_sleep_timer = nil
+    host._luv_sleep_delay_ms = nil
     return nil, start_err
   end
+  return true
+end
 
-  return timer
+function M.schedule_tick(host)
+  if not ok_luv or type(host) ~= "table" or not host._running then
+    return true
+  end
+  if host._luv_tick_scheduled then
+    return true
+  end
+  host._luv_tick_scheduled = true
+  local timer, timer_err = uv.new_timer()
+  if not timer then
+    host._luv_tick_scheduled = false
+    return nil, timer_err
+  end
+  local ok, start_err = timer:start(0, 0, function()
+    timer:stop()
+    timer:close()
+    host._luv_tick_timer = nil
+    host._luv_tick_scheduled = false
+    M.tick(host)
+  end)
+  if not ok then
+    host._luv_tick_scheduled = false
+    close_timer(timer)
+    return nil, start_err
+  end
+  host._luv_tick_timer = timer
+  return true
 end
 
 function M.stop_scheduler(timer)
@@ -183,21 +252,20 @@ function M.start(host)
     return nil, error_mod.new("input", "host table is required")
   end
 
-  if host._luv_tick_timer == nil then
-    local sync_ok, sync_err = M.sync_watchers(host)
-    if not sync_ok then
-      return nil, sync_err
-    end
+  host._schedule_runtime_tick = function(self)
+    return M.schedule_tick(self)
+  end
 
-    local poll_interval = host._start_poll_interval or 0.01
-    local repeat_ms = math.max(1, math.floor(poll_interval * 1000))
-    local timer, timer_err = M.start_scheduler(repeat_ms, function()
-      M.tick(host)
-    end)
-    if not timer then
-      return nil, error_mod.new("io", "failed to start luv scheduler", { cause = timer_err })
+  local sync_ok, sync_err = M.sync_watchers(host)
+  if not sync_ok then
+    return nil, sync_err
+  end
+
+  if host._luv_tick_timer == nil and not host._luv_tick_scheduled then
+    local scheduled, schedule_err = M.schedule_tick(host)
+    if not scheduled then
+      return nil, error_mod.new("io", "failed to schedule luv tick", { cause = schedule_err })
     end
-    host._luv_tick_timer = timer
   end
 
   if host._start_blocking then
@@ -213,6 +281,11 @@ function M.stop(host)
   end
   M.stop_scheduler(host._luv_tick_timer)
   host._luv_tick_timer = nil
+  host._luv_tick_scheduled = false
+  M.stop_scheduler(host._luv_sleep_timer)
+  host._luv_sleep_timer = nil
+  host._luv_sleep_delay_ms = nil
+  host._schedule_runtime_tick = nil
   M.close_watchers(host)
   return true
 end
@@ -256,6 +329,16 @@ function M.tick(host)
       host:_set_runtime_error("luv", err)
       return nil, err
     end
+  end
+
+  ok, err = schedule_sleep_timer(host)
+  if not ok then
+    host:_set_runtime_error("luv", error_mod.new("io", "failed to schedule luv sleep timer", { cause = err }))
+    return nil, err
+  end
+
+  if type(host._task_queue_depth) == "function" and host:_task_queue_depth() > 0 then
+    M.schedule_tick(host)
   end
 
   if map_size(host._luv_ready) > 0 then
@@ -447,6 +530,7 @@ function M.sync_watchers(host)
             host:_wake_task_writers(item.watchable)
             host:_wake_task_writers(target)
           end
+          M.schedule_tick(host)
         end)
         if not ok then
           return nil,
@@ -504,6 +588,7 @@ function M.sync_watchers(host)
             host:_wake_task_dialers(item.watchable)
             host:_wake_task_dialers(target)
           end
+          M.schedule_tick(host)
         end)
         if not ok then
           pcall(function()
