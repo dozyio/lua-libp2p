@@ -52,4 +52,23 @@ function M.is_error(value)
   return getmetatable(value) == Error
 end
 
+--- Return true when an error looks like OS file-descriptor exhaustion.
+---@param value any
+---@return boolean
+function M.is_fd_exhaustion(value)
+  if M.is_error(value) then
+    local ctx = value.context or {}
+    if M.is_fd_exhaustion(ctx.code) or M.is_fd_exhaustion(ctx.cause) then
+      return true
+    end
+    return M.is_fd_exhaustion(value.message)
+  end
+  local text = string.upper(tostring(value or ""))
+  return text == "EMFILE"
+    or text == "ENFILE"
+    or text:find("EMFILE", 1, true) ~= nil
+    or text:find("ENFILE", 1, true) ~= nil
+    or text:find("TOO MANY OPEN FILES", 1, true) ~= nil
+end
+
 return M

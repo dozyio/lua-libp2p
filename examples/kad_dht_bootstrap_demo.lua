@@ -200,9 +200,50 @@ local function print_error_summary(errors, max_lines)
   end
 end
 
+local STORAGE_STATS_REFRESH_SECONDS = 300
+
+local function refresh_storage_stats(h)
+  local cache = h._kad_demo_storage_stats
+  local now = os.time()
+  if cache and now < cache.next_refresh_at then
+    return cache
+  end
+
+  local dht = h.kad_dht
+  local out = {
+    provider_keys = cache and cache.provider_keys or 0,
+    provider_records = cache and cache.provider_records or 0,
+    value_records = cache and cache.value_records or 0,
+    peerstore_peers = cache and cache.peerstore_peers or 0,
+    next_refresh_at = now + STORAGE_STATS_REFRESH_SECONDS,
+  }
+
+  if dht and dht.provider_store and type(dht.provider_store.stats) == "function" then
+    local provider_stats = dht.provider_store:stats() or {}
+    out.provider_keys = tonumber(provider_stats.provider_keys) or 0
+    out.provider_records = tonumber(provider_stats.provider_records) or 0
+  end
+  if dht and dht.record_store and type(dht.record_store.stats) == "function" then
+    local record_stats = dht.record_store:stats() or {}
+    out.value_records = tonumber(record_stats.value_records) or 0
+  end
+  if h.peerstore then
+    if type(h.peerstore.count) == "function" then
+      out.peerstore_peers = tonumber(h.peerstore:count()) or 0
+    elseif type(h.peerstore.all) == "function" then
+      local peers = h.peerstore:all() or {}
+      out.peerstore_peers = #peers
+    end
+  end
+
+  h._kad_demo_storage_stats = out
+  return out
+end
+
 local function print_server_stats(h)
   local dht = h.kad_dht
   local routing_table_size = 0
+  local storage_stats = refresh_storage_stats(h)
   if dht and dht.routing_table and type(dht.routing_table.all_peers) == "function" then
     local peers = dht.routing_table:all_peers() or {}
     routing_table_size = #peers
@@ -217,9 +258,13 @@ local function print_server_stats(h)
 
   io.stdout:write(
     string.format(
-      "%s [stats] routing_table=%d connections=%d inbound=%d outbound=%d active_dials=%d pending_dials=%d dial_queue=%d identify_inflight=%d rcmgr_inbound=%d/%d tasks_running=%d tasks_queued=%d\n",
+      "%s [stats] routing_table=%d peerstore_peers=%d provider_keys=%d provider_records=%d value_records=%d connections=%d inbound=%d outbound=%d active_dials=%d pending_dials=%d dial_queue=%d identify_inflight=%d rcmgr_inbound=%d/%d tasks_running=%d tasks_queued=%d\n",
       now_iso8601(),
       routing_table_size,
+      tonumber(storage_stats.peerstore_peers) or 0,
+      tonumber(storage_stats.provider_keys) or 0,
+      tonumber(storage_stats.provider_records) or 0,
+      tonumber(storage_stats.value_records) or 0,
       tonumber(connection_stats.connections) or 0,
       tonumber(connection_stats.inbound_connections) or 0,
       tonumber(connection_stats.outbound_connections) or 0,
@@ -253,6 +298,7 @@ local function print_internal_health(h)
       conns = health.conns,
       dial_queue = health.dial_queue,
       pending_keys = health.pending_keys,
+      fd_accept_failed = health.fd_accept_failed,
       mem_kb = string.format("%.1f", tonumber(health.mem_kb) or 0),
     }
   end

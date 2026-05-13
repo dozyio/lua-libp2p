@@ -880,6 +880,7 @@ function Host:health_stats()
   local listener_callbacks = 0
   local listener_accepted = 0
   local listener_accept_failed = 0
+  local listener_accept_resource_failed = 0
   local listener_callback_errors = 0
   for _, listener in ipairs(self._listeners or {}) do
     if listener and type(listener.stats) == "function" then
@@ -888,6 +889,7 @@ function Host:health_stats()
       listener_callbacks = listener_callbacks + (tonumber(stats.callback_total) or 0)
       listener_accepted = listener_accepted + (tonumber(stats.accepted_total) or 0)
       listener_accept_failed = listener_accept_failed + (tonumber(stats.accept_failed_total) or 0)
+      listener_accept_resource_failed = listener_accept_resource_failed + (tonumber(stats.accept_resource_failed_total) or 0)
       listener_callback_errors = listener_callback_errors + (tonumber(stats.callback_error_total) or 0)
     end
   end
@@ -915,11 +917,13 @@ function Host:health_stats()
       dial_queue = dial_queue,
       pending_keys = pending_by_key,
       mem_kb = collectgarbage("count"),
+      fd_accept_failed = listener_accept_resource_failed,
     },
     listener = {
       callbacks = listener_callbacks,
       accepted = listener_accepted,
       accept_failed = listener_accept_failed,
+      accept_resource_failed = listener_accept_resource_failed,
       callback_errors = listener_callback_errors,
       pending = listener_pending,
     },

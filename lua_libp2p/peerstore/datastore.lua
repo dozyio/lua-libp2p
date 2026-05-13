@@ -470,6 +470,17 @@ function Store:all()
   return out
 end
 
+function Store:count()
+  if type(self._datastore.count) == "function" then
+    return self._datastore:count(self._prefix)
+  end
+  local keys, list_err = self._datastore:list(self._prefix)
+  if not keys then
+    return nil, list_err
+  end
+  return #keys
+end
+
 function Store:clear_expired()
   local peers, peers_err = self:all()
   if not peers then

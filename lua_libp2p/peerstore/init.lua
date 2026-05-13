@@ -343,6 +343,14 @@ function Store:all()
   return out
 end
 
+function Store:count()
+  local count = 0
+  for _ in pairs(self._peers) do
+    count = count + 1
+  end
+  return count
+end
+
 --- Remove expired addresses and tags across peers.
 function Store:clear_expired()
   local now = os.time()
