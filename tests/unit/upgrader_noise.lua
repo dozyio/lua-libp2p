@@ -1,6 +1,5 @@
 local ed25519 = require("lua_libp2p.crypto.ed25519")
 local upgrader = require("lua_libp2p.network.upgrader")
-local yamux = require("lua_libp2p.muxer.yamux")
 
 local function new_pair()
   local a = { _in = "", _peer = nil, _closed = false }

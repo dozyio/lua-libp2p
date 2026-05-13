@@ -40,8 +40,9 @@ bench-security-perf:
 	lua tests/bench/perf_security.lua $${N:-5}
 
 interop-yamux-go:
-	addr_file=$$(mktemp); err_file=$$(mktemp); \
-	( cd tests/interop/go_yamux_echo && go run . ) > $$addr_file 2> $$err_file & pid=$$!; \
+	addr_file=$$(mktemp); err_file=$$(mktemp); bin_file=$$(mktemp); \
+	( cd tests/interop/go_yamux_echo && go build -o $$bin_file . ) || { rm -f $$addr_file $$err_file $$bin_file; exit 1; }; \
+	$$bin_file > $$addr_file 2> $$err_file & pid=$$!; \
 	for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30; do \
 		if [ -s $$addr_file ]; then break; fi; \
 		sleep 0.2; \
@@ -49,7 +50,7 @@ interop-yamux-go:
 	if ! [ -s $$addr_file ]; then \
 		kill $$pid 2>/dev/null || true; \
 		cat $$err_file; \
-		rm -f $$addr_file $$err_file; \
+		rm -f $$addr_file $$err_file $$bin_file; \
 		exit 1; \
 	fi; \
 	addr=$$(cat $$addr_file | tr -d '\n'); \
@@ -57,7 +58,7 @@ interop-yamux-go:
 	status=$$?; \
 	wait $$pid || true; \
 	if [ $$status -ne 0 ]; then cat $$err_file; fi; \
-	rm -f $$addr_file $$err_file; \
+	rm -f $$addr_file $$err_file $$bin_file; \
 	exit $$status
 
 interop-yamux-go-luv:
@@ -94,8 +95,9 @@ interop-yamux-go-reverse-luv-native:
 	LUA_LIBP2P_INTEROP_RUNTIME=luv $(MAKE) interop-yamux-go-reverse
 
 interop-noise-go:
-	addr_file=$$(mktemp); err_file=$$(mktemp); \
-	( cd tests/interop/go_noise_echo && go run . ) > $$addr_file 2> $$err_file & pid=$$!; \
+	addr_file=$$(mktemp); err_file=$$(mktemp); bin_file=$$(mktemp); \
+	( cd tests/interop/go_noise_echo && go build -o $$bin_file . ) || { rm -f $$addr_file $$err_file $$bin_file; exit 1; }; \
+	$$bin_file > $$addr_file 2> $$err_file & pid=$$!; \
 	for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30; do \
 		if [ -s $$addr_file ]; then break; fi; \
 		sleep 0.2; \
@@ -103,7 +105,7 @@ interop-noise-go:
 	if ! [ -s $$addr_file ]; then \
 		kill $$pid 2>/dev/null || true; \
 		cat $$err_file; \
-		rm -f $$addr_file $$err_file; \
+		rm -f $$addr_file $$err_file $$bin_file; \
 		exit 1; \
 	fi; \
 	addr=$$(head -n 1 $$addr_file | tr -d '\n'); \
@@ -111,7 +113,7 @@ interop-noise-go:
 	status=$$?; \
 	wait $$pid || true; \
 	if [ $$status -ne 0 ]; then cat $$err_file; fi; \
-	rm -f $$addr_file $$err_file; \
+	rm -f $$addr_file $$err_file $$bin_file; \
 	exit $$status
 
 interop-noise-go-luv:
@@ -149,8 +151,9 @@ interop-noise-go-reverse-luv-native:
 	LUA_LIBP2P_INTEROP_RUNTIME=luv $(MAKE) interop-noise-go-reverse
 
 interop-tls-go:
-	addr_file=$$(mktemp); err_file=$$(mktemp); \
-	( cd tests/interop/go_tls_echo && go run . ) > $$addr_file 2> $$err_file & pid=$$!; \
+	addr_file=$$(mktemp); err_file=$$(mktemp); bin_file=$$(mktemp); \
+	( cd tests/interop/go_tls_echo && go build -o $$bin_file . ) || { rm -f $$addr_file $$err_file $$bin_file; exit 1; }; \
+	$$bin_file > $$addr_file 2> $$err_file & pid=$$!; \
 	for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30; do \
 		if [ -s $$addr_file ]; then break; fi; \
 		sleep 0.2; \
@@ -158,7 +161,7 @@ interop-tls-go:
 	if ! [ -s $$addr_file ]; then \
 		kill $$pid 2>/dev/null || true; \
 		cat $$err_file; \
-		rm -f $$addr_file $$err_file; \
+		rm -f $$addr_file $$err_file $$bin_file; \
 		exit 1; \
 	fi; \
 	addr=$$(head -n 1 $$addr_file | tr -d '\n'); \
@@ -166,7 +169,7 @@ interop-tls-go:
 	status=$$?; \
 	wait $$pid || true; \
 	if [ $$status -ne 0 ]; then cat $$err_file; fi; \
-	rm -f $$addr_file $$err_file; \
+	rm -f $$addr_file $$err_file $$bin_file; \
 	exit $$status
 
 interop-tls-go-reverse:
@@ -192,8 +195,9 @@ interop-tls-go-reverse:
 	exit $$status
 
 interop-dcutr-go:
-	addr_file=$$(mktemp); err_file=$$(mktemp); \
-	( cd tests/interop/go_dcutr_echo && go run . ) > $$addr_file 2> $$err_file & pid=$$!; \
+	addr_file=$$(mktemp); err_file=$$(mktemp); bin_file=$$(mktemp); \
+	( cd tests/interop/go_dcutr_echo && go build -o $$bin_file . ) || { rm -f $$addr_file $$err_file $$bin_file; exit 1; }; \
+	$$bin_file > $$addr_file 2> $$err_file & pid=$$!; \
 	for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30; do \
 		if [ -s $$addr_file ]; then break; fi; \
 		sleep 0.2; \
@@ -201,7 +205,7 @@ interop-dcutr-go:
 	if ! [ -s $$addr_file ]; then \
 		kill $$pid 2>/dev/null || true; \
 		cat $$err_file; \
-		rm -f $$addr_file $$err_file; \
+		rm -f $$addr_file $$err_file $$bin_file; \
 		exit 1; \
 	fi; \
 	addr=$$(head -n 1 $$addr_file | tr -d '\n'); \
@@ -209,15 +213,16 @@ interop-dcutr-go:
 	status=$$?; \
 	wait $$pid || true; \
 	if [ $$status -ne 0 ]; then cat $$err_file; fi; \
-	rm -f $$addr_file $$err_file; \
+	rm -f $$addr_file $$err_file $$bin_file; \
 	exit $$status
 
 interop-dcutr-go-luv-native:
 	LUA_LIBP2P_INTEROP_RUNTIME=luv $(MAKE) interop-dcutr-go
 
 interop-dcutr-unilateral-go:
-	addr_file=$$(mktemp); err_file=$$(mktemp); \
-	( cd tests/interop/go_dcutr_unilateral && go run . ) > $$addr_file 2> $$err_file & pid=$$!; \
+	addr_file=$$(mktemp); err_file=$$(mktemp); bin_file=$$(mktemp); \
+	( cd tests/interop/go_dcutr_unilateral && go build -o $$bin_file . ) || { rm -f $$addr_file $$err_file $$bin_file; exit 1; }; \
+	$$bin_file > $$addr_file 2> $$err_file & pid=$$!; \
 	for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30; do \
 		if [ -s $$addr_file ]; then break; fi; \
 		sleep 0.2; \
@@ -225,7 +230,7 @@ interop-dcutr-unilateral-go:
 	if ! [ -s $$addr_file ]; then \
 		kill $$pid 2>/dev/null || true; \
 		cat $$err_file; \
-		rm -f $$addr_file $$err_file; \
+		rm -f $$addr_file $$err_file $$bin_file; \
 		exit 1; \
 	fi; \
 	addr=$$(head -n 1 $$addr_file | tr -d '\n'); \
@@ -233,15 +238,16 @@ interop-dcutr-unilateral-go:
 	status=$$?; \
 	wait $$pid || true; \
 	if [ $$status -ne 0 ]; then cat $$err_file; fi; \
-	rm -f $$addr_file $$err_file; \
+	rm -f $$addr_file $$err_file $$bin_file; \
 	exit $$status
 
 interop-dcutr-unilateral-go-luv-native:
 	LUA_LIBP2P_INTEROP_RUNTIME=luv $(MAKE) interop-dcutr-unilateral-go
 
 interop-mdns-go:
-	peer_file=$$(mktemp); lua_peer_file=$$(mktemp); err_file=$$(mktemp); \
-	( cd tests/interop/go_mdns_advertiser && go run . ) > $$peer_file 2> $$err_file & pid=$$!; \
+	peer_file=$$(mktemp); lua_peer_file=$$(mktemp); err_file=$$(mktemp); bin_file=$$(mktemp); \
+	( cd tests/interop/go_mdns_advertiser && go build -o $$bin_file . ) || { rm -f $$peer_file $$lua_peer_file $$err_file $$bin_file; exit 1; }; \
+	$$bin_file > $$peer_file 2> $$err_file & pid=$$!; \
 	for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30; do \
 		if [ -s $$peer_file ]; then break; fi; \
 		sleep 0.2; \
@@ -249,7 +255,7 @@ interop-mdns-go:
 	if ! [ -s $$peer_file ]; then \
 		kill $$pid 2>/dev/null || true; \
 		cat $$err_file; \
-		rm -f $$peer_file $$lua_peer_file $$err_file; \
+		rm -f $$peer_file $$lua_peer_file $$err_file $$bin_file; \
 		exit 1; \
 	fi; \
 	peer_id=$$(head -n 1 $$peer_file | tr -d '\n'); \
@@ -270,12 +276,13 @@ interop-mdns-go:
 	kill $$pid 2>/dev/null || true; \
 	wait $$pid 2>/dev/null || true; \
 	if [ $$status -ne 0 ]; then cat $$err_file; fi; \
-	rm -f $$peer_file $$lua_peer_file $$err_file; \
+	rm -f $$peer_file $$lua_peer_file $$err_file $$bin_file; \
 	exit $$status
 
 interop-dht-go-find-provider:
-	addr_file=$$(mktemp); err_file=$$(mktemp); \
-	( cd tests/interop/go_dht_provider && go run . ) > $$addr_file 2> $$err_file & pid=$$!; \
+	addr_file=$$(mktemp); err_file=$$(mktemp); bin_file=$$(mktemp); \
+	( cd tests/interop/go_dht_provider && go build -o $$bin_file . ) || { rm -f $$addr_file $$err_file $$bin_file; exit 1; }; \
+	$$bin_file > $$addr_file 2> $$err_file & pid=$$!; \
 	for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30; do \
 		if [ $$(wc -l < $$addr_file | tr -d ' ') -ge 2 ]; then break; fi; \
 		sleep 0.2; \
@@ -283,7 +290,7 @@ interop-dht-go-find-provider:
 	if ! [ $$(wc -l < $$addr_file | tr -d ' ') -ge 2 ]; then \
 		kill $$pid 2>/dev/null || true; \
 		cat $$err_file; \
-		rm -f $$addr_file $$err_file; \
+		rm -f $$addr_file $$err_file $$bin_file; \
 		exit 1; \
 	fi; \
 	addr=$$(sed -n '1p' $$addr_file | tr -d '\n'); \
@@ -293,7 +300,7 @@ interop-dht-go-find-provider:
 	kill $$pid 2>/dev/null || true; \
 	wait $$pid 2>/dev/null || true; \
 	if [ $$status -ne 0 ]; then cat $$err_file; fi; \
-	rm -f $$addr_file $$err_file; \
+	rm -f $$addr_file $$err_file $$bin_file; \
 	exit $$status
 
 interop-dht-go-find-provider-reverse:
@@ -320,8 +327,9 @@ interop-dht-go-find-provider-reverse:
 	exit $$status
 
 interop-dht-go-find-pk-value:
-	addr_file=$$(mktemp); err_file=$$(mktemp); \
-	( cd tests/interop/go_dht_value_pk && go run . ) > $$addr_file 2> $$err_file & pid=$$!; \
+	addr_file=$$(mktemp); err_file=$$(mktemp); bin_file=$$(mktemp); \
+	( cd tests/interop/go_dht_value_pk && go build -o $$bin_file . ) || { rm -f $$addr_file $$err_file $$bin_file; exit 1; }; \
+	$$bin_file > $$addr_file 2> $$err_file & pid=$$!; \
 	for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30; do \
 		if [ $$(wc -l < $$addr_file | tr -d ' ') -ge 2 ]; then break; fi; \
 		sleep 0.2; \
@@ -329,7 +337,7 @@ interop-dht-go-find-pk-value:
 	if ! [ $$(wc -l < $$addr_file | tr -d ' ') -ge 2 ]; then \
 		kill $$pid 2>/dev/null || true; \
 		cat $$err_file; \
-		rm -f $$addr_file $$err_file; \
+		rm -f $$addr_file $$err_file $$bin_file; \
 		exit 1; \
 	fi; \
 	addr=$$(sed -n '1p' $$addr_file | tr -d '\n'); \
@@ -339,7 +347,7 @@ interop-dht-go-find-pk-value:
 	kill $$pid 2>/dev/null || true; \
 	wait $$pid 2>/dev/null || true; \
 	if [ $$status -ne 0 ]; then cat $$err_file; fi; \
-	rm -f $$addr_file $$err_file; \
+	rm -f $$addr_file $$err_file $$bin_file; \
 	exit $$status
 
 interop-dht-go-find-pk-value-reverse:
@@ -365,8 +373,9 @@ interop-dht-go-find-pk-value-reverse:
 	exit $$status
 
 interop-dht-go-find-peer:
-	addr_file=$$(mktemp); err_file=$$(mktemp); \
-	( cd tests/interop/go_dht_value_pk && go run . ) > $$addr_file 2> $$err_file & pid=$$!; \
+	addr_file=$$(mktemp); err_file=$$(mktemp); bin_file=$$(mktemp); \
+	( cd tests/interop/go_dht_value_pk && go build -o $$bin_file . ) || { rm -f $$addr_file $$err_file $$bin_file; exit 1; }; \
+	$$bin_file > $$addr_file 2> $$err_file & pid=$$!; \
 	for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30; do \
 		if [ $$(wc -l < $$addr_file | tr -d ' ') -ge 1 ]; then break; fi; \
 		sleep 0.2; \
@@ -374,7 +383,7 @@ interop-dht-go-find-peer:
 	if ! [ $$(wc -l < $$addr_file | tr -d ' ') -ge 1 ]; then \
 		kill $$pid 2>/dev/null || true; \
 		cat $$err_file; \
-		rm -f $$addr_file $$err_file; \
+		rm -f $$addr_file $$err_file $$bin_file; \
 		exit 1; \
 	fi; \
 	addr=$$(sed -n '1p' $$addr_file | tr -d '\n'); \
@@ -383,7 +392,7 @@ interop-dht-go-find-peer:
 	kill $$pid 2>/dev/null || true; \
 	wait $$pid 2>/dev/null || true; \
 	if [ $$status -ne 0 ]; then cat $$err_file; fi; \
-	rm -f $$addr_file $$err_file; \
+	rm -f $$addr_file $$err_file $$bin_file; \
 	exit $$status
 
 interop-dht-go-find-peer-reverse:
@@ -409,8 +418,9 @@ interop-dht-go-find-peer-reverse:
 	exit $$status
 
 interop-dht-go-add-provider:
-	addr_file=$$(mktemp); err_file=$$(mktemp); \
-	( cd tests/interop/go_dht_value_pk && go run . ) > $$addr_file 2> $$err_file & pid=$$!; \
+	addr_file=$$(mktemp); err_file=$$(mktemp); bin_file=$$(mktemp); \
+	( cd tests/interop/go_dht_value_pk && go build -o $$bin_file . ) || { rm -f $$addr_file $$err_file $$bin_file; exit 1; }; \
+	$$bin_file > $$addr_file 2> $$err_file & pid=$$!; \
 	for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30; do \
 		if [ $$(wc -l < $$addr_file | tr -d ' ') -ge 1 ]; then break; fi; \
 		sleep 0.2; \
@@ -418,7 +428,7 @@ interop-dht-go-add-provider:
 	if ! [ $$(wc -l < $$addr_file | tr -d ' ') -ge 1 ]; then \
 		kill $$pid 2>/dev/null || true; \
 		cat $$err_file; \
-		rm -f $$addr_file $$err_file; \
+		rm -f $$addr_file $$err_file $$bin_file; \
 		exit 1; \
 	fi; \
 	addr=$$(sed -n '1p' $$addr_file | tr -d '\n'); \
@@ -427,7 +437,7 @@ interop-dht-go-add-provider:
 	kill $$pid 2>/dev/null || true; \
 	wait $$pid 2>/dev/null || true; \
 	if [ $$status -ne 0 ]; then cat $$err_file; fi; \
-	rm -f $$addr_file $$err_file; \
+	rm -f $$addr_file $$err_file $$bin_file; \
 	exit $$status
 
 interop-perf-js:

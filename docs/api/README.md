@@ -71,6 +71,8 @@
 - [lua_libp2p.os_routing.macos](../../lua_libp2p/os_routing/macos.md)
 - [lua_libp2p.os_routing.windows](../../lua_libp2p/os_routing/windows.md)
 - [lua_libp2p.peer_discovery_bootstrap](../../lua_libp2p/peer_discovery_bootstrap/README.md)
+- [lua_libp2p.peer_discovery_mdns.dns](../../lua_libp2p/peer_discovery_mdns/dns.md)
+- [lua_libp2p.peer_discovery_mdns](../../lua_libp2p/peer_discovery_mdns/README.md)
 - [lua_libp2p.peerid](../../lua_libp2p/peerid/README.md)
 - [lua_libp2p.peerstore.codec](../../lua_libp2p/peerstore/codec.md)
 - [lua_libp2p.peerstore.datastore](../../lua_libp2p/peerstore/datastore.md)

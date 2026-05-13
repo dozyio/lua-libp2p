@@ -5,7 +5,6 @@ package.path = table.concat({
 }, ";")
 
 local host_mod = require("lua_libp2p.host")
-local perf = require("lua_libp2p.protocol_perf.protocol")
 local perf_service = require("lua_libp2p.protocol_perf.service")
 local subprocess = require("tests.support.subprocess")
 

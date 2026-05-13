@@ -470,8 +470,8 @@ function NativeConnection:begin_fd_tls()
 end
 
 local function start_fd_tls_poll(self)
-  local ok_luv, uv = pcall(require, "luv")
-  if not ok_luv then
+  local has_luv, luv_mod = pcall(require, "luv")
+  if not has_luv then
     return nil, error_mod.new("unsupported", "luv is required for fd TLS readiness watches")
   end
   if self._fd_tls_poll ~= nil then
@@ -481,7 +481,7 @@ local function start_fd_tls_poll(self)
   if not fd then
     return nil, fd_err
   end
-  local poll, poll_err = uv.new_poll(fd)
+  local poll, poll_err = luv_mod.new_poll(fd)
   if not poll then
     return nil, error_mod.new("io", "failed creating fd TLS poll watcher", { cause = poll_err })
   end
