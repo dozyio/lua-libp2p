@@ -1,9 +1,11 @@
 --- Unsigned varint encode/decode helpers.
--- @module lua_libp2p.multiformats.varint
 local error_mod = require("lua_libp2p.error")
 
 local M = {}
 
+--- n integer
+--- string|nil bytes
+--- table|nil err
 function M.encode_u64(n)
   if type(n) ~= "number" or n < 0 then
     return nil, error_mod.new("input", "varint value must be a non-negative number")
@@ -23,6 +25,10 @@ function M.encode_u64(n)
   return table.concat(out)
 end
 
+--- data string
+--- offset? integer
+--- integer|nil value
+--- integer|table next_offset_or_err
 function M.decode_u64(data, offset)
   if type(data) ~= "string" then
     return nil, error_mod.new("input", "varint input must be bytes")

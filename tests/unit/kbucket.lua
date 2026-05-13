@@ -1,4 +1,4 @@
-local kbucket = require("lua_libp2p.kbucket")
+local kbucket = require("lua_libp2p.kad_dht.kbucket")
 
 local function fake_hash(value)
   local map = {

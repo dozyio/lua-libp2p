@@ -8,7 +8,7 @@ local host_mod = require("lua_libp2p.host")
 local identify_service = require("lua_libp2p.protocol_identify.service")
 local ping_service = require("lua_libp2p.protocol_ping.service")
 local autonat_service = require("lua_libp2p.autonat.client")
-local nat_pmp_service = require("lua_libp2p.nat_pmp.service")
+local nat_pmp_service = require("lua_libp2p.port_mapping.nat_pmp.service")
 
 local function usage()
   io.stderr:write([[

@@ -1,5 +1,11 @@
 --- Ping protocol primitives.
--- @module lua_libp2p.protocol_ping.protocol
+---@class Libp2pPingHandleOptions
+---@field max_messages? integer Stop after N messages; otherwise runs until closed.
+
+---@class Libp2pPingResult
+---@field rtt_seconds number
+---@field payload string
+
 local ok_socket, socket = pcall(require, "socket")
 local ok_sodium, sodium = pcall(require, "luasodium")
 local error_mod = require("lua_libp2p.error")
@@ -16,6 +22,8 @@ local function now()
   return os.clock()
 end
 
+---Create a 32-byte ping payload.
+---@return string payload
 function M.new_payload()
   if ok_sodium and type(sodium.randombytes_buf) == "function" then
     return sodium.randombytes_buf(M.PAYLOAD_SIZE)
@@ -28,6 +36,10 @@ function M.new_payload()
   return table.concat(out)
 end
 
+---Handle one ping request and echo it back.
+---@param conn Libp2pStream
+---@return true|nil ok
+---@return table|nil err
 function M.handle_once(conn)
   local payload, read_err = conn:read(M.PAYLOAD_SIZE)
   if not payload then
@@ -44,12 +56,11 @@ function M.handle_once(conn)
   return true
 end
 
---- Serve ping echo loop.
--- `opts.max_messages` (`number`) stops after N messages; otherwise runs until closed.
--- @tparam table conn
--- @tparam[opt] table opts
--- @treturn true|nil ok
--- @treturn[opt] table err
+---Serve ping echo loop.
+---@param conn Libp2pStream
+---@param opts? Libp2pPingHandleOptions
+---@return true|nil ok
+---@return table|nil err
 function M.handle(conn, opts)
   local options = opts or {}
   local max_messages = options.max_messages
@@ -72,6 +83,11 @@ function M.handle(conn, opts)
   end
 end
 
+---Send one ping and wait for its echo.
+---@param conn Libp2pStream
+---@param payload? string Optional 32-byte payload.
+---@return Libp2pPingResult|nil result
+---@return table|nil err
 function M.ping_once(conn, payload)
   local request = payload or M.new_payload()
   if type(request) ~= "string" or #request ~= M.PAYLOAD_SIZE then

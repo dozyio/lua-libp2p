@@ -1,5 +1,4 @@
 --- Built-in KAD-DHT value record validators/selectors.
--- @module lua_libp2p.kad_dht.record_validators
 local error_mod = require("lua_libp2p.error")
 local peerid = require("lua_libp2p.peerid")
 

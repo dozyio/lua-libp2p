@@ -1,5 +1,4 @@
 --- Base58btc codec.
--- @module lua_libp2p.multiformats.base58btc
 local error_mod = require("lua_libp2p.error")
 
 local M = {}
@@ -10,6 +9,8 @@ for i = 1, #ALPHABET do
   INDEX[ALPHABET:sub(i, i)] = i - 1
 end
 
+--- data string
+--- string text
 function M.encode(data)
   if data == "" then
     return ""
@@ -48,6 +49,9 @@ function M.encode(data)
   return table.concat(out)
 end
 
+--- text string
+--- string|nil bytes
+--- table|nil err
 function M.decode(text)
   if text == "" then
     return ""

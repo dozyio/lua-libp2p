@@ -1,5 +1,4 @@
 --- KAD-DHT value record workflows.
--- @module lua_libp2p.kad_dht.values
 local error_mod = require("lua_libp2p.error")
 local log = require("lua_libp2p.log").subsystem("kad_dht")
 local protocol = require("lua_libp2p.kad_dht.protocol")

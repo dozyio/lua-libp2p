@@ -1,5 +1,18 @@
 --- Cross-platform route and neighbor discovery facade.
--- @module lua_libp2p.os_routing
+---@class Libp2pOsRoutingOptions
+---@field platform? 'macos'|'linux'|'windows'
+
+---@class Libp2pOsRoute
+---@field gateway? string
+---@field interface? string
+
+---@class Libp2pOsRoutingSnapshot
+---@field platform string
+---@field default_route_v4? Libp2pOsRoute
+---@field default_route_v6? Libp2pOsRoute
+---@field neighbors_v6? table[]
+---@field router_candidates_v6? table[]
+
 local error_mod = require("lua_libp2p.error")
 
 local macos = require("lua_libp2p.os_routing.macos")
@@ -50,6 +63,9 @@ local function adapter_for_platform(platform)
   return nil
 end
 
+---@param opts? Libp2pOsRoutingOptions
+---@return Libp2pOsRoutingSnapshot|nil snapshot
+---@return table|nil err
 function M.snapshot(opts)
   local options = opts or {}
   local platform = options.platform or detect_platform()
@@ -60,6 +76,9 @@ function M.snapshot(opts)
   return adapter.snapshot(options)
 end
 
+---@param opts? Libp2pOsRoutingOptions
+---@return Libp2pOsRoute|nil route
+---@return table|nil err
 function M.default_route_v4(opts)
   local snapshot, snapshot_err = M.snapshot(opts)
   if not snapshot then
@@ -71,6 +90,9 @@ function M.default_route_v4(opts)
   return snapshot.default_route_v4
 end
 
+---@param opts? Libp2pOsRoutingOptions
+---@return Libp2pOsRoute|nil route
+---@return table|nil err
 function M.default_route_v6(opts)
   local snapshot, snapshot_err = M.snapshot(opts)
   if not snapshot then
@@ -82,6 +104,9 @@ function M.default_route_v6(opts)
   return snapshot.default_route_v6
 end
 
+---@param opts? Libp2pOsRoutingOptions
+---@return table[]|nil neighbors
+---@return table|nil err
 function M.neighbors_v6(opts)
   local snapshot, snapshot_err = M.snapshot(opts)
   if not snapshot then
@@ -90,6 +115,9 @@ function M.neighbors_v6(opts)
   return snapshot.neighbors_v6 or {}
 end
 
+---@param opts? Libp2pOsRoutingOptions
+---@return table[]|nil candidates
+---@return table|nil err
 function M.router_candidates_v6(opts)
   local snapshot, snapshot_err = M.snapshot(opts)
   if not snapshot then

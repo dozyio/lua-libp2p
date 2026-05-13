@@ -1,5 +1,4 @@
 --- Optional host performance counters.
--- @module lua_libp2p.host.perf
 local M = {}
 
 local PERF_KEYS = {

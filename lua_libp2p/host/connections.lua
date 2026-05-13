@@ -1,5 +1,4 @@
 --- Host connection indexing internals.
--- @module lua_libp2p.host.connections
 local M = {}
 
 local error_mod = require("lua_libp2p.error")

@@ -1,5 +1,5 @@
 local address_manager = require("lua_libp2p.address_manager")
-local pcp_service = require("lua_libp2p.pcp.service")
+local pcp_service = require("lua_libp2p.port_mapping.pcp.service")
 
 local function run()
   local handlers = {}

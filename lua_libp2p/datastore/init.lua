@@ -3,7 +3,16 @@
 -- Backends used with the current peerstore must be local/fast enough to call
 -- synchronously from host/service code; remote or blocking IO backends need a
 -- future async adapter instead of implementing this interface directly.
--- @module lua_libp2p.datastore
+---@class Libp2pDatastorePutOptions
+---@field ttl? number|false Time-to-live seconds, `false`, or `math.huge`.
+
+---@class Libp2pDatastore
+---@field get fun(self: Libp2pDatastore, key: string): any, table|nil
+---@field put fun(self: Libp2pDatastore, key: string, value: any, opts?: Libp2pDatastorePutOptions): true|nil, table|nil
+---@field delete fun(self: Libp2pDatastore, key: string): boolean|nil, table|nil
+---@field list fun(self: Libp2pDatastore, prefix: string): string[]|nil, table|nil
+---@field close? fun(self: Libp2pDatastore): true|nil, table|nil
+
 local error_mod = require("lua_libp2p.error")
 
 local M = {}
@@ -18,9 +27,9 @@ local function validate_key(key)
 end
 
 --- Validate that a value implements the datastore interface.
--- @param store Candidate datastore object.
--- @treturn table|nil store
--- @treturn[opt] table err
+---@param store any Candidate datastore object.
+---@return Libp2pDatastore|nil store
+---@return table|nil err
 function M.assert_store(store)
   if type(store) ~= "table" then
     return nil, error_mod.new("input", "datastore must be a table")
@@ -36,17 +45,18 @@ function M.assert_store(store)
 end
 
 --- Validate a datastore key.
--- @tparam string key
--- @treturn true|nil ok
--- @treturn[opt] table err
+---@param key string
+---@return true|nil ok
+---@return table|nil err
 function M.validate_key(key)
   return validate_key(key)
 end
 
 --- Join key path segments with `/`.
 -- Empty/nil segments are rejected to avoid ambiguous keys.
--- @treturn string|nil key
--- @treturn[opt] table err
+---@vararg string
+---@return string|nil key
+---@return table|nil err
 function M.key(...)
   local parts = { ... }
   if #parts == 0 then

@@ -314,8 +314,8 @@ local function run_listener(cfg)
   local h, host_err = host_mod.new({
     runtime = cfg.runtime,
     listen_addrs = { "/ip4/" .. cfg.listener_ip .. "/tcp/0" },
-    security_transports = { "/noise" },
-    muxers = { "/yamux/1.0.0" },
+    security_transports = { noise = true },
+    muxers = { yamux = true },
     blocking = false,
     connect_timeout = 5,
     io_timeout = 5,
@@ -452,8 +452,8 @@ end
 local function run_dialer(cfg)
   local h, host_err = host_mod.new({
     runtime = cfg.runtime,
-    security_transports = { "/noise" },
-    muxers = { "/yamux/1.0.0" },
+    security_transports = { noise = true },
+    muxers = { yamux = true },
     connect_timeout = 10,
     io_timeout = 10,
   })

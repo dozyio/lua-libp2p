@@ -1,25 +1,18 @@
 --- Connection upgrader for security + multiplexing.
 -- Negotiates security transport then stream muxer.
--- @module lua_libp2p.network.upgrader
 local error_mod = require("lua_libp2p.error")
 local connection = require("lua_libp2p.network.connection")
+local security_registry = require("lua_libp2p.connection_encrypter")
 local muxer_registry = require("lua_libp2p.muxer")
 local mss = require("lua_libp2p.multistream_select.protocol")
-local noise = require("lua_libp2p.connection_encrypter_noise.protocol")
-local plaintext = require("lua_libp2p.connection_encrypter_plaintext.protocol")
 
 local M = {}
 
-local function default_security_protocols()
-  return { noise.PROTOCOL_ID }
-end
-
-local function default_muxer_protocols()
-  return muxer_registry.protocol_ids()
-end
-
 local function select_early_muxer(selected_security, muxer_protocols, sec_state, is_outbound)
-  if selected_security ~= noise.PROTOCOL_ID then
+  if selected_security ~= security_registry.NOISE then
+    if selected_security == security_registry.TLS and type(sec_state) == "table" then
+      return sec_state.selected_muxer
+    end
     return nil
   end
   if type(sec_state) ~= "table" or type(sec_state.noise_extensions) ~= "table" then
@@ -53,17 +46,21 @@ local function select_early_muxer(selected_security, muxer_protocols, sec_state,
   return nil
 end
 
-local function pick_protocol_list(value, fallback)
-  if value == nil then
-    return fallback
+local function pick_security_protocols(value)
+  return security_registry.normalize_protocols(value)
+end
+
+local function pick_muxer_protocols(value)
+  return muxer_registry.normalize_protocols(value)
+end
+
+local function options_with_muxer_protocols(options, muxer_protocols)
+  local out = {}
+  for k, v in pairs(options or {}) do
+    out[k] = v
   end
-  if type(value) == "string" then
-    return { value }
-  end
-  if type(value) == "table" and #value > 0 then
-    return value
-  end
-  return nil
+  out.muxer_protocols = muxer_protocols
+  return out
 end
 
 local function negotiate_inbound(conn, supported)
@@ -87,13 +84,18 @@ end
 local function run_security_handshake(raw_conn, is_outbound, selected_security, opts)
   local options = opts or {}
 
-  if selected_security == plaintext.PROTOCOL_ID then
+  local transport, load_err = security_registry.load(selected_security)
+  if not transport then
+    return nil, nil, load_err
+  end
+
+  if selected_security == security_registry.PLAINTEXT then
     local keypair = options.local_keypair
     if type(keypair) ~= "table" or type(keypair.public_key) ~= "string" then
       return nil, nil, error_mod.new("input", "plaintext upgrader requires opts.local_keypair")
     end
 
-    local local_exchange, local_exchange_err = plaintext.make_exchange_from_identity(keypair)
+    local local_exchange, local_exchange_err = transport.make_exchange_from_identity(keypair)
     if not local_exchange then
       return nil, nil, local_exchange_err
     end
@@ -103,7 +105,7 @@ local function run_security_handshake(raw_conn, is_outbound, selected_security, 
       expected = options.expected_remote_peer_id
     end
 
-    local verified, handshake_err = plaintext.handshake(raw_conn, local_exchange, expected)
+    local verified, handshake_err = transport.handshake(raw_conn, local_exchange, expected)
     if not verified then
       return nil, nil, handshake_err
     end
@@ -118,10 +120,10 @@ local function run_security_handshake(raw_conn, is_outbound, selected_security, 
       }
   end
 
-  if selected_security == noise.PROTOCOL_ID then
+  if selected_security == security_registry.NOISE then
     local secure_conn, hs_state, hs_err
     if is_outbound then
-      secure_conn, hs_state, hs_err = noise.handshake_xx_outbound(raw_conn, {
+      secure_conn, hs_state, hs_err = transport.handshake_xx_outbound(raw_conn, {
         identity_keypair = options.local_keypair,
         expected_remote_peer_id = options.expected_remote_peer_id,
         extensions = {
@@ -129,7 +131,7 @@ local function run_security_handshake(raw_conn, is_outbound, selected_security, 
         },
       })
     else
-      secure_conn, hs_state, hs_err = noise.handshake_xx_inbound(raw_conn, {
+      secure_conn, hs_state, hs_err = transport.handshake_xx_inbound(raw_conn, {
         identity_keypair = options.local_keypair,
         expected_remote_peer_id = options.expected_remote_peer_id,
         extensions = {
@@ -154,6 +156,39 @@ local function run_security_handshake(raw_conn, is_outbound, selected_security, 
       }
   end
 
+  if selected_security == security_registry.TLS then
+    local secure_conn, hs_state, hs_err
+    if is_outbound then
+      secure_conn, hs_state, hs_err = transport.handshake_outbound(raw_conn, {
+        identity_keypair = options.local_keypair,
+        expected_remote_peer_id = options.expected_remote_peer_id,
+        muxer_protocols = options.muxer_protocols,
+        ctx = options.ctx,
+      })
+    else
+      secure_conn, hs_state, hs_err = transport.handshake_inbound(raw_conn, {
+        identity_keypair = options.local_keypair,
+        expected_remote_peer_id = options.expected_remote_peer_id,
+        muxer_protocols = options.muxer_protocols,
+        ctx = options.ctx,
+      })
+    end
+    if not secure_conn then
+      return nil, nil, hs_err
+    end
+
+    local remote_peer = hs_state and hs_state.remote_peer
+    return secure_conn,
+      {
+        security = selected_security,
+        remote_peer_id = remote_peer and remote_peer.id or nil,
+        remote_peer_id_bytes = remote_peer and remote_peer.bytes or nil,
+        remote_public_key = hs_state and hs_state.remote_public_key or nil,
+        remote_key_type = hs_state and hs_state.remote_key_type or nil,
+        selected_muxer = hs_state and hs_state.selected_muxer or nil,
+      }
+  end
+
   return nil,
     nil,
     error_mod.new("unsupported", "security protocol not supported", {
@@ -162,27 +197,27 @@ local function run_security_handshake(raw_conn, is_outbound, selected_security, 
 end
 
 --- Upgrade an outbound raw transport connection.
--- @tparam table raw_conn Raw transport connection.
--- @tparam[opt] table opts Upgrader options.
+--- raw_conn table Raw transport connection.
+--- opts? table Upgrader options.
 -- `opts.local_keypair` (`table`): local identity keypair.
 -- `opts.expected_remote_peer_id` (`string`): optional remote peer id check.
--- `opts.security_protocols` (`table<string>`): security protocol preference list.
--- `opts.muxer_protocols` (`table<string>`): muxer protocol preference list.
+-- `opts.security_protocols` (`table`): security transport map, e.g. `{ noise = true }`.
+-- `opts.muxer_protocols` (`table`): muxer map, e.g. `{ yamux = true }`.
 -- `opts.initial_stream_window` (`number`): yamux initial stream window.
 -- `opts.max_ack_backlog` (`number`): yamux outbound ack backlog limit.
 -- `opts.max_accept_backlog` (`number`): yamux inbound accept backlog limit.
--- @treturn table|nil conn Upgraded connection.
--- @treturn[opt] table state Negotiated metadata.
--- @treturn[opt] table err
+--- table|nil conn Upgraded connection.
+--- table|nil state Negotiated metadata.
+--- table|nil err
 function M.upgrade_outbound(raw_conn, opts)
   local options = opts or {}
 
-  local security_protocols = pick_protocol_list(options.security_protocols, default_security_protocols())
+  local security_protocols = pick_security_protocols(options.security_protocols)
   if not security_protocols then
     return nil, nil, error_mod.new("input", "invalid security_protocols option")
   end
 
-  local muxer_protocols = pick_protocol_list(options.muxer_protocols, default_muxer_protocols())
+  local muxer_protocols = pick_muxer_protocols(options.muxer_protocols)
   if not muxer_protocols then
     return nil, nil, error_mod.new("input", "invalid muxer_protocols option")
   end
@@ -192,7 +227,12 @@ function M.upgrade_outbound(raw_conn, opts)
     return nil, nil, sec_err
   end
 
-  local secure_conn, sec_state, handshake_err = run_security_handshake(raw_conn, true, selected_security, options)
+  local secure_conn, sec_state, handshake_err = run_security_handshake(
+    raw_conn,
+    true,
+    selected_security,
+    options_with_muxer_protocols(options, muxer_protocols)
+  )
   if not secure_conn then
     return nil, nil, handshake_err
   end
@@ -229,21 +269,21 @@ function M.upgrade_outbound(raw_conn, opts)
 end
 
 --- Upgrade an inbound raw transport connection.
--- @tparam table raw_conn Raw transport connection.
--- @tparam[opt] table opts Upgrader options.
+--- raw_conn table Raw transport connection.
+--- opts? table Upgrader options.
 -- Uses the same `opts.<field>` values as @{upgrade_outbound}.
--- @treturn table|nil conn
--- @treturn[opt] table state
--- @treturn[opt] table err
+--- table|nil conn
+--- table|nil state
+--- table|nil err
 function M.upgrade_inbound(raw_conn, opts)
   local options = opts or {}
 
-  local security_protocols = pick_protocol_list(options.security_protocols, default_security_protocols())
+  local security_protocols = pick_security_protocols(options.security_protocols)
   if not security_protocols then
     return nil, nil, error_mod.new("input", "invalid security_protocols option")
   end
 
-  local muxer_protocols = pick_protocol_list(options.muxer_protocols, default_muxer_protocols())
+  local muxer_protocols = pick_muxer_protocols(options.muxer_protocols)
   if not muxer_protocols then
     return nil, nil, error_mod.new("input", "invalid muxer_protocols option")
   end
@@ -253,7 +293,12 @@ function M.upgrade_inbound(raw_conn, opts)
     return nil, nil, sec_err
   end
 
-  local secure_conn, sec_state, handshake_err = run_security_handshake(raw_conn, false, selected_security, options)
+  local secure_conn, sec_state, handshake_err = run_security_handshake(
+    raw_conn,
+    false,
+    selected_security,
+    options_with_muxer_protocols(options, muxer_protocols)
+  )
   if not secure_conn then
     return nil, nil, handshake_err
   end

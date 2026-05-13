@@ -1,7 +1,14 @@
 --- Relay candidate discovery service.
 -- Coordinates AutoRelay candidate replenishment using host peer discovery and
 -- KAD random walks without embedding that policy in the host runtime.
--- @module lua_libp2p.relay_discovery
+---@class Libp2pRelayDiscoveryConfig
+---@field interval? number
+---@field min_candidates? integer
+---@field max_candidates? integer
+---@field discover_timeout? number
+---@field random_walk? boolean
+---@field auto_start? boolean
+
 local error_mod = require("lua_libp2p.error")
 local log = require("lua_libp2p.log").subsystem("relay_discovery")
 
@@ -203,6 +210,9 @@ function RelayDiscovery:status()
   }
 end
 
+---@param host Libp2pHost
+---@param opts? Libp2pRelayDiscoveryConfig
+---@return table service
 function M.new(host, opts)
   local options = opts or {}
   return setmetatable({

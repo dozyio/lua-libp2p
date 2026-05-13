@@ -13,7 +13,7 @@ local ed25519 = require("lua_libp2p.crypto.ed25519")
 local bootstrap_defaults = require("lua_libp2p.bootstrap")
 local dnsaddr = require("lua_libp2p.dnsaddr")
 local peer_discovery_bootstrap = require("lua_libp2p.peer_discovery_bootstrap")
-local multiaddr = require("lua_libp2p.multiaddr")
+local multiaddr = require("lua_libp2p.multiformats.multiaddr")
 local log = require("lua_libp2p.log")
 local health_log = log.subsystem("health")
 local perf_log = log.subsystem("perf")
@@ -435,7 +435,7 @@ local function run_server()
         },
       },
     },
-    connection_manager_options = {
+    connection_manager = {
       -- Keep the public demo comfortably below common 256-FD process limits.
       low_water = 96,
       high_water = 128,

@@ -1,5 +1,4 @@
 --- Multistream-select negotiation protocol.
--- @module lua_libp2p.multistream_select.protocol
 local error_mod = require("lua_libp2p.error")
 local log = require("lua_libp2p.log").subsystem("multistream")
 local varint = require("lua_libp2p.multiformats.varint")
@@ -233,11 +232,11 @@ end
 --- Register protocol handler on router.
 -- `opts` are returned from `negotiate` as handler options.
 -- `opts.run_on_limited_connection` can be used by higher layers.
--- @tparam string protocol_id
--- @tparam function handler
--- @tparam[opt] table opts
--- @treturn true|nil ok
--- @treturn[opt] table err
+--- protocol_id string
+--- handler function
+--- opts? table
+--- true|nil ok
+--- table|nil err
 function Router:register(protocol_id, handler, opts)
   if type(protocol_id) ~= "string" or protocol_id == "" then
     return nil, error_mod.new("input", "protocol id must be a non-empty string")

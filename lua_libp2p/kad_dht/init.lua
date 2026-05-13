@@ -1,13 +1,84 @@
 --- Kademlia DHT service and client operations.
--- @module lua_libp2p.kad_dht
+--
+-- The default profile targets the public libp2p DHT: `k = 20`,
+-- `alpha = 10`, `disjoint_paths = 10`, and `max_concurrent_queries = 32`.
+-- DHT messages use `lua_libp2p.network.MESSAGE_SIZE_MAX` by default, matching
+-- the practical 4 MiB KAD RPC cap used by Go and JS implementations.
+--
+-- Address filtering is separate from transport dialability. The built-in modes
+-- are `public`, `private`, and `all`; callers may also pass a function for
+-- custom policy. Provider records default to a 48 hour TTL, provider addresses
+-- learned from provider records default to 24 hours, and background reprovide
+-- runs every 22 hours when enabled.
+--
+-- The DHT starts in client mode by default. Set `mode = "server"` or enable
+-- server-mode behavior explicitly when the node should serve and advertise KAD.
+---@class Libp2pKadDhtConfig
+---@field local_peer_id? string Override local peer ID; normally derived from host.
+---@field protocol_id? string DHT protocol ID override.
+---@field mode? 'client'|'server'|'auto' DHT mode. Default: `client`.
+---@field k? integer Bucket size / result count. Default: module default.
+---@field bucket_size? integer Alias for `k` when creating routing table.
+---@field alpha? integer Query parallelism. Default: module default.
+---@field disjoint_paths? integer Number of disjoint query paths.
+---@field max_concurrent_queries? integer
+---@field max_message_size? integer
+---@field bootstrappers? string[] Bootstrap peer multiaddrs.
+---@field peer_discovery? table Peer discovery source.
+---@field datastore? table Shared datastore for provider/record stores.
+---@field provider_store? table Prebuilt provider store.
+---@field provider_datastore? table Provider datastore override.
+---@field provider_ttl_seconds? number Provider record TTL.
+---@field provider_addr_ttl_seconds? number Provider address TTL.
+---@field record_store? table Prebuilt record store.
+---@field record_datastore? table Record datastore override.
+---@field record_ttl_seconds? number Value record TTL.
+---@field record_validator? function
+---@field record_selector? function
+---@field record_validators? table
+---@field record_selectors? table
+---@field routing_table? table Prebuilt routing table.
+---@field hash_function? function Routing table hash function.
+---@field address_filter? string|function|table Address filter or filter mode.
+---@field address_filter_mode? string Alias for `address_filter`.
+---@field query_filter? function
+---@field routing_table_filter? function
+---@field peer_diversity_filter? function
+---@field peer_diversity_max_peers_per_ip_group? integer|false
+---@field peer_diversity_max_peers_per_ip_group_per_bucket? integer|false
+---@field dnsaddr_resolver? function
+---@field auto_server_mode? boolean Enable automatic server-mode advertisement.
+---@field maintenance_enabled? boolean Default: true.
+---@field maintenance_interval_seconds? number
+---@field maintenance_startup_retry_seconds? number
+---@field maintenance_startup_retry_max_seconds? number
+---@field maintenance_min_recheck_seconds? number
+---@field maintenance_max_checks? integer
+---@field maintenance_walk_every? integer
+---@field maintenance_walk_timeout? number
+---@field maintenance_protocol_check_timeout? number
+---@field max_failed_checks_before_evict? integer
+---@field reprovider_enabled? boolean
+---@field reprovider_interval_seconds? number
+---@field reprovider_initial_delay_seconds? number
+---@field reprovider_jitter_seconds? number
+---@field reprovider_random? function
+---@field reprovider_batch_size? integer
+---@field reprovider_max_parallel? integer
+---@field reprovider_timeout? number
+---@field peer_id_bytes_cache_size? integer
+---@field filtered_addr_cache_size? integer
+---@field filtered_addr_cache_ttl_seconds? number
+---@field now? fun(): number
+
 local error_mod = require("lua_libp2p.error")
 local bootstrap = require("lua_libp2p.bootstrap")
 local bootstrap_dht = require("lua_libp2p.kad_dht.bootstrap")
 local dnsaddr = require("lua_libp2p.dnsaddr")
 local discovery = require("lua_libp2p.discovery")
-local kbucket = require("lua_libp2p.kbucket")
+local kbucket = require("lua_libp2p.kad_dht.kbucket")
 local maintenance = require("lua_libp2p.kad_dht.maintenance")
-local multiaddr = require("lua_libp2p.multiaddr")
+local multiaddr = require("lua_libp2p.multiformats.multiaddr")
 local operation = require("lua_libp2p.operation")
 local peerid = require("lua_libp2p.peerid")
 local providers = require("lua_libp2p.kad_dht.providers")
@@ -134,8 +205,8 @@ local DHT = {}
 DHT.__index = DHT
 
 --- Start KAD service hooks and optional maintenance.
--- @treturn true|nil ok
--- @treturn[opt] table err
+--- true|nil ok
+--- table|nil err
 function DHT:start()
   if self._running then
     return true
@@ -245,7 +316,7 @@ function DHT:_on_self_peer_update(payload)
 end
 
 --- Stop KAD service activity.
--- @treturn true
+--- true
 function DHT:stop()
   if self.host and type(self.host.off) == "function" then
     if self._host_on_protocols_updated then
@@ -406,10 +477,10 @@ end
 
 --- Add a peer to the routing table.
 -- `opts` is forwarded to kbucket insertion policy.
--- @tparam string peer_id
--- @tparam[opt] table opts
--- @treturn true|nil added
--- @treturn[opt] table err
+--- peer_id string
+--- opts? table
+--- true|nil added
+--- table|nil err
 function DHT:add_peer(peer_id, opts)
   local options = opts or {}
   if
@@ -538,16 +609,16 @@ local function is_orderly_no_response_close(err)
 end
 
 --- Remove a peer from routing table and health tracking.
--- @tparam string peer_id
--- @treturn boolean removed
+--- peer_id string
+--- boolean removed
 function DHT:remove_peer(peer_id)
   self._peer_health[peer_id] = nil
   return self.routing_table:remove_peer(peer_id)
 end
 
 --- Lookup a peer in local routing table.
--- @tparam string peer_id
--- @treturn table|nil peer
+--- peer_id string
+--- table|nil peer
 function DHT:get_local_peer(peer_id)
   return self.routing_table:find_peer(peer_id)
 end
@@ -556,10 +627,10 @@ end
 -- Returns a report containing `peer` when found, plus closest peers/lookup data.
 -- `opts.use_cache=false` forces a network lookup even when the peer is local.
 -- `opts.use_network=false` checks only the local cache.
--- @tparam string peer_id Peer id to find.
--- @tparam[opt] table opts Lookup controls.
--- @treturn table|nil report
--- @treturn[opt] table err
+--- peer_id string Peer id to find.
+--- opts? table Lookup controls.
+--- table|nil report
+--- table|nil err
 function DHT:_find_peer_network(peer_id, opts)
   local options = opts or {}
   if type(peer_id) ~= "string" or peer_id == "" then
@@ -614,27 +685,27 @@ end
 -- Pass `use_cache=false` to force a network lookup. For local-only routing
 -- table lookup use @{get_local_peer}. Pass `use_network=false` to avoid
 -- network lookup after a cache miss.
--- @treturn table|nil op
--- @treturn[opt] table err
+--- table|nil op
+--- table|nil err
 function DHT:find_peer(peer_id, opts)
   return self:find_peer_network(peer_id, opts)
 end
 
 --- Find closest peers from local routing table.
--- @tparam string key Target key or peer id bytes/text.
--- @tparam[opt] number count Max peers.
--- @treturn table peers
+--- key string Target key or peer id bytes/text.
+--- count? number Max peers.
+--- table peers
 function DHT:find_closest_peers(key, count)
   local want = count or self.k
   return self.routing_table:nearest_peers(key, want)
 end
 
 --- Store a provider record locally.
--- @tparam string key Content key/CID multihash bytes.
--- @tparam table peer_info Provider peer info (`peer_id`/`id`, `addrs`).
--- @tparam[opt] table opts `ttl` or `ttl_seconds`.
--- @treturn true|nil ok
--- @treturn[opt] table err
+--- key string Content key/CID multihash bytes.
+--- peer_info table Provider peer info (`peer_id`/`id`, `addrs`).
+--- opts? table `ttl` or `ttl_seconds`.
+--- true|nil ok
+--- table|nil err
 function DHT:add_provider(key, peer_info, opts)
   local valid_key, key_err = provider_routing.validate_provider_key(key, "provider")
   if not valid_key then
@@ -644,10 +715,10 @@ function DHT:add_provider(key, peer_info, opts)
 end
 
 --- Return locally stored, non-expired providers for a key.
--- @tparam string key Content key/CID multihash bytes.
--- @tparam[opt] table opts `limit`.
--- @treturn table|nil providers
--- @treturn[opt] table err
+--- key string Content key/CID multihash bytes.
+--- opts? table `limit`.
+--- table|nil providers
+--- table|nil err
 function DHT:get_local_providers(key, opts)
   local valid_key, key_err = provider_routing.validate_provider_key(key, "provider")
   if not valid_key then
@@ -657,9 +728,9 @@ function DHT:get_local_providers(key, opts)
 end
 
 --- Return provider keys where this host is the local provider.
--- @tparam[opt] table opts `limit`.
--- @treturn table|nil keys
--- @treturn[opt] table err
+--- opts? table `limit`.
+--- table|nil keys
+--- table|nil err
 function DHT:list_local_provider_keys(opts)
   local options = opts or {}
   local list_opts = {}
@@ -684,11 +755,11 @@ function DHT:set_record_selector(namespace, fn)
 end
 
 --- Store a value record locally.
--- @tparam string key Record key bytes.
--- @tparam table record KAD record (`key`, `value`, optional `time_received`).
--- @tparam[opt] table opts `ttl` or `ttl_seconds`.
--- @treturn true|nil ok
--- @treturn[opt] table err
+--- key string Record key bytes.
+--- record table KAD record (`key`, `value`, optional `time_received`).
+--- opts? table `ttl` or `ttl_seconds`.
+--- true|nil ok
+--- table|nil err
 function DHT:put_local_record(key, record, opts)
   local validated, validate_err = self:_validate_record(key, record)
   if not validated then
@@ -705,10 +776,10 @@ function DHT:put_local_record(key, record, opts)
 end
 
 --- Return a locally stored, non-expired value record.
--- @tparam string key Record key bytes.
--- @tparam[opt] table opts Reserved for future selectors.
--- @treturn table|nil record
--- @treturn[opt] table err
+--- key string Record key bytes.
+--- opts? table Reserved for future selectors.
+--- table|nil record
+--- table|nil err
 function DHT:get_local_record(key, opts)
   local _ = opts
   return self.record_store:get(key)
@@ -1525,11 +1596,11 @@ end
 
 --- Find a peer by id via lookup.
 -- `opts` supports `timeout`, `ctx`, and `stream_opts`.
--- @tparam string|table peer_or_addr Query target.
--- @tparam string target_key Peer id to find.
--- @tparam[opt] table opts
--- @treturn table|nil op Operation.
--- @treturn[opt] table err
+--- peer_or_addr string|table Query target.
+--- target_key string Peer id to find.
+--- opts? table
+--- table|nil op Operation.
+--- table|nil err
 function DHT:find_node(peer_or_addr, target_key, opts)
   local options = opts or {}
   return self:_spawn_query_task("kad.find_node", function(ctx)
@@ -1544,8 +1615,8 @@ end
 
 --- Query a peer for value records.
 -- `opts` supports `timeout`, `ctx`, and `stream_opts`.
--- @treturn table|nil op
--- @treturn[opt] table err
+--- table|nil op
+--- table|nil err
 function DHT:get_value(peer_or_addr, key, opts)
   local options = opts or {}
   return self:_spawn_query_task("kad.get_value", function(ctx)
@@ -1560,8 +1631,8 @@ end
 
 --- Query a peer to store a value record.
 -- `opts` supports `timeout`, `ctx`, and `stream_opts`.
--- @treturn table|nil op
--- @treturn[opt] table err
+--- table|nil op
+--- table|nil err
 function DHT:put_value_to_peer(peer_or_addr, key, record, opts)
   local options = opts or {}
   return self:_spawn_query_task("kad.put_value_to_peer", function(ctx)
@@ -1576,8 +1647,8 @@ end
 
 --- Query a peer for provider records.
 -- `opts` supports `timeout`, `ctx`, and `stream_opts`.
--- @treturn table|nil op
--- @treturn[opt] table err
+--- table|nil op
+--- table|nil err
 function DHT:get_providers(peer_or_addr, key, opts)
   local options = opts or {}
   return self:_spawn_query_task("kad.get_providers", function(ctx)
@@ -1592,8 +1663,8 @@ end
 
 --- Store and publish a value record to closest peers.
 -- `value_or_record` may be raw value bytes or a KAD record table.
--- @treturn table|nil op
--- @treturn[opt] table err
+--- table|nil op
+--- table|nil err
 function DHT:put_value(key, value_or_record, opts)
   local options = opts or {}
   return self:_spawn_query_task("kad.put_value", function(ctx)
@@ -1611,16 +1682,16 @@ function DHT:put_value(key, value_or_record, opts)
 end
 
 --- JS/libp2p-style value routing alias for @{put_value}.
--- @treturn table|nil op
--- @treturn[opt] table err
+--- table|nil op
+--- table|nil err
 function DHT:put(key, value_or_record, opts)
   return self:put_value(key, value_or_record, opts)
 end
 
 --- Announce this host as a provider for a content key.
 -- `opts` supports lookup controls, `addrs`, provider TTL controls, and `fail_fast`.
--- @treturn table|nil op
--- @treturn[opt] table err
+--- table|nil op
+--- table|nil err
 function DHT:provide(key, opts)
   local options = opts or {}
   return self:_spawn_query_task("kad.provide", function(ctx)
@@ -1640,8 +1711,8 @@ end
 --- Re-announce locally stored provider records.
 -- `opts.keys` can limit to explicit provider keys; otherwise local provider keys
 -- are read from the provider store. `opts.batch_size` bounds listed keys.
--- @treturn table|nil op
--- @treturn[opt] table err
+--- table|nil op
+--- table|nil err
 function DHT:reprovide(opts)
   local options = opts or {}
   return self:_spawn_query_task("kad.reprovide", function(ctx)
@@ -1662,8 +1733,8 @@ end
 -- `opts` supports lookup controls like `alpha`, `k`, `disjoint_paths`,
 -- `seed_peers`, `find_node_opts`, `query_timeout_seconds`, `max_query_rounds`,
 -- and scheduler `ctx`/`yield`.
--- @treturn table|nil op
--- @treturn[opt] table err
+--- table|nil op
+--- table|nil err
 function DHT:find_value(key, opts)
   local options = opts or {}
   return self:_spawn_query_task("kad.find_value", function(ctx)
@@ -1681,8 +1752,8 @@ function DHT:find_value(key, opts)
 end
 
 --- JS/libp2p-style value routing alias for @{find_value}.
--- @treturn table|nil op
--- @treturn[opt] table err
+--- table|nil op
+--- table|nil err
 function DHT:get(key, opts)
   return self:find_value(key, opts)
 end
@@ -1690,8 +1761,8 @@ end
 --- Lookup closest peers through iterative query.
 -- Uses same options as @{find_value}.
 -- `opts.result_count` is fixed internally to include report and peers.
--- @treturn table|nil op
--- @treturn[opt] table err
+--- table|nil op
+--- table|nil err
 function DHT:get_closest_peers(key, opts)
   local options = opts or {}
   return self:_spawn_query_task("kad.get_closest_peers", function(ctx)
@@ -1711,8 +1782,8 @@ end
 --- Find a peer through peer routing, optionally using local cache first.
 -- Unlike @{find_peer}, this is a network-capable operation. Pass
 -- `use_cache=false` to bypass the local routing table.
--- @treturn table|nil op
--- @treturn[opt] table err
+--- table|nil op
+--- table|nil err
 function DHT:find_peer_network(peer_id, opts)
   local options = opts or {}
   return self:_spawn_query_task("kad.find_peer", function(ctx)
@@ -1732,8 +1803,8 @@ end
 --- Lookup providers through iterative query.
 -- Uses same options as @{find_value}.
 -- `opts` may include `seed_peers`, `alpha`, `k`, `query_timeout_seconds`, and `ctx`.
--- @treturn table|nil op
--- @treturn[opt] table err
+--- table|nil op
+--- table|nil err
 function DHT:find_providers(key, opts)
   local options = opts or {}
   return self:_spawn_query_task("kad.find_providers", function(ctx)
@@ -1753,18 +1824,18 @@ end
 --- Resolve bootstrap targets into dialable addresses.
 -- `opts` supports `peer_discovery`, `bootstrappers`, `dnsaddr_resolver`,
 -- and `ignore_resolve_errors`.
--- @tparam[opt] table opts
--- @treturn table|nil addrs
--- @treturn[opt] table err
+--- opts? table
+--- table|nil addrs
+--- table|nil err
 function DHT:bootstrap_targets(opts)
   return bootstrap_dht.bootstrap_targets(self, opts)
 end
 
 --- Discover peers from configured discovery source.
 -- `opts.ignore_source_errors` (`boolean`) suppresses source failures.
--- @tparam[opt] table opts
--- @treturn table|nil peers
--- @treturn[opt] table err
+--- opts? table
+--- table|nil peers
+--- table|nil err
 function DHT:discover_peers(opts)
   return bootstrap_dht.discover_peers(self, opts)
 end
@@ -1874,9 +1945,9 @@ end
 --- Refresh peer liveness/protocol support and evict stale peers.
 -- `opts` supports `min_recheck_seconds`, `max_checks`,
 -- `max_failed_checks_before_evict`, and `protocol_check_opts`.
--- @tparam[opt] table opts
--- @treturn table|nil report
--- @treturn[opt] table err
+--- opts? table
+--- table|nil report
+--- table|nil err
 function DHT:refresh_once(opts)
   return maintenance.refresh_once(self, opts)
 end
@@ -1911,9 +1982,9 @@ end
 --- Execute a scheduler-backed random walk query.
 -- `opts` supports walk/query controls like `count`, `alpha`, `disjoint_paths`,
 -- `find_node_opts`, and scheduler `ctx`/`yield`.
--- @tparam[opt] table opts
--- @treturn table|nil op
--- @treturn[opt] table err
+--- opts? table
+--- table|nil op
+--- table|nil err
 function DHT:random_walk(opts)
   return random_walk.spawn(self, opts)
 end
@@ -1931,10 +2002,10 @@ end
 -- Maintenance eviction semantics follow go-libp2p-kad-dht: after the
 -- recheck grace window, one failed liveness/protocol maintenance probe evicts
 -- the peer.
--- @tparam table host Host instance.
--- @tparam[opt] table opts
--- @treturn table|nil dht
--- @treturn[opt] table err
+--- host table Host instance.
+--- opts? table
+--- table|nil dht
+--- table|nil err
 function M.new(host, opts)
   local options = opts or {}
 

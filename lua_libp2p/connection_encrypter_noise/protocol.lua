@@ -1,5 +1,18 @@
 --- Noise transport handshake and secure channel.
--- @module lua_libp2p.connection_encrypter_noise.protocol
+---@class Libp2pNoiseStaticKeypair
+---@field public_key string
+---@field private_key string
+
+---@class Libp2pNoiseExtensions
+---@field stream_muxers? string[]
+---@field webtransport_certhashes? string[]
+
+---@class Libp2pNoiseHandshakeOptions
+---@field identity_keypair Libp2pIdentityKeypair
+---@field expected_remote_peer_id? string
+---@field static_keypair? Libp2pNoiseStaticKeypair
+---@field extensions? Libp2pNoiseExtensions
+
 local error_mod = require("lua_libp2p.error")
 local keys = require("lua_libp2p.crypto.keys")
 local key_pb = require("lua_libp2p.crypto.key_pb")
@@ -102,6 +115,7 @@ local function skip_unknown(payload, index, wire)
   return nil, error_mod.new("decode", "unsupported protobuf wire type", { wire = wire })
 end
 
+---@return Libp2pNoiseStaticKeypair keypair
 function M.new_static_keypair()
   local public_key, private_key = sodium.crypto_box_keypair()
   return {
@@ -680,6 +694,11 @@ end
 -- `opts.static_keypair` overrides static Noise keypair.
 -- `opts.expected_remote_peer_id` verifies remote identity.
 -- `opts.extensions` includes optional handshake extensions.
+---@param raw_conn table
+---@param opts Libp2pNoiseHandshakeOptions
+---@return table|nil secure_conn
+---@return table|nil state
+---@return table|nil err
 function M.handshake_xx_outbound(raw_conn, opts)
   local options = opts or {}
   local identity = options.identity_keypair
@@ -803,6 +822,11 @@ end
 
 --- Perform inbound Noise XX handshake.
 -- Uses same `opts.<field>` values as @{handshake_xx_outbound}.
+---@param raw_conn table
+---@param opts Libp2pNoiseHandshakeOptions
+---@return table|nil secure_conn
+---@return table|nil state
+---@return table|nil err
 function M.handshake_xx_inbound(raw_conn, opts)
   local options = opts or {}
   local identity = options.identity_keypair

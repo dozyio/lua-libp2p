@@ -1,5 +1,17 @@
 --- Perf protocol helpers and measurement utilities.
--- @module lua_libp2p.protocol_perf.protocol
+---@class Libp2pPerfOptions
+---@field write_block_size? integer Send chunk size. Default: module default.
+---@field yield_every_bytes? integer Cooperative yield cadence.
+
+---@class Libp2pPerfStats
+---@field uploaded_bytes integer
+---@field download_bytes integer
+
+---@class Libp2pPerfReport
+---@field time_seconds number
+---@field upload_bytes integer
+---@field download_bytes integer
+
 local ok_socket, socket = pcall(require, "socket")
 local error_mod = require("lua_libp2p.error")
 local log = require("lua_libp2p.log").subsystem("perf")
@@ -64,6 +76,10 @@ local function parse_u32be(bytes, offset)
   return (((a * 256 + b) * 256 + c) * 256 + d)
 end
 
+---Encode an unsigned 64-bit integer as big-endian bytes.
+---@param value number
+---@return string|nil bytes
+---@return table|nil err
 function M.encode_u64be(value)
   if type(value) ~= "number" then
     return nil, error_mod.new("input", "perf u64 value must be a number")
@@ -77,6 +93,10 @@ function M.encode_u64be(value)
   return u32be(hi) .. u32be(lo)
 end
 
+---Decode an unsigned 64-bit big-endian integer.
+---@param bytes string Exactly 8 bytes.
+---@return number|nil value
+---@return table|nil err
 function M.decode_u64be(bytes)
   if type(bytes) ~= "string" or #bytes ~= 8 then
     return nil, error_mod.new("input", "perf u64 input must be exactly 8 bytes")
@@ -180,13 +200,11 @@ local function read_upload_until_eof(conn, opts)
   end
 end
 
---- Handle one perf protocol session.
--- `opts.write_block_size` (`number`, default `DEFAULT_WRITE_BLOCK_SIZE`) controls send chunks.
--- `opts.yield_every_bytes` (`number`) sets periodic cooperative yield cadence.
--- @tparam table conn
--- @tparam[opt] table opts
--- @treturn table|nil stats
--- @treturn[opt] table err
+---Handle one perf protocol session.
+---@param conn Libp2pStream
+---@param opts? Libp2pPerfOptions
+---@return Libp2pPerfStats|nil stats
+---@return table|nil err
 function M.handle(conn, opts)
   local options = opts or {}
   local write_block_size = options.write_block_size or M.DEFAULT_WRITE_BLOCK_SIZE
@@ -239,14 +257,13 @@ function M.handle(conn, opts)
   }
 end
 
---- Run one perf upload/download measurement exchange.
--- `opts.write_block_size` (`number`, default `DEFAULT_WRITE_BLOCK_SIZE`) controls send chunks.
--- @tparam table conn
--- @tparam number send_bytes
--- @tparam number recv_bytes
--- @tparam[opt] table opts
--- @treturn table|nil report
--- @treturn[opt] table err
+---Run one perf upload/download measurement exchange.
+---@param conn Libp2pStream
+---@param send_bytes integer
+---@param recv_bytes integer
+---@param opts? Libp2pPerfOptions
+---@return Libp2pPerfReport|nil report
+---@return table|nil err
 function M.measure_once(conn, send_bytes, recv_bytes, opts)
   local options = opts or {}
   local write_block_size = options.write_block_size or M.DEFAULT_WRITE_BLOCK_SIZE

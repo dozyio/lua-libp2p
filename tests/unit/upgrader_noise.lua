@@ -93,8 +93,8 @@ local function run()
   local co_out = coroutine.create(function()
     out_conn, out_state, out_err = upgrader.upgrade_outbound(a, {
       local_keypair = client_id,
-      security_protocols = { "/noise" },
-      muxer_protocols = { yamux.PROTOCOL_ID },
+      security_protocols = { noise = true },
+      muxer_protocols = { yamux = true },
     })
     return out_conn, out_err
   end)
@@ -102,8 +102,8 @@ local function run()
   local co_in = coroutine.create(function()
     in_conn, in_state, in_err = upgrader.upgrade_inbound(b, {
       local_keypair = server_id,
-      security_protocols = { "/noise" },
-      muxer_protocols = { yamux.PROTOCOL_ID },
+      security_protocols = { noise = true },
+      muxer_protocols = { yamux = true },
     })
     return in_conn, in_err
   end)

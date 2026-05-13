@@ -1,7 +1,7 @@
 local address_manager = require("lua_libp2p.address_manager")
-local igd = require("lua_libp2p.upnp.igd")
-local nat = require("lua_libp2p.upnp.nat")
-local ssdp = require("lua_libp2p.upnp.ssdp")
+local igd = require("lua_libp2p.port_mapping.upnp.igd")
+local nat = require("lua_libp2p.port_mapping.upnp.nat")
+local ssdp = require("lua_libp2p.port_mapping.upnp.ssdp")
 
 local function run()
   local response = assert(ssdp.parse_response(table.concat({

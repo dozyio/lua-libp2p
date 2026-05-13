@@ -1,4 +1,4 @@
-local multiaddr = require("lua_libp2p.multiaddr")
+local multiaddr = require("lua_libp2p.multiformats.multiaddr")
 local error_mod = require("lua_libp2p.error")
 local vectors = require("tests.helpers.multiaddr_vectors")
 

@@ -62,7 +62,7 @@ local function run()
   local out_conn, out_state, out_err = upgrader.upgrade_outbound(outbound_raw, {
     local_keypair = local_key,
     expected_remote_peer_id = remote_exchange.id,
-    security_protocols = { "/noise", plaintext.PROTOCOL_ID },
+    security_protocols = { noise = true, plaintext = true },
   })
   if not out_conn then
     return nil, out_err
@@ -85,7 +85,7 @@ local function run()
   local inbound_raw = new_scripted_conn(inbound_in)
   local in_conn, in_state, in_err = upgrader.upgrade_inbound(inbound_raw, {
     local_keypair = local_key,
-    security_protocols = { "/noise", plaintext.PROTOCOL_ID },
+    security_protocols = { noise = true, plaintext = true },
   })
   if not in_conn then
     return nil, in_err

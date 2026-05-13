@@ -1,8 +1,7 @@
 --- Native luv TCP transport implementation.
--- @module lua_libp2p.transport_tcp.luv_native
 local error_mod = require("lua_libp2p.error")
 local log = require("lua_libp2p.log").subsystem("tcp")
-local multiaddr = require("lua_libp2p.multiaddr")
+local multiaddr = require("lua_libp2p.multiformats.multiaddr")
 
 local ok_luv, uv = pcall(require, "luv")
 local ok_socket, socket = pcall(require, "socket")
@@ -284,6 +283,8 @@ function NativeConnection:new(raw, opts)
     _write_error = nil,
     _tx_active = false,
     _tx_consumed = "",
+    _fd_tls_mode = false,
+    _fd_tls_poll = nil,
     _watch_callbacks = {},
     _write_watch_callbacks = {},
     _active_timers = {},
@@ -443,6 +444,69 @@ function NativeConnection:socket()
   return self._raw
 end
 
+function NativeConnection:pollfd()
+  if self._raw and type(self._raw.fileno) == "function" then
+    local ok, fd = pcall(self._raw.fileno, self._raw)
+    if ok and type(fd) == "number" and fd >= 0 then
+      return fd
+    end
+    return nil, error_mod.new("unsupported", "native luv tcp handle did not expose a valid fd", { cause = fd })
+  end
+  return nil, error_mod.new("unsupported", "native luv tcp handle does not expose fileno")
+end
+
+function NativeConnection:begin_fd_tls()
+  if #self._pending > 0 then
+    return nil, error_mod.new("state", "cannot start fd TLS with pending buffered bytes", { pending_bytes = #self._pending })
+  end
+  if self._raw and type(self._raw.read_stop) == "function" then
+    pcall(function()
+      self._raw:read_stop()
+    end)
+  end
+  self._read_started = false
+  self._fd_tls_mode = true
+  return self:pollfd()
+end
+
+local function start_fd_tls_poll(self)
+  local ok_luv, uv = pcall(require, "luv")
+  if not ok_luv then
+    return nil, error_mod.new("unsupported", "luv is required for fd TLS readiness watches")
+  end
+  if self._fd_tls_poll ~= nil then
+    return true
+  end
+  local fd, fd_err = self:pollfd()
+  if not fd then
+    return nil, fd_err
+  end
+  local poll, poll_err = uv.new_poll(fd)
+  if not poll then
+    return nil, error_mod.new("io", "failed creating fd TLS poll watcher", { cause = poll_err })
+  end
+  local ok, start_err = poll:start("rw", function(err)
+    if err then
+      self._read_error = self._read_error or err
+      self._write_error = self._write_error or err
+    end
+    for _, cb in pairs(self._watch_callbacks) do
+      cb()
+    end
+    for _, cb in pairs(self._write_watch_callbacks) do
+      cb()
+    end
+  end)
+  if not ok then
+    pcall(function()
+      poll:close()
+    end)
+    return nil, error_mod.new("io", "failed starting fd TLS poll watcher", { cause = start_err })
+  end
+  self._fd_tls_poll = poll
+  return true
+end
+
 function NativeConnection:watch_luv_readable(on_readable)
   if type(on_readable) ~= "function" then
     return nil, error_mod.new("input", "on_readable callback is required")
@@ -450,6 +514,13 @@ function NativeConnection:watch_luv_readable(on_readable)
   local watch_id = self._next_watch_id
   self._next_watch_id = watch_id + 1
   self._watch_callbacks[watch_id] = on_readable
+  if self._fd_tls_mode then
+    local ok, err = start_fd_tls_poll(self)
+    if not ok then
+      self._watch_callbacks[watch_id] = nil
+      return nil, err
+    end
+  end
   if #self._pending > 0 or self._read_error ~= nil then
     on_readable()
   end
@@ -466,6 +537,13 @@ function NativeConnection:watch_luv_write(on_write)
   local watch_id = self._next_watch_id
   self._next_watch_id = watch_id + 1
   self._write_watch_callbacks[watch_id] = on_write
+  if self._fd_tls_mode then
+    local ok, err = start_fd_tls_poll(self)
+    if not ok then
+      self._write_watch_callbacks[watch_id] = nil
+      return nil, err
+    end
+  end
   return function()
     self._write_watch_callbacks[watch_id] = nil
     return true
@@ -752,6 +830,13 @@ function NativeConnection:close()
   end
   self._raw_closed = true
   self:_close_active_timers()
+  if self._fd_tls_poll then
+    pcall(function()
+      self._fd_tls_poll:stop()
+      self._fd_tls_poll:close()
+    end)
+  end
+  self._fd_tls_poll = nil
   pcall(function()
     self._raw:read_stop()
   end)
@@ -909,9 +994,9 @@ end
 -- `target` may be multiaddr string or table `{ host, port, multiaddr }`.
 -- `opts` overrides target table and supports `accept_timeout` and `io_timeout`.
 -- @param[opt] target
--- @tparam[opt] table opts
--- @treturn table|nil listener
--- @treturn[opt] table err
+--- opts? table
+--- table|nil listener
+--- table|nil err
 function M.listen(target, opts)
   if not ok_luv then
     return nil, error_mod.new("unsupported", "luv is unavailable")
@@ -1077,9 +1162,9 @@ end
 -- `opts.port` is used when target is a host string.
 -- `opts.timeout`, `opts.io_timeout`, and `opts.ctx` control timing and cancellation.
 -- @param target Dial target.
--- @tparam[opt] table opts
--- @treturn table|nil conn
--- @treturn[opt] table err
+--- opts? table
+--- table|nil conn
+--- table|nil err
 function M.dial(target, opts)
   if not ok_luv then
     return nil, error_mod.new("unsupported", "luv is unavailable")

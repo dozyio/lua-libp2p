@@ -7,7 +7,7 @@ lint-deps:
 	luarocks --lua-version=5.4 install --local luacheck
 
 docs-deps:
-	luarocks --lua-version=5.4 install --local ldoc
+	@echo "Install lua-language-server from https://github.com/LuaLS/lua-language-server/releases or your package manager"
 
 lint:
 	@command -v luacheck >/dev/null 2>&1 || { \
@@ -24,17 +24,20 @@ fmt:
 	stylua lua_libp2p tests examples
 
 docs:
-	@command -v ldoc >/dev/null 2>&1 || { \
-		echo "ldoc not found; run 'make docs-deps' and load your LuaRocks path"; \
+	@command -v lua-language-server >/dev/null 2>&1 || { \
+		echo "lua-language-server not found; run 'make docs-deps'"; \
 		exit 127; \
 	}
-	ldoc .
+	lua-language-server --doc=. --doc_out_path=docs/api --configpath=.luarc.json
 
 test:
 	LIBP2P_LOG='*=warn' lua tests/run.lua
 
 bench:
 	lua tests/benchmarks/run.lua
+
+bench-security-perf:
+	lua tests/bench/perf_security.lua $${N:-5}
 
 interop-yamux-go:
 	addr_file=$$(mktemp); err_file=$$(mktemp); \
@@ -144,6 +147,49 @@ interop-noise-go-reverse-luv:
 
 interop-noise-go-reverse-luv-native:
 	LUA_LIBP2P_INTEROP_RUNTIME=luv $(MAKE) interop-noise-go-reverse
+
+interop-tls-go:
+	addr_file=$$(mktemp); err_file=$$(mktemp); \
+	( cd tests/interop/go_tls_echo && go run . ) > $$addr_file 2> $$err_file & pid=$$!; \
+	for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30; do \
+		if [ -s $$addr_file ]; then break; fi; \
+		sleep 0.2; \
+	done; \
+	if ! [ -s $$addr_file ]; then \
+		kill $$pid 2>/dev/null || true; \
+		cat $$err_file; \
+		rm -f $$addr_file $$err_file; \
+		exit 1; \
+	fi; \
+	addr=$$(head -n 1 $$addr_file | tr -d '\n'); \
+	lua tests/interop/tls_go_client.lua $$addr; \
+	status=$$?; \
+	wait $$pid || true; \
+	if [ $$status -ne 0 ]; then cat $$err_file; fi; \
+	rm -f $$addr_file $$err_file; \
+	exit $$status
+
+interop-tls-go-reverse:
+	addr_file=$$(mktemp); err_file=$$(mktemp); \
+	lua tests/interop/tls_lua_server.lua > $$addr_file 2> $$err_file & pid=$$!; \
+	for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30; do \
+		if [ -s $$addr_file ]; then break; fi; \
+		sleep 0.2; \
+	done; \
+	if ! [ -s $$addr_file ]; then \
+		kill $$pid 2>/dev/null || true; \
+		cat $$err_file; \
+		rm -f $$addr_file $$err_file; \
+		exit 1; \
+	fi; \
+	addr=$$(head -n 1 $$addr_file | tr -d '\n'); \
+	remote_pid=$$(sed -n '2p' $$addr_file | tr -d '\n'); \
+	( cd tests/interop/go_tls_client && go run . $$addr $$remote_pid ); \
+	status=$$?; \
+	wait $$pid || true; \
+	if [ $$status -ne 0 ]; then cat $$err_file; fi; \
+	rm -f $$addr_file $$err_file; \
+	exit $$status
 
 interop-dcutr-go:
 	addr_file=$$(mktemp); err_file=$$(mktemp); \

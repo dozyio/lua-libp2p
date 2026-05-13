@@ -1,5 +1,27 @@
 --- Yamux stream multiplexer implementation.
--- @module lua_libp2p.muxer.yamux
+---@class Libp2pYamuxHeader
+---@field version integer
+---@field type integer
+---@field flags integer
+---@field stream_id integer
+---@field length integer
+
+---@class Libp2pYamuxFrame: Libp2pYamuxHeader
+---@field payload? string
+
+---@class Libp2pYamuxSessionOptions
+---@field role? 'client'|'server'
+---@field initial_stream_window? integer
+---@field max_accept_backlog? integer
+---@field max_ack_backlog? integer
+---@field scheduler_driven? boolean
+
+---@class Libp2pYamuxSession
+---@field open_stream fun(self: Libp2pYamuxSession): Libp2pStream|nil, table|nil
+---@field accept_stream_now fun(self: Libp2pYamuxSession): Libp2pStream|nil
+---@field pump_ready fun(self: Libp2pYamuxSession, max_frames?: integer): boolean|nil, table|nil
+---@field close fun(self: Libp2pYamuxSession): true
+
 local error_mod = require("lua_libp2p.error")
 local log = require("lua_libp2p.log").subsystem("yamux")
 
@@ -87,6 +109,9 @@ local function parse_u32be(s, offset)
   return (((a * 256 + b) * 256 + c) * 256 + d)
 end
 
+---@param header Libp2pYamuxHeader
+---@return string|nil bytes
+---@return table|nil err
 function M.encode_header(header)
   local version = header.version
   if version == nil then
@@ -107,6 +132,9 @@ function M.encode_header(header)
   return string.char(version) .. string.char(frame_type) .. u16be(flags) .. u32be(stream_id) .. u32be(length)
 end
 
+---@param bytes string
+---@return Libp2pYamuxHeader|nil header
+---@return table|nil err
 function M.decode_header(bytes)
   if type(bytes) ~= "string" or #bytes ~= M.HEADER_LENGTH then
     return nil, error_mod.new("decode", "yamux header must be 12 bytes")
@@ -126,6 +154,10 @@ function M.decode_header(bytes)
   }
 end
 
+---@param conn table
+---@param frame Libp2pYamuxFrame
+---@return true|nil ok
+---@return table|nil err
 function M.write_frame(conn, frame)
   local payload = frame.payload or ""
   if type(payload) ~= "string" then
@@ -149,6 +181,9 @@ function M.write_frame(conn, frame)
   return true
 end
 
+---@param conn table
+---@return Libp2pYamuxFrame|nil frame
+---@return table|nil err
 function M.read_frame(conn)
   local header_bytes, header_err = read_exact(conn, M.HEADER_LENGTH)
   if not header_bytes then
@@ -770,9 +805,12 @@ end
 
 --- Construct yamux session wrapper.
 -- Forwards `opts.<field>` to @{Session:new}.
--- @tparam table conn
--- @tparam[opt] table opts
--- @treturn table session
+--- conn table
+--- opts? table
+--- table session
+---@param conn table
+---@param opts? Libp2pYamuxSessionOptions
+---@return Libp2pYamuxSession session
 function M.new_session(conn, opts)
   return Session:new(conn, opts)
 end

@@ -1,9 +1,16 @@
 --- DCUtR hole-punching service.
 -- Coordinates unilateral and CONNECT/SYNC-based direct connection upgrades.
--- @module lua_libp2p.protocol_dcutr.service
+---@class Libp2pDcutrConfig
+---@field enabled? boolean
+---@field policy? string
+---@field connect_timeout? number
+---@field stream_timeout? number
+---@field sync_timeout? number
+---@field dial_backoff? number
+
 local error_mod = require("lua_libp2p.error")
 local log = require("lua_libp2p.log").subsystem("dcutr")
-local multiaddr = require("lua_libp2p.multiaddr")
+local multiaddr = require("lua_libp2p.multiformats.multiaddr")
 local dcutr = require("lua_libp2p.protocol_dcutr.protocol")
 
 local M = {}
@@ -252,9 +259,12 @@ end
 -- `opts.allow_private_candidate_addrs` (`boolean`, default `false`) permits private remote candidates.
 -- `opts.relay_close_grace_seconds` (`number`, default `5`) delays relay close after success.
 -- `opts.max_retries` (`number`, default `3`) controls punch retry attempts.
--- @tparam table host Host instance.
--- @tparam[opt] table opts
--- @treturn table service
+--- host table Host instance.
+--- opts? table
+--- table service
+---@param host Libp2pHost
+---@param opts? Libp2pDcutrConfig
+---@return table service
 function M.new(host, opts)
   local options = opts or {}
   local svc = {}

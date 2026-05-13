@@ -9,7 +9,7 @@ local identify_service = require("lua_libp2p.protocol_identify.service")
 local ping_service = require("lua_libp2p.protocol_ping.service")
 local autonat_service = require("lua_libp2p.autonat.client")
 local kad_dht_service = require("lua_libp2p.kad_dht")
-local upnp_nat_service = require("lua_libp2p.upnp.nat")
+local upnp_nat_service = require("lua_libp2p.port_mapping.upnp.nat")
 local peer_discovery_bootstrap = require("lua_libp2p.peer_discovery_bootstrap")
 
 local function usage()

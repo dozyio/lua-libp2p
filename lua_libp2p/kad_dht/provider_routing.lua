@@ -1,8 +1,7 @@
 --- KAD-DHT provider routing workflows.
--- @module lua_libp2p.kad_dht.provider_routing
 local error_mod = require("lua_libp2p.error")
 local log = require("lua_libp2p.log").subsystem("kad_dht")
-local multiaddr = require("lua_libp2p.multiaddr")
+local multiaddr = require("lua_libp2p.multiformats.multiaddr")
 local multihash = require("lua_libp2p.multiformats.multihash")
 local peerid = require("lua_libp2p.peerid")
 local protocol = require("lua_libp2p.kad_dht.protocol")

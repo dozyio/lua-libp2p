@@ -1,5 +1,4 @@
 --- Base32 codec.
--- @module lua_libp2p.multiformats.base32
 local error_mod = require("lua_libp2p.error")
 
 local M = {}
@@ -10,6 +9,8 @@ for i = 1, #ALPHABET do
   INDEX[ALPHABET:sub(i, i)] = i - 1
 end
 
+--- data string
+--- string text
 function M.encode_nopad(data)
   if data == "" then
     return ""
@@ -42,6 +43,9 @@ function M.encode_nopad(data)
   return table.concat(out)
 end
 
+--- text string
+--- string|nil bytes
+--- table|nil err
 function M.decode_nopad(text)
   if text == "" then
     return ""

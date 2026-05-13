@@ -10,7 +10,7 @@ local perf = require("lua_libp2p.protocol_perf.protocol")
 local perf_service = require("lua_libp2p.protocol_perf.service")
 local ping = require("lua_libp2p.protocol_ping.protocol")
 local kad_dht_service = require("lua_libp2p.kad_dht")
-local upnp_nat_service = require("lua_libp2p.upnp.nat")
+local upnp_nat_service = require("lua_libp2p.port_mapping.upnp.nat")
 local peer_discovery_bootstrap = require("lua_libp2p.peer_discovery_bootstrap")
 local relay_discovery_service = require("lua_libp2p.relay_discovery")
 
@@ -34,6 +34,46 @@ local function run()
   end
   if default_host._runtime ~= "luv" then
     return nil, "host should default to luv"
+  end
+  if default_host.security_transports.noise ~= true or default_host._security_protocols[1] ~= "/noise" then
+    return nil, "host should default to noise-only security"
+  end
+
+  local security_map_host, security_map_err = host.new({
+    identity = keypair,
+    blocking = false,
+    security_transports = {
+      noise = true,
+      tls = true,
+    },
+  })
+  if not security_map_host then
+    return nil, security_map_err
+  end
+  if
+    security_map_host.security_transports.noise ~= true
+    or security_map_host.security_transports.tls ~= true
+    or security_map_host._security_protocols[1] ~= "/noise"
+    or security_map_host._security_protocols[2] ~= "/tls/1.0.0"
+  then
+    return nil, "security_transports map should normalize to ordered protocol IDs"
+  end
+  if security_map_host.muxers.yamux ~= true or security_map_host._muxer_protocols[1] ~= "/yamux/1.0.0" then
+    return nil, "host should default to yamux muxer"
+  end
+
+  local muxer_map_host, muxer_map_err = host.new({
+    identity = keypair,
+    blocking = false,
+    muxers = {
+      yamux = true,
+    },
+  })
+  if not muxer_map_host then
+    return nil, muxer_map_err
+  end
+  if muxer_map_host.muxers.yamux ~= true or muxer_map_host._muxer_protocols[1] ~= "/yamux/1.0.0" then
+    return nil, "muxers map should normalize to ordered protocol IDs"
   end
 
   local poll_host, poll_err = host.new({ runtime = "poll" })
@@ -886,8 +926,8 @@ local function run()
     identity = keypair,
     listen_addrs = { "/ip4/127.0.0.1/tcp/0" },
     transports = { "tcp" },
-    security_transports = { "/plaintext/2.0.0" },
-    muxers = { "/yamux/1.0.0" },
+    security_transports = { plaintext = true },
+    muxers = { yamux = true },
     services = {
       identify = { module = identify_service },
       ping = { module = ping_service },
@@ -925,7 +965,7 @@ local function run()
     return nil, "client-mode kad_dht service should not advertise/register handler"
   end
 
-  local upnp_mod = require("lua_libp2p.upnp.nat")
+  local upnp_mod = require("lua_libp2p.port_mapping.upnp.nat")
   local original_upnp_new = upnp_mod.new
   local upnp_seen_opts
   upnp_mod.new = function(_, opts)

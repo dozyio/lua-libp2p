@@ -1,5 +1,4 @@
 --- Libp2p key protobuf codec.
--- @module lua_libp2p.crypto.key_pb
 local error_mod = require("lua_libp2p.error")
 local varint = require("lua_libp2p.multiformats.varint")
 

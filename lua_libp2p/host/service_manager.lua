@@ -1,5 +1,12 @@
 --- Host service graph construction and dependency ordering.
--- @module lua_libp2p.host.service_manager
+---@class Libp2pServiceSpec
+---@field module table Service module with `new(host, config, name)`.
+---@field config? table Service-specific configuration passed to `module.new`.
+---@field provides? string[] Capabilities provided by this service.
+---@field requires? string[] Capabilities required before this service starts.
+
+---@alias Libp2pServicesConfig table<string, Libp2pServiceSpec|table>
+
 local error_mod = require("lua_libp2p.error")
 local log = require("lua_libp2p.log").subsystem("host")
 

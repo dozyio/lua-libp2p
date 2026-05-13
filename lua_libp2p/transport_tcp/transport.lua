@@ -1,9 +1,14 @@
 --- Poll-based TCP transport implementation.
--- @module lua_libp2p.transport_tcp.transport
+---@class Libp2pTcpConfig
+---@field nodelay? boolean Defaults to enabled.
+---@field keepalive? boolean Defaults to enabled.
+---@field keepalive_initial_delay? number Defaults to 0 when keepalive is enabled.
+---@field listen_backlog? integer
+---@field accept_batch? integer
 local socket = require("socket")
 local error_mod = require("lua_libp2p.error")
 local log = require("lua_libp2p.log").subsystem("tcp")
-local multiaddr = require("lua_libp2p.multiaddr")
+local multiaddr = require("lua_libp2p.multiformats.multiaddr")
 
 local M = {}
 
@@ -308,9 +313,9 @@ end
 --- Start a TCP listener.
 -- `opts` accepts either `multiaddr` or (`host`,`port`), plus
 -- `accept_timeout` and `io_timeout`.
--- @tparam[opt] table opts
--- @treturn table|nil listener
--- @treturn[opt] table err
+--- opts? table
+--- table|nil listener
+--- table|nil err
 function M.listen(opts)
   local options = opts or {}
 
@@ -371,9 +376,9 @@ end
 --- Dial a TCP endpoint.
 -- `opts` accepts `timeout`, `io_timeout`, and `ctx`.
 -- @param address Host string, multiaddr string, or `{ host, port }`.
--- @tparam[opt] table opts
--- @treturn table|nil conn
--- @treturn[opt] table err
+--- opts? table
+--- table|nil conn
+--- table|nil err
 function M.dial(address, opts)
   local options = opts or {}
   local host

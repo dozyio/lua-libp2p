@@ -1,5 +1,5 @@
 local autonat = require("lua_libp2p.protocol.autonat_v2")
-local multiaddr = require("lua_libp2p.multiaddr")
+local multiaddr = require("lua_libp2p.multiformats.multiaddr")
 
 local function run()
   local addr = assert(multiaddr.to_bytes("/ip4/203.0.113.10/tcp/4001"))

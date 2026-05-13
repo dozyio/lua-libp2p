@@ -3,7 +3,6 @@
 -- Uses the synchronous datastore contract; choose local/fast backends here.
 -- Remote or potentially blocking stores should use a future async peerstore
 -- adapter rather than this implementation.
--- @module lua_libp2p.peerstore.datastore
 local datastore = require("lua_libp2p.datastore")
 local error_mod = require("lua_libp2p.error")
 local peerstore_codec = require("lua_libp2p.peerstore.codec")

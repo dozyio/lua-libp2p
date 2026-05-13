@@ -1,7 +1,6 @@
 --- Host advertised address and protocol state.
--- @module lua_libp2p.host.advertise
 local log = require("lua_libp2p.log").subsystem("host")
-local multiaddr = require("lua_libp2p.multiaddr")
+local multiaddr = require("lua_libp2p.multiformats.multiaddr")
 local table_utils = require("lua_libp2p.util.tables")
 
 local M = {}

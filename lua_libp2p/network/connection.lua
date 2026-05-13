@@ -1,5 +1,19 @@
 --- Connection abstraction over secure muxed sessions.
--- @module lua_libp2p.network.connection
+---@class Libp2pStream
+---@field read fun(self: Libp2pStream, length: integer): string|nil, table|nil
+---@field write fun(self: Libp2pStream, payload: string): boolean|nil, table|nil
+---@field close fun(self: Libp2pStream): boolean|nil, table|nil
+---@field close_write? fun(self: Libp2pStream): boolean|nil, table|nil
+---@field reset_now? fun(self: Libp2pStream): boolean|nil, table|nil
+---@field read_now? fun(self: Libp2pStream): string|nil, table|nil
+
+---@class Libp2pConnection
+---@field raw fun(self: Libp2pConnection): table
+---@field session fun(self: Libp2pConnection): table|nil
+---@field new_stream fun(self: Libp2pConnection, protocols?: string[]): Libp2pStream|nil, string|nil, table|nil
+---@field accept_stream fun(self: Libp2pConnection, router?: table): Libp2pStream|nil, string|nil, function|nil, table|nil
+---@field close fun(self: Libp2pConnection): boolean|nil, table|nil
+
 local error_mod = require("lua_libp2p.error")
 local mss = require("lua_libp2p.multistream_select.protocol")
 
@@ -10,9 +24,9 @@ Connection.__index = Connection
 
 --- Wrap raw connection into high-level connection.
 -- `opts.session` attaches muxer session.
--- @tparam table raw_conn
--- @tparam[opt] table opts
--- @treturn table conn
+--- raw_conn table
+--- opts? table
+--- table conn
 function Connection:new(raw_conn, opts)
   local options = opts or {}
   return setmetatable({
@@ -155,15 +169,17 @@ function Connection:close()
   return self._raw_conn:close()
 end
 
---- Construct connection from raw transport handle.
--- `opts.session` may attach a muxer session for multi-stream behavior.
--- @tparam table raw_conn
--- @tparam[opt] table opts
--- @treturn table conn
+---Construct connection from raw transport handle.
+---@param raw_conn table Raw transport handle.
+---@param opts? table Options; `opts.session` may attach a muxer session.
+---@return Libp2pConnection conn
 function M.from_raw(raw_conn, opts)
   return Connection:new(raw_conn, opts)
 end
 
+---@param raw_conn table Raw transport handle.
+---@param session table Muxer session.
+---@return Libp2pConnection conn
 function M.from_session(raw_conn, session)
   return Connection:new(raw_conn, {
     session = session,

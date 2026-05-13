@@ -1,6 +1,5 @@
 --- Luv-backed TCP transport wrapper.
 -- Uses native libuv TCP handles through luv.
--- @module lua_libp2p.transport_tcp.luv
 local tcp_luv_native = require("lua_libp2p.transport_tcp.luv_native")
 local error_mod = require("lua_libp2p.error")
 
@@ -87,9 +86,9 @@ end
 -- `opts.nodelay` and `opts.keepalive` default to enabled; `keepalive_initial_delay`
 -- defaults to 0 when keepalive is enabled.
 -- @param target Optional listen target (string or table).
--- @tparam[opt] table opts
--- @treturn table|nil listener
--- @treturn[opt] table err
+--- opts? table
+--- table|nil listener
+--- table|nil err
 function M.listen(target, opts)
   local listener, listen_err = tcp_luv_native.listen(target, opts)
   if not listener then
@@ -104,9 +103,9 @@ end
 -- `opts.nodelay` and `opts.keepalive` default to enabled; `keepalive_initial_delay`
 -- defaults to 0 when keepalive is enabled.
 -- @param target Dial target (multiaddr, host string, or table).
--- @tparam[opt] table opts
--- @treturn table|nil conn
--- @treturn[opt] table err
+--- opts? table
+--- table|nil conn
+--- table|nil err
 function M.dial(target, opts)
   local conn, dial_err = tcp_luv_native.dial(target, opts)
   if not conn then

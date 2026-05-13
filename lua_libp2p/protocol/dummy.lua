@@ -1,5 +1,4 @@
 --- Dummy protocol helpers for tests/examples.
--- @module lua_libp2p.protocol.dummy
 local M = {}
 
 function M.handle(conn)

@@ -1,5 +1,9 @@
 --- Multihash encode/decode helpers.
--- @module lua_libp2p.multiformats.multihash
+---@class Libp2pMultihash
+---@field code integer
+---@field length integer
+---@field digest string
+
 local error_mod = require("lua_libp2p.error")
 local varint = require("lua_libp2p.multiformats.varint")
 
@@ -13,6 +17,10 @@ local M = {}
 M.IDENTITY = 0x00
 M.SHA2_256 = 0x12
 
+---@param code integer
+---@param digest string
+---@return string|nil multihash_bytes
+---@return table|nil err
 function M.encode(code, digest)
   if type(code) ~= "number" then
     return nil, error_mod.new("input", "multihash code must be a number")
@@ -32,6 +40,9 @@ function M.encode(code, digest)
   return code_varint .. len_varint .. digest
 end
 
+---@param multihash_bytes string
+---@return Libp2pMultihash|nil multihash
+---@return table|nil err
 function M.decode(multihash_bytes)
   if type(multihash_bytes) ~= "string" or multihash_bytes == "" then
     return nil, error_mod.new("input", "multihash bytes must be non-empty")
@@ -59,10 +70,16 @@ function M.decode(multihash_bytes)
   }
 end
 
+---@param payload string
+---@return string|nil multihash_bytes
+---@return table|nil err
 function M.identity(payload)
   return M.encode(M.IDENTITY, payload)
 end
 
+---@param payload string
+---@return string|nil multihash_bytes
+---@return table|nil err
 function M.sha2_256(payload)
   return M.encode(M.SHA2_256, sodium.crypto_hash_sha256(payload))
 end

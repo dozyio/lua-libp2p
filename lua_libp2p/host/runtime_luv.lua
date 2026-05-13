@@ -1,5 +1,4 @@
 --- Host runtime adapter for luv loop management.
--- @module lua_libp2p.host.runtime_luv
 local error_mod = require("lua_libp2p.error")
 
 local ok_luv, uv = pcall(require, "luv")
@@ -39,6 +38,28 @@ local function map_size(map)
     n = n + 1
   end
   return n
+end
+
+local function merge_events(existing, incoming)
+  local value = tostring(existing or "") .. tostring(incoming or "")
+  local want_read = string.find(value, "r", 1, true) ~= nil
+  local want_write = string.find(value, "w", 1, true) ~= nil
+  if want_read and want_write then
+    return "rw"
+  end
+  if want_write then
+    return "w"
+  end
+  return "r"
+end
+
+local function add_active(active, target, item)
+  local current = active[target]
+  if current then
+    current.events = merge_events(current.events, item.events)
+    return
+  end
+  active[target] = item
 end
 
 local function socket_fd(sock)
@@ -327,56 +348,56 @@ function M.sync_watchers(host)
 
   local active = {}
   for _, listener in ipairs(host._listeners) do
-    active[listener] = {
+    add_active(active, listener, {
       kind = "listener",
       watchable = listener,
       socket = unwrap_socket(listener),
       events = "r",
-    }
+    })
   end
   for _, entry in ipairs(host._connections) do
-    active[entry] = {
+    add_active(active, entry, {
       kind = "connection",
       watchable = entry.conn,
       socket = unwrap_socket(entry.conn),
       events = "r",
-    }
+    })
   end
   for _, pending in ipairs(host._pending_inbound or {}) do
     local raw_conn = pending
     if type(pending) == "table" and pending.raw_conn ~= nil then
       raw_conn = pending.raw_conn
     end
-    active[pending] = {
+    add_active(active, pending, {
       kind = "pending_inbound",
       watchable = raw_conn,
       socket = unwrap_socket(raw_conn),
       events = "r",
-    }
+    })
   end
   for connection in pairs(host._task_read_waiters or {}) do
-    active[connection] = {
+    add_active(active, connection, {
       kind = "task_read",
       watchable = connection,
       socket = unwrap_socket(connection),
       events = "r",
-    }
+    })
   end
   for connection in pairs(host._task_write_waiters or {}) do
-    active[connection] = {
+    add_active(active, connection, {
       kind = "task_write",
       watchable = connection,
       socket = unwrap_socket(connection),
       events = "w",
-    }
+    })
   end
   for connection in pairs(host._task_dial_waiters or {}) do
-    active[connection] = {
+    add_active(active, connection, {
       kind = "task_dial",
       watchable = connection,
       socket = unwrap_socket(connection),
       events = "w",
-    }
+    })
   end
 
   for target, watcher in pairs(host._luv_watchers) do
@@ -395,13 +416,36 @@ function M.sync_watchers(host)
   end
 
   for target, item in pairs(active) do
+    local watcher = host._luv_watchers[target]
+    if watcher and watcher.events ~= nil and watcher.events ~= item.events then
+      if watcher.custom and type(watcher.unwatch) == "function" then
+        pcall(watcher.unwatch)
+      elseif watcher.handle then
+        pcall(function()
+          watcher.handle:stop()
+          watcher.handle:close()
+        end)
+      end
+      host._luv_watchers[target] = nil
+      host._luv_ready[target] = nil
+    end
     if host._luv_watchers[target] == nil then
-      if item.watchable and type(item.watchable.watch_luv_readable) == "function" then
-        local ok, unwatch_or_err = pcall(item.watchable.watch_luv_readable, item.watchable, function()
+      local watch_method = nil
+      if item.events == "w" and item.watchable and type(item.watchable.watch_luv_write) == "function" then
+        watch_method = item.watchable.watch_luv_write
+      elseif item.watchable and type(item.watchable.watch_luv_readable) == "function" then
+        watch_method = item.watchable.watch_luv_readable
+      end
+      if watch_method then
+        local ok, unwatch_or_err = pcall(watch_method, item.watchable, function()
           host._luv_ready[target] = true
           if type(host._wake_task_readers) == "function" then
             host:_wake_task_readers(item.watchable)
             host:_wake_task_readers(target)
+          end
+          if type(host._wake_task_writers) == "function" then
+            host:_wake_task_writers(item.watchable)
+            host:_wake_task_writers(target)
           end
         end)
         if not ok then
@@ -418,6 +462,7 @@ function M.sync_watchers(host)
         host._luv_watchers[target] = {
           custom = true,
           kind = item.kind,
+          events = item.events,
           unwatch = unwatch_or_err,
         }
       else
@@ -474,6 +519,7 @@ function M.sync_watchers(host)
         host._luv_watchers[target] = {
           handle = poll_handle,
           kind = item.kind,
+          events = item.events,
         }
       end
 

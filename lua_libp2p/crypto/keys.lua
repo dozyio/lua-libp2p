@@ -1,5 +1,17 @@
 --- Key loading and signing helpers.
--- @module lua_libp2p.crypto.keys
+---@alias Libp2pIdentityType 'ed25519'|'rsa'|'ecdsa'|'secp256k1'
+
+---@class Libp2pIdentityKeypair
+---@field type? Libp2pIdentityType|integer
+---@field public_key string
+---@field private_key? string
+---@field public_key_proto? string
+---@field private_key_pem? string
+
+---@class Libp2pGenerateKeypairOptions
+---@field bits? integer RSA key size. Default: 2048.
+---@field curve? string ECDSA curve. Default: `prime256v1`.
+
 local ed25519 = require("lua_libp2p.crypto.ed25519")
 local error_mod = require("lua_libp2p.error")
 local key_pb = require("lua_libp2p.crypto.key_pb")
@@ -220,6 +232,13 @@ local function verify_digest_signature(public_key_der, message, signature, label
   return verified == true
 end
 
+---Verify a signature for an identity public key.
+---@param public_key string|Libp2pIdentityKeypair
+---@param message string
+---@param signature string
+---@param key_type? Libp2pIdentityType|string|integer
+---@return boolean|nil verified
+---@return table|nil err
 function M.verify_signature(public_key, message, signature, key_type)
   if type(message) ~= "string" then
     return nil, error_mod.new("input", "signature message must be bytes")
@@ -257,6 +276,10 @@ function M.verify_signature(public_key, message, signature, key_type)
     })
 end
 
+---Encode an identity public key as libp2p public-key protobuf bytes.
+---@param identity Libp2pIdentityKeypair
+---@return string|nil public_key_proto
+---@return table|nil err
 function M.public_key_proto(identity)
   if type(identity) ~= "table" then
     return nil, error_mod.new("input", "identity must be a table")
@@ -281,6 +304,10 @@ function M.public_key_proto(identity)
   return key_pb.encode_public_key(code, public_key)
 end
 
+---Derive peer ID from an identity keypair/public key.
+---@param identity Libp2pIdentityKeypair
+---@return Libp2pPeerId|nil peer_id
+---@return table|nil err
 function M.peer_id(identity)
   local peerid = require("lua_libp2p.peerid")
   local proto, proto_err = M.public_key_proto(identity)
@@ -290,13 +317,11 @@ function M.peer_id(identity)
   return peerid.from_public_key_proto(proto)
 end
 
---- Generate new identity keypair.
--- `opts.bits` (`number`) configures RSA key size (default `2048`).
--- `opts.curve` (`string`) configures ECDSA curve (default `prime256v1`).
--- @tparam[opt] string key_type `ed25519|rsa|ecdsa|secp256k1`.
--- @tparam[opt] table opts
--- @treturn table|nil keypair
--- @treturn[opt] table err
+---Generate new identity keypair.
+---@param key_type? Libp2pIdentityType|string `ed25519|rsa|ecdsa|secp256k1`.
+---@param opts? Libp2pGenerateKeypairOptions
+---@return Libp2pIdentityKeypair|nil keypair
+---@return table|nil err
 function M.generate_keypair(key_type, opts)
   local _, name = normalize_type(key_type or "ed25519")
   local options = opts or {}
@@ -354,6 +379,11 @@ function M.generate_keypair(key_type, opts)
   }
 end
 
+---Sign a message with an identity private key.
+---@param identity Libp2pIdentityKeypair
+---@param message string
+---@return string|nil signature
+---@return table|nil err
 function M.sign(identity, message)
   if type(message) ~= "string" then
     return nil, error_mod.new("input", "signature message must be bytes")

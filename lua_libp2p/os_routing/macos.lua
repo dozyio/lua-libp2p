@@ -1,5 +1,4 @@
 --- macOS route and neighbor discovery helpers.
--- @module lua_libp2p.os_routing.macos
 local M = {}
 
 local function run_command(command, runner)

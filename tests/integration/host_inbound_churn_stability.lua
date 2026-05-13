@@ -72,7 +72,7 @@ local function run(opts)
         config = { mode = "server" },
       },
     },
-    connection_manager_options = {
+    connection_manager = {
       low_water = 16,
       high_water = 32,
       grace_period = 1,

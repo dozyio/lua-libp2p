@@ -1,8 +1,8 @@
 --- Host construction and runtime orchestration.
 -- Hosts manage listeners, connections, protocol handlers, services, and
 -- cooperative background tasks.
--- @module lua_libp2p.host
 local address_manager = require("lua_libp2p.address_manager")
+local connection_encrypter = require("lua_libp2p.connection_encrypter")
 local connection_manager = require("lua_libp2p.connection_manager")
 local keys = require("lua_libp2p.crypto.keys")
 local error_mod = require("lua_libp2p.error")
@@ -21,6 +21,7 @@ local host_service_manager = require("lua_libp2p.host.service_manager")
 local host_tasks = require("lua_libp2p.host.tasks")
 local host_runtime_luv = require("lua_libp2p.host.runtime_luv")
 local host_runtime_luv_native = require("lua_libp2p.host.runtime_luv_native")
+local muxer_registry = require("lua_libp2p.muxer")
 local peerstore = require("lua_libp2p.peerstore")
 local resource_manager = require("lua_libp2p.resource_manager")
 local relay_proto = require("lua_libp2p.transport_circuit_relay_v2.protocol")
@@ -31,6 +32,14 @@ local tcp_luv = require("lua_libp2p.transport_tcp.luv")
 local M = {}
 
 local list_copy = table_utils.copy_list
+
+local function map_copy(source)
+  local out = {}
+  for k, v in pairs(source or {}) do
+    out[k] = v
+  end
+  return out
+end
 
 local emit_event = host_events.emit
 
@@ -223,6 +232,20 @@ local function resource_manager_from_config(cfg)
   return resource_manager.new(options or {})
 end
 
+local function connection_manager_from_config(host, cfg)
+  local spec = cfg.connection_manager
+  if spec == false then
+    return nil
+  end
+  if type(spec) == "table" and type(spec.can_open_connection) == "function" then
+    return spec
+  end
+  if spec ~= nil then
+    return connection_manager.new(host, spec)
+  end
+  return connection_manager.new(host, cfg.dial_queue or {})
+end
+
 function Host:new(config)
   local cfg = config or {}
   local runtime_name = cfg.runtime or "auto"
@@ -270,8 +293,10 @@ function Host:new(config)
     }),
     listen_addrs = list_copy(cfg.listen_addrs or {}),
     transports = list_copy(cfg.transports or { "tcp" }),
-    security_transports = list_copy(cfg.security_transports or {}),
-    muxers = list_copy(cfg.muxers or {}),
+    security_transports = {},
+    muxers = {},
+    _security_protocols = {},
+    _muxer_protocols = {},
     _services = {},
     services = {},
     components = {},
@@ -331,15 +356,23 @@ function Host:new(config)
   host_identify.init(self_obj)
   host_listeners.init(self_obj)
   host_protocols.init(self_obj)
-  self_obj.connection_manager = cfg.connection_manager
-    or connection_manager.new(self_obj, cfg.dial_queue or cfg.connection_manager_options or {})
+  self_obj.connection_manager = connection_manager_from_config(self_obj, cfg)
 
-  if #self_obj.security_transports == 0 then
-    self_obj.security_transports = { "/noise" }
+  local security_spec = cfg.security_transports or { noise = true }
+  local security_protocols, security_err = connection_encrypter.normalize_protocols(security_spec)
+  if not security_protocols then
+    return nil, security_err
   end
-  if #self_obj.muxers == 0 then
-    self_obj.muxers = { "/yamux/1.0.0" }
+  self_obj.security_transports = map_copy(security_spec)
+  self_obj._security_protocols = security_protocols
+
+  local muxer_spec = cfg.muxers or { yamux = true }
+  local muxer_protocols, muxer_err = muxer_registry.normalize_protocols(muxer_spec)
+  if not muxer_protocols then
+    return nil, muxer_err
   end
+  self_obj.muxers = map_copy(muxer_spec)
+  self_obj._muxer_protocols = muxer_protocols
 
   if type(cfg.on) == "table" then
     for event_name, handler in pairs(cfg.on) do
@@ -355,8 +388,8 @@ function Host:new(config)
     runtime = runtime_name,
     listen_addrs = #self_obj.listen_addrs,
     transports = table.concat(self_obj.transports, ","),
-    security_transports = table.concat(self_obj.security_transports, ","),
-    muxers = table.concat(self_obj.muxers, ","),
+    security_transports = table.concat(self_obj._security_protocols, ","),
+    muxers = table.concat(self_obj._muxer_protocols, ","),
   })
 
   local services = cfg.services
@@ -1423,10 +1456,10 @@ function Host:_poll_once(timeout)
   return nil, error_mod.new("state", "host runtime has no poll_once implementation", { runtime = self._runtime })
 end
 
---- Start the host runtime.
--- Binds listeners when needed and enters the runtime loop for blocking hosts.
--- @treturn true|nil ok
--- @treturn[opt] table err
+---Start the host runtime.
+---Binds listeners when needed and enters the runtime loop for blocking hosts.
+---@return true|nil ok
+---@return table|nil err
 function Host:start()
   log.debug("host start requested", {
     peer_id = self:peer_id().id,
@@ -1511,9 +1544,9 @@ function Host:start()
   return true
 end
 
---- Stop and close the host.
--- @treturn true|nil ok
--- @treturn[opt] table err
+---Stop and close the host.
+---@return true|nil ok
+---@return table|nil err
 function Host:stop()
   log.debug("host stop requested", {
     peer_id = self:peer_id().id,
@@ -1522,6 +1555,9 @@ function Host:stop()
   return self:close()
 end
 
+---Close listeners, connections, tasks, and services.
+---@return true|nil ok
+---@return table|nil err
 function Host:close()
   log.debug("host close started", {
     peer_id = self:peer_id().id,
@@ -1595,20 +1631,60 @@ function Host:close()
   return true
 end
 
---- Construct a new host instance.
--- @tparam[opt] table config Host configuration.
--- Common config keys: `identity`, `listen_addrs`, `services`, `peer_discovery`,
--- `runtime`, `blocking`, `security_transports`, `muxers`, `transports`.
--- Additional keys: `announce_addrs`, `no_announce_addrs`, `observed_addrs`,
--- `relay_addrs`, `peerstore`, `address_manager`, `connect_timeout`, and runtime tuning.
--- Scheduler/runtime tuning keys include: `event_queue_max`, `task_resume_budget`,
--- `accept_timeout`, `max_iterations`, `poll_interval`, and `on_started`.
--- Network behavior keys include: `dial_timeout`, `connect_timeout`, `connection_manager`,
--- `tcp`, `autonat`, `kad_dht`, `autorelay`, `upnp_nat`, `pcp`, `nat_pmp`, and `dcutr`.
--- `tcp.nodelay` and `tcp.keepalive` default to enabled; `tcp.keepalive_initial_delay`
--- defaults to 0 when keepalive is enabled.
--- @treturn table|nil host
--- @treturn[opt] table err
+---@alias Libp2pTransportName 'tcp'
+---@alias Libp2pHostEventHandler fun(event: table): any
+
+---@class Libp2pHostConfig
+---@field identity? Libp2pIdentityKeypair Local identity keypair. Generated when omitted.
+---@field identity_type? Libp2pIdentityType Key type used when generating identity. Default: `ed25519`.
+---@field listen_addrs? string[]
+---@field announce_addrs? string[]
+---@field no_announce_addrs? string[]
+---@field observed_addrs? string[]
+---@field relay_addrs? string[]
+---@field advertise_observed? boolean
+---@field transports? Libp2pTransportName[]
+---@field security_transports? Libp2pSecurityTransportConfig
+---@field muxers? Libp2pMuxerConfig
+---@field services? Libp2pServicesConfig
+---@field peer_discovery? Libp2pServicesConfig
+---@field peerstore? Libp2pPeerstoreInstance
+---@field peerstore_options? Libp2pPeerstoreConfig
+---@field address_manager? Libp2pAddressManagerInstance
+---@field resource_manager? Libp2pResourceManagerConfig|Libp2pResourceManagerInstance|false
+---@field resource_manager_options? Libp2pResourceManagerConfig
+---@field connection_manager? Libp2pConnectionManagerConfig|Libp2pConnectionManagerInstance|false Options map, prebuilt manager object, or false.
+---@field runtime? 'auto'|'luv'
+---@field blocking? boolean
+---@field connect_timeout? number
+---@field io_timeout? number
+---@field accept_timeout? number
+---@field max_iterations? integer
+---@field poll_interval? number
+---@field task_resume_budget? integer
+---@field task_retention? number
+---@field task_prune_interval? number
+---@field debug_connection_events? boolean
+---@field on? table<string, Libp2pHostEventHandler>
+---@field on_started? fun(host: Libp2pHost)
+---@field tcp? Libp2pTcpConfig
+---@field identify? Libp2pIdentifyConfig
+---@field autonat? Libp2pAutoNatConfig
+---@field autorelay? Libp2pAutoRelayConfig
+---@field kad_dht? Libp2pKadDhtConfig
+---@field perf? Libp2pPerfConfig
+---@field upnp_nat? Libp2pUpnpNatConfig
+
+---@class Libp2pHost
+---@field security_transports Libp2pSecurityTransportConfig
+---@field muxers Libp2pMuxerConfig
+---@field connection_manager table|nil
+---@field services table<string, table>
+
+---Construct a new host instance.
+---@param config? Libp2pHostConfig Host configuration.
+---@return Libp2pHost|nil host
+---@return table|nil err
 function M.new(config)
   return Host:new(config)
 end

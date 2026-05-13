@@ -1,5 +1,4 @@
 --- Host bootstrap discovery scheduling internals.
--- @module lua_libp2p.host.bootstrap
 local discovery = require("lua_libp2p.discovery")
 local error_mod = require("lua_libp2p.error")
 local log = require("lua_libp2p.log").subsystem("host")
