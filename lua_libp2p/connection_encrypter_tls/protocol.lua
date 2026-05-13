@@ -127,6 +127,38 @@ local function wait_fd_tls(raw_conn, retry_err, ctx)
   return nil, "no poller available to drive fd_tls WANT_READ/WANT_WRITE"
 end
 
+local function tls_error_text(err)
+  if type(err) == "table" and type(err.message) == "string" then
+    return err.message
+  end
+  return tostring(err or "unknown error")
+end
+
+local function normalize_tls_io_error(operation, err)
+  if error_mod.is_error(err) then
+    return err
+  end
+
+  local text = tls_error_text(err)
+  local fd_kind = type(err) == "table" and err.kind or nil
+  local kind = "io"
+  if fd_kind == "closed" or text == "eof" or text:find("closed", 1, true) ~= nil then
+    kind = "closed"
+  elseif fd_kind == "timeout" then
+    kind = "timeout"
+  elseif fd_kind == "verify" then
+    kind = "verify"
+  elseif fd_kind == "want_read" or fd_kind == "want_write" then
+    kind = "busy"
+  end
+
+  return error_mod.new(kind, "fd_tls " .. operation .. " failed", {
+    cause = text,
+    fd_tls_kind = fd_kind,
+    retryable = type(err) == "table" and err.retryable or nil,
+  })
+end
+
 local function run_fd_tls_handshake(fd_conn, raw_conn, ctx)
   for _ = 1, 2000 do
     local ok, err = fd_conn:handshake_step()
@@ -135,7 +167,7 @@ local function run_fd_tls_handshake(fd_conn, raw_conn, ctx)
     end
     if not err or err.retryable ~= true then
       log.debug("fd_tls handshake failed", { cause = tostring(err and err.message or err) })
-      return nil, error_mod.new("verify", "tls handshake failed", { cause = err })
+      return nil, normalize_tls_io_error("handshake", err)
     end
     local _, poll_err = wait_fd_tls(raw_conn, err, ctx)
     if poll_err then
@@ -343,7 +375,11 @@ function SecureConn:read(n)
     return nil, error_mod.new("input", "tls secure read length must be positive")
   end
   if type(self._raw.xread) == "function" then
-    return self._raw:xread(n)
+    local out, err = self._raw:xread(n)
+    if not out and err then
+      return nil, normalize_tls_io_error("read", err)
+    end
+    return out
   end
   if type(self._raw.read_some) == "function" and type(self._raw.get_peer_cert_der) == "function" then
     for _ = 1, 2000 do
@@ -353,7 +389,7 @@ function SecureConn:read(n)
       end
       if not err or err.retryable ~= true then
         log.debug("fd_tls read failed", { cause = tostring(err and err.message or err) })
-        return nil, err
+        return nil, normalize_tls_io_error("read", err)
       end
       log.debug("fd_tls read retry", { kind = err.kind })
       local _, poll_err = wait_fd_tls(self._poll_raw, err, self._ctx)
@@ -363,7 +399,11 @@ function SecureConn:read(n)
     end
     return nil, error_mod.new("timeout", "fd_tls read exceeded iteration budget")
   end
-  return self._raw:read(n)
+  local out, err = self._raw:read(n)
+  if not out and err then
+    return nil, normalize_tls_io_error("read", err)
+  end
+  return out
 end
 
 function SecureConn:write(payload)
@@ -373,7 +413,7 @@ function SecureConn:write(payload)
   if type(self._raw.xwrite) == "function" then
     local ok, err = self._raw:xwrite(payload)
     if not ok then
-      return nil, err
+      return nil, normalize_tls_io_error("write", err)
     end
     return true
   end
@@ -395,12 +435,16 @@ function SecureConn:write(payload)
         end
       else
         log.debug("fd_tls write failed", { cause = tostring(err and err.message or err) })
-        return nil, err
+        return nil, normalize_tls_io_error("write", err)
       end
     end
     return true
   end
-  return self._raw:write(payload)
+  local ok, err = self._raw:write(payload)
+  if not ok and err then
+    return nil, normalize_tls_io_error("write", err)
+  end
+  return ok, err
 end
 
 function SecureConn:close()
