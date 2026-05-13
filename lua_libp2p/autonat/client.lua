@@ -1,5 +1,4 @@
 --- AutoNAT v2 client/service.
--- @module lua_libp2p.autonat.client
 ---@class Libp2pAutoNatConfig
 ---@field allow_dial_data? boolean Allow AutoNAT v2 dial-data requests. Default: true.
 ---@field max_dial_data_bytes? integer Maximum dial-data bytes accepted/sent.
@@ -11,7 +10,7 @@
 
 local error_mod = require("lua_libp2p.error")
 local log = require("lua_libp2p.log").subsystem("autonat")
-local multiaddr = require("lua_libp2p.multiaddr")
+local multiaddr = require("lua_libp2p.multiformats.multiaddr")
 local autonat_proto = require("lua_libp2p.protocol.autonat_v2")
 local table_utils = require("lua_libp2p.util.tables")
 
@@ -245,10 +244,10 @@ end
 --- Run a synchronous AutoNAT check against one server.
 -- `opts` may include `stream_opts`, `timeout`, `poll_interval`, `nonce`,
 -- `addrs`, `allow_private_addrs`, and `allow_relay_addrs`.
--- @tparam string|table server Server peer target.
--- @tparam[opt] table opts Check options.
--- @treturn table|nil result
--- @treturn[opt] table err
+--- server string|table Server peer target.
+--- opts? table Check options.
+--- table|nil result
+--- table|nil err
 function Client:check(server, opts)
   local options = opts or {}
   if
@@ -466,11 +465,11 @@ function Client:check(server, opts)
 end
 
 --- Spawn an asynchronous AutoNAT check task.
--- @tparam string|table server Server peer target.
--- @tparam[opt] table opts Same options as @{check}.
+--- server string|table Server peer target.
+--- opts? table Same options as @{check}.
 -- `opts.stream_opts.ctx` is injected automatically when omitted.
--- @treturn table|nil task
--- @treturn[opt] table err
+--- table|nil task
+--- table|nil err
 function Client:start_check(server, opts)
   if not (self.host and type(self.host.spawn_task) == "function") then
     return nil, error_mod.new("state", "autonat start_check requires host task scheduler")
@@ -866,9 +865,9 @@ end
 -- `opts` may include discovery limits/timeouts and check strategy knobs
 -- such as `max_autonat_servers`, `target_autonat_responses`,
 -- `check_timeout`, `stop_on_first_reachable`, and `drain_seconds`.
--- @tparam[opt] table opts Discovery options.
--- @treturn table|nil task
--- @treturn[opt] table err
+--- opts? table Discovery options.
+--- table|nil task
+--- table|nil err
 function Client:start_discovery(opts)
   if not (self.host and type(self.host.spawn_task) == "function") then
     return nil, error_mod.new("state", "autonat start_discovery requires host task scheduler")
@@ -891,9 +890,9 @@ end
 -- `opts` may include monitor cadence: `retry_interval_seconds`,
 -- `healthy_interval_seconds`, `min_success_rounds`, and per-round
 -- discovery/check options used by @{start_discovery}.
--- @tparam[opt] table opts Monitor options.
--- @treturn table|nil task
--- @treturn[opt] table err
+--- opts? table Monitor options.
+--- table|nil task
+--- table|nil err
 function Client:start_monitor(opts)
   if not (self.host and type(self.host.spawn_task) == "function") then
     return nil, error_mod.new("state", "autonat start_monitor requires host task scheduler")
@@ -1071,8 +1070,8 @@ function Client:_handle_dial_back(stream)
 end
 
 --- Start AutoNAT service handlers.
--- @treturn true|nil ok
--- @treturn[opt] table err
+--- true|nil ok
+--- table|nil err
 function Client:start()
   if self.started then
     return true
@@ -1104,7 +1103,7 @@ function Client:on_host_started()
 end
 
 --- Stop AutoNAT service activity.
--- @treturn true
+--- true
 function Client:stop()
   if self._monitor_task and self.host and type(self.host.cancel_task) == "function" then
     log.debug("autonat monitor task cancelling", {
@@ -1135,10 +1134,10 @@ end
 -- `max_message_size`, `allow_dial_data`, `max_dial_data_bytes`,
 -- `dial_data_chunk_size`, and `monitor_on_start`.
 -- Additional monitor options: `monitor_start_opts` / `monitor_opts`.
--- @tparam table host Host instance.
--- @tparam[opt] table opts
--- @treturn table|nil client
--- @treturn[opt] table err
+--- host table Host instance.
+--- opts? table
+--- table|nil client
+--- table|nil err
 function M.new(host, opts)
   if type(host) ~= "table" then
     return nil, error_mod.new("input", "autonat client requires host")

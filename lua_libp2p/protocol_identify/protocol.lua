@@ -1,5 +1,4 @@
 --- Identify protocol codec and helpers.
--- @module lua_libp2p.protocol_identify.protocol
 ---@class Libp2pIdentifyMessage
 ---@field protocolVersion? string
 ---@field agentVersion? string
@@ -13,7 +12,7 @@
 ---@field expected_peer_id? string
 
 local error_mod = require("lua_libp2p.error")
-local multiaddr = require("lua_libp2p.multiaddr")
+local multiaddr = require("lua_libp2p.multiformats.multiaddr")
 local peer_record = require("lua_libp2p.record.peer_record")
 local varint = require("lua_libp2p.multiformats.varint")
 

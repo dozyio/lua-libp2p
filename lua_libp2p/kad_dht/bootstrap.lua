@@ -1,11 +1,10 @@
 --- KAD-DHT bootstrap discovery and dial workflows.
--- @module lua_libp2p.kad_dht.bootstrap
 local bootstrap_defaults = require("lua_libp2p.bootstrap")
 local discovery = require("lua_libp2p.discovery")
 local discovery_bootstrap = require("lua_libp2p.peer_discovery_bootstrap")
 local error_mod = require("lua_libp2p.error")
 local log = require("lua_libp2p.log").subsystem("kad_dht")
-local multiaddr = require("lua_libp2p.multiaddr")
+local multiaddr = require("lua_libp2p.multiformats.multiaddr")
 
 local M = {}
 

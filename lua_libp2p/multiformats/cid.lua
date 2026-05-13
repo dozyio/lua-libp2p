@@ -1,5 +1,4 @@
 --- CIDv1 helpers.
--- @module lua_libp2p.multiformats.cid
 local error_mod = require("lua_libp2p.error")
 local varint = require("lua_libp2p.multiformats.varint")
 local base32 = require("lua_libp2p.multiformats.base32")
@@ -9,6 +8,11 @@ local M = {}
 M.VERSION_1 = 1
 M.MULTIBASE_BASE32_LOWER = "b"
 
+--- codec integer
+--- multihash_bytes string
+--- multibase? string
+--- string|nil cid
+--- table|nil err
 function M.encode_v1(codec, multihash_bytes, multibase)
   if type(codec) ~= "number" then
     return nil, error_mod.new("input", "cid codec must be a number")
@@ -35,6 +39,9 @@ function M.encode_v1(codec, multihash_bytes, multibase)
   return M.MULTIBASE_BASE32_LOWER .. base32.encode_nopad(binary)
 end
 
+--- text string
+--- table|nil cid
+--- table|nil err
 function M.decode_v1(text)
   if type(text) ~= "string" or text == "" then
     return nil, error_mod.new("input", "cid text must be non-empty")

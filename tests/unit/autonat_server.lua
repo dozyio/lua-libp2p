@@ -1,7 +1,7 @@
 local autonat_server = require("lua_libp2p.autonat.server")
 local autonat_v1 = require("lua_libp2p.protocol.autonat_v1")
 local autonat_v2 = require("lua_libp2p.protocol.autonat_v2")
-local multiaddr = require("lua_libp2p.multiaddr")
+local multiaddr = require("lua_libp2p.multiformats.multiaddr")
 
 local function stream_from_v1_messages(messages)
   local reads = {}

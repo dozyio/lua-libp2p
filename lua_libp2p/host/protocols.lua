@@ -1,5 +1,4 @@
 --- Host protocol handler registry and limited-connection policy.
--- @module lua_libp2p.host.protocols
 ---@class Libp2pProtocolHandlerOptions
 ---@field run_on_limited_connection? boolean Allow handler execution on limited relay connections.
 
@@ -60,9 +59,9 @@ function M.install(Host)
   end
 
   --- Remove a previously registered stream handler.
-  -- @tparam string protocol_id Protocol multistream ID.
-  -- @treturn boolean removed
-  -- @treturn[opt] table err
+  --- protocol_id string Protocol multistream ID.
+  --- boolean removed
+  --- table|nil err
   function Host:unhandle(protocol_id)
     if type(protocol_id) ~= "string" or protocol_id == "" then
       return nil, error_mod.new("input", "protocol id must be non-empty")

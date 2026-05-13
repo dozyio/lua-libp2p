@@ -1,5 +1,14 @@
 --- AutoNAT v2 wire protocol codec.
--- @module lua_libp2p.protocol.autonat_v2
+---@class Libp2pAutoNatV2Message
+---@field type? string
+---@field addrs? string[]
+---@field nonce? string
+---@field status? integer
+---@field status_text? string
+---@field dial_status? integer
+---@field dial_data? string
+---@field data? string
+
 local error_mod = require("lua_libp2p.error")
 local varint = require("lua_libp2p.multiformats.varint")
 
@@ -193,6 +202,9 @@ local function skip_unknown(payload, index, wire)
   return nil, error_mod.new("decode", "unsupported protobuf wire type", { wire = wire })
 end
 
+--- message Libp2pAutoNatV2Message
+--- string|nil payload
+--- table|nil err
 function M.encode_dial_request(message)
   local parts = {}
   for _, addr in ipairs(message.addrs or {}) do
@@ -208,6 +220,9 @@ function M.encode_dial_request(message)
   return table.concat(parts)
 end
 
+--- payload string
+--- Libp2pAutoNatV2Message|nil message
+--- table|nil err
 function M.decode_dial_request(payload)
   local out = { addrs = {} }
   local i = 1
@@ -245,6 +260,9 @@ function M.decode_dial_request(payload)
   return out
 end
 
+--- message Libp2pAutoNatV2Message
+--- string|nil payload
+--- table|nil err
 function M.encode_dial_data_request(message)
   local parts = {}
   local ok, err = append_varint(parts, 1, message.addrIdx)
@@ -258,6 +276,9 @@ function M.encode_dial_data_request(message)
   return table.concat(parts)
 end
 
+--- payload string
+--- Libp2pAutoNatV2Message|nil message
+--- table|nil err
 function M.decode_dial_data_request(payload)
   local out = {}
   local i = 1
@@ -291,6 +312,9 @@ function M.decode_dial_data_request(payload)
   return out
 end
 
+--- message Libp2pAutoNatV2Message
+--- string|nil payload
+--- table|nil err
 function M.encode_dial_response(message)
   local parts = {}
   local ok, err = append_varint(parts, 1, message.status)
@@ -308,6 +332,9 @@ function M.encode_dial_response(message)
   return table.concat(parts)
 end
 
+--- payload string
+--- Libp2pAutoNatV2Message|nil message
+--- table|nil err
 function M.decode_dial_response(payload)
   local out = {}
   local i = 1
@@ -343,6 +370,9 @@ function M.decode_dial_response(payload)
   return out
 end
 
+--- message Libp2pAutoNatV2Message
+--- string|nil payload
+--- table|nil err
 function M.encode_dial_data_response(message)
   local parts = {}
   local ok, err = append_len(parts, 1, message.data or "")
@@ -352,6 +382,9 @@ function M.encode_dial_data_response(message)
   return table.concat(parts)
 end
 
+--- payload string
+--- Libp2pAutoNatV2Message|nil message
+--- table|nil err
 function M.decode_dial_data_response(payload)
   local out = {}
   local i = 1
@@ -382,6 +415,9 @@ function M.decode_dial_data_response(payload)
   return out
 end
 
+--- message Libp2pAutoNatV2Message
+--- string|nil payload
+--- table|nil err
 function M.encode_dial_back(message)
   local parts = {}
   local ok, err = append_fixed64(parts, 1, message.nonce)
@@ -391,6 +427,9 @@ function M.encode_dial_back(message)
   return table.concat(parts)
 end
 
+--- payload string
+--- Libp2pAutoNatV2Message|nil message
+--- table|nil err
 function M.decode_dial_back(payload)
   local out = {}
   local i = 1
@@ -420,6 +459,9 @@ function M.decode_dial_back(payload)
   return out
 end
 
+--- message Libp2pAutoNatV2Message
+--- string|nil payload
+--- table|nil err
 function M.encode_dial_back_response(message)
   local parts = {}
   local ok, err = append_varint(parts, 1, message.status or M.DIAL_BACK_STATUS.OK)
@@ -429,6 +471,9 @@ function M.encode_dial_back_response(message)
   return table.concat(parts)
 end
 
+--- payload string
+--- Libp2pAutoNatV2Message|nil message
+--- table|nil err
 function M.decode_dial_back_response(payload)
   local out = {}
   local i = 1
@@ -465,6 +510,9 @@ local MESSAGE_FIELDS = {
   dialDataResponse = { field = 4, encode = M.encode_dial_data_response, decode = M.decode_dial_data_response },
 }
 
+--- message Libp2pAutoNatV2Message
+--- string|nil payload
+--- table|nil err
 function M.encode_message(message)
   for name, spec in pairs(MESSAGE_FIELDS) do
     if message[name] ~= nil then
@@ -478,6 +526,9 @@ function M.encode_message(message)
   return nil, error_mod.new("input", "autonat message must set one message field")
 end
 
+--- payload string
+--- Libp2pAutoNatV2Message|nil message
+--- table|nil err
 function M.decode_message(payload)
   local i = 1
   while i <= #payload do
@@ -516,6 +567,10 @@ function M.decode_message(payload)
   return nil, error_mod.new("decode", "autonat message missing known field")
 end
 
+--- stream Libp2pStream
+--- message Libp2pAutoNatV2Message
+--- true|nil ok
+--- table|nil err
 function M.write_message(stream, message)
   local payload, payload_err = M.encode_message(message)
   if not payload then
@@ -530,6 +585,10 @@ end
 
 --- Read and decode AutoNAT message.
 -- `opts.max_message_size` (`number`, default `MAX_MESSAGE_SIZE`) bounds frame size.
+--- stream Libp2pStream
+--- opts? table
+--- Libp2pAutoNatV2Message|nil message
+--- table|nil err
 function M.read_message(stream, opts)
   local options = opts or {}
   local max = options.max_message_size or M.MAX_MESSAGE_SIZE
@@ -547,6 +606,10 @@ function M.read_message(stream, opts)
   return M.decode_message(payload)
 end
 
+--- stream Libp2pStream
+--- message Libp2pAutoNatV2Message
+--- true|nil ok
+--- table|nil err
 function M.write_dial_back(stream, message)
   local payload, payload_err = M.encode_dial_back(message)
   if not payload then
@@ -561,6 +624,10 @@ end
 
 --- Read and decode AutoNAT dial-back message.
 -- `opts.max_message_size` (`number`, default `MAX_MESSAGE_SIZE`) bounds frame size.
+--- stream Libp2pStream
+--- opts? table
+--- Libp2pAutoNatV2Message|nil message
+--- table|nil err
 function M.read_dial_back(stream, opts)
   local options = opts or {}
   local length, len_err = read_varint(stream)
@@ -577,6 +644,10 @@ function M.read_dial_back(stream, opts)
   return M.decode_dial_back(payload)
 end
 
+--- stream Libp2pStream
+--- message Libp2pAutoNatV2Message
+--- true|nil ok
+--- table|nil err
 function M.write_dial_back_response(stream, message)
   local payload, payload_err = M.encode_dial_back_response(message or { status = M.DIAL_BACK_STATUS.OK })
   if not payload then
@@ -591,6 +662,10 @@ end
 
 --- Read and decode AutoNAT dial-back response.
 -- `opts.max_message_size` (`number`, default `MAX_MESSAGE_SIZE`) bounds frame size.
+--- stream Libp2pStream
+--- opts? table
+--- Libp2pAutoNatV2Message|nil message
+--- table|nil err
 function M.read_dial_back_response(stream, opts)
   local options = opts or {}
   local length, len_err = read_varint(stream)

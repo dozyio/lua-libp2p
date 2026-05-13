@@ -1,5 +1,4 @@
 --- Ping protocol service.
--- @module lua_libp2p.protocol_ping.service
 ---@class Libp2pPingConfig
 
 local ping = require("lua_libp2p.protocol_ping.protocol")

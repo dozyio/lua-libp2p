@@ -1,5 +1,4 @@
 --- Protocol module entrypoint.
--- @module lua_libp2p.protocol
 local M = {
   name = "protocol",
   autonat_v1 = require("lua_libp2p.protocol.autonat_v1"),

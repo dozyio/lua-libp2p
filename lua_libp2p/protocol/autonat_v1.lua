@@ -1,5 +1,11 @@
 --- AutoNAT v1 wire protocol codec.
--- @module lua_libp2p.protocol.autonat_v1
+---@class Libp2pAutoNatV1Message
+---@field type integer
+---@field peer_id? string
+---@field addrs? string[]
+---@field status? integer
+---@field status_text? string
+
 local error_mod = require("lua_libp2p.error")
 local varint = require("lua_libp2p.multiformats.varint")
 
@@ -308,6 +314,9 @@ local function decode_dial_response(payload)
   return out
 end
 
+---@param message Libp2pAutoNatV1Message
+---@return string|nil payload
+---@return table|nil err
 function M.encode_message(message)
   local out = {}
   local ok, err = append_varint(out, 1, message.type)
@@ -337,6 +346,9 @@ function M.encode_message(message)
   return table.concat(out)
 end
 
+---@param payload string
+---@return Libp2pAutoNatV1Message|nil message
+---@return table|nil err
 function M.decode_message(payload)
   local out = {}
   local i = 1
@@ -390,6 +402,10 @@ function M.decode_message(payload)
   return out
 end
 
+---@param stream Libp2pStream
+---@param message Libp2pAutoNatV1Message
+---@return true|nil ok
+---@return table|nil err
 function M.write_message(stream, message)
   local payload, payload_err = M.encode_message(message)
   if not payload then
@@ -402,6 +418,10 @@ function M.write_message(stream, message)
   return stream:write(len .. payload)
 end
 
+---@param stream Libp2pStream
+---@param opts? table
+---@return Libp2pAutoNatV1Message|nil message
+---@return table|nil err
 function M.read_message(stream, opts)
   local options = opts or {}
   local max = options.max_message_size or M.MAX_MESSAGE_SIZE

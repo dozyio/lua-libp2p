@@ -6,7 +6,7 @@ package.path = table.concat({
 
 local host_mod = require("lua_libp2p.host")
 local identify_service = require("lua_libp2p.protocol_identify.service")
-local multiaddr = require("lua_libp2p.multiaddr")
+local multiaddr = require("lua_libp2p.multiformats.multiaddr")
 local ping_service = require("lua_libp2p.protocol_ping.service")
 local peerid = require("lua_libp2p.peerid")
 

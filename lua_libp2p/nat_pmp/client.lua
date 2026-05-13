@@ -1,5 +1,15 @@
 --- NAT-PMP client.
--- @module lua_libp2p.nat_pmp.client
+---@class Libp2pNatPmpClientConfig
+---@field gateway? string Gateway IP address.
+---@field timeout? number UDP request timeout.
+---@field retries? integer Request retry count.
+---@field socket_factory? function Test/custom UDP socket factory.
+
+---@class Libp2pNatPmpClient
+---@field external_address fun(self: Libp2pNatPmpClient): table|nil, table|nil
+---@field map fun(self: Libp2pNatPmpClient, opts: table): table|nil, table|nil
+---@field close fun(self: Libp2pNatPmpClient): true
+
 local socket = require("socket")
 
 local error_mod = require("lua_libp2p.error")
@@ -256,6 +266,8 @@ end
 
 --- Construct a NAT-PMP client instance.
 -- `opts` includes `gateway` (required), `port`, `timeout`, and `retries`.
+---@param opts? Libp2pNatPmpClientConfig
+---@return Libp2pNatPmpClient client
 function M.new(opts)
   local options = opts or {}
   local gateway = options.gateway

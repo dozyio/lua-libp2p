@@ -4,7 +4,7 @@ package.path = table.concat({
   package.path,
 }, ";")
 
-local multiaddr = require("lua_libp2p.multiaddr")
+local multiaddr = require("lua_libp2p.multiformats.multiaddr")
 
 local ok_socket, socket = pcall(require, "socket")
 if not ok_socket then

@@ -1,5 +1,4 @@
 --- Key loading and signing helpers.
--- @module lua_libp2p.crypto.keys
 ---@alias Libp2pIdentityType 'ed25519'|'rsa'|'ecdsa'|'secp256k1'
 
 ---@class Libp2pIdentityKeypair

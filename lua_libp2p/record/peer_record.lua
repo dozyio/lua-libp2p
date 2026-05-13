@@ -1,7 +1,14 @@
 --- Peer record codec and envelope helpers.
--- @module lua_libp2p.record.peer_record
+---@class Libp2pPeerRecordAddress
+---@field multiaddr string
+
+---@class Libp2pPeerRecord
+---@field peer_id string
+---@field seq integer
+---@field addresses Libp2pPeerRecordAddress[]
+
 local error_mod = require("lua_libp2p.error")
-local multiaddr = require("lua_libp2p.multiaddr")
+local multiaddr = require("lua_libp2p.multiformats.multiaddr")
 local peerid = require("lua_libp2p.peerid")
 local signed_envelope = require("lua_libp2p.record.signed_envelope")
 local varint = require("lua_libp2p.multiformats.varint")
@@ -130,6 +137,9 @@ local function decode_address_info(payload)
 end
 
 --- Encode a peer record payload.
+---@param record Libp2pPeerRecord
+---@return string|nil payload
+---@return table|nil err
 function M.encode(record)
   if type(record) ~= "table" then
     return nil, error_mod.new("input", "peer record must be a table")
@@ -179,6 +189,9 @@ function M.encode(record)
 end
 
 --- Decode a peer record payload.
+---@param payload string
+---@return Libp2pPeerRecord|nil record
+---@return table|nil err
 function M.decode(payload)
   if type(payload) ~= "string" then
     return nil, error_mod.new("input", "peer record payload must be bytes")
@@ -254,6 +267,11 @@ end
 --- Sign a peer record with an ed25519 keypair.
 -- `opts.domain` overrides envelope domain; defaults to `M.DOMAIN`.
 -- `opts.payload_type` overrides payload type; defaults to `M.PAYLOAD_TYPE`.
+---@param keypair Libp2pIdentityKeypair
+---@param record Libp2pPeerRecord
+---@param opts? table
+---@return Libp2pSignedEnvelope|nil envelope
+---@return table|nil err
 function M.sign_ed25519(keypair, record, opts)
   local options = opts or {}
   local payload, payload_err = M.encode(record)
@@ -269,6 +287,10 @@ end
 --- Verify a signed peer record envelope.
 -- `opts.domain` and `opts.payload_type` enforce expected envelope metadata.
 -- `opts.expected_peer_id` enforces expected peer identity.
+---@param envelope_or_bytes Libp2pSignedEnvelope|string
+---@param opts? table
+---@return Libp2pPeerRecord|nil record
+---@return table|nil err
 function M.verify_signed_envelope(envelope_or_bytes, opts)
   local options = opts or {}
   local envelope = envelope_or_bytes
@@ -337,6 +359,11 @@ function M.addresses_as_text(record)
   return out
 end
 
+---@param peer_id_value string
+---@param seq integer
+---@param addrs string[]
+---@return Libp2pPeerRecord|nil record
+---@return table|nil err
 function M.make_record(peer_id_value, seq, addrs)
   if type(peer_id_value) ~= "string" then
     return nil, error_mod.new("input", "peer_id must be bytes or string")

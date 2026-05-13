@@ -18,7 +18,7 @@ This repo currently includes:
 - AutoRelay currently does not use AutoNAT reachability decisions; observed addresses are collected through identify but are not advertised by default
 - Multibase/multiformat primitives (base58btc, base32, varint, multihash, CIDv1)
 - Signed envelope + peer record encode/sign/verify primitives
-- Kademlia kbucket routing-table module (`lua_libp2p.kbucket`)
+- Kademlia kbucket routing-table module (`lua_libp2p.kad_dht.kbucket`)
 - Kademlia DHT module with routing-table integration, FIND_NODE wire codec/handler path, public/private/custom address filtering, default libp2p bootstrapper list, discovery-driven bootstrap, and concurrent random-walk refresh (`lua_libp2p.kad_dht`)
 - TCP transport with `/ip4/.../tcp/...` multiaddr parsing, dial/listen, and connection lifecycle controls
 - multistream-select framing and protocol negotiation (`/multistream/1.0.0`)
@@ -49,19 +49,19 @@ This repo currently includes:
 - `lua_libp2p/multistream_select`: multistream-select protocol
 - `lua_libp2p/crypto`: key and signature helpers
 - `lua_libp2p/multiformats`: varint, multibase, multihash, cid helpers
-- `lua_libp2p/multiaddr.lua`: multiaddr parsing/formatting/utilities
-- `lua_libp2p/dnsaddr.lua`: dnsaddr resolution abstraction utilities (resolver-injected)
+- `lua_libp2p/multiformats/multiaddr/`: multiaddr parsing/formatting/utilities
+- `lua_libp2p/dnsaddr/`: dnsaddr resolution abstraction utilities (resolver-injected)
 - `lua_libp2p/autonat`: AutoNAT v2 client service and AutoNAT v1/v2 server service
 - `lua_libp2p/upnp`: SSDP discovery, UPnP IGD SOAP client, and UPnP NAT service
-- `lua_libp2p/bootstrap.lua`: default bootstrap peer list and bootstrapper helpers
-- `lua_libp2p/address_manager.lua`: advertised address selection and relay address tracking
+- `lua_libp2p/bootstrap/`: default bootstrap peer list and bootstrapper helpers
+- `lua_libp2p/address_manager/`: advertised address selection and relay address tracking
 - `lua_libp2p/discovery`: pluggable peer discovery manager
 - `lua_libp2p/peer_discovery_bootstrap`: bootstrap peer discovery source
 - `lua_libp2p/network`: connection/stream abstraction layer
 - `lua_libp2p/record`: signed envelopes and peer routing records
 - `lua_libp2p/host/init.lua`: host/node setup (`start`, `dial`, `new_stream`, `handle`, `close`)
 - `lua_libp2p/peerstore`: peer metadata storage
-- `lua_libp2p/kbucket.lua`: Kademlia kbucket routing table module
+- `lua_libp2p/kad_dht/kbucket/`: Kademlia kbucket routing table module
 - `lua_libp2p/kad_dht`: Kademlia DHT module and wire helpers
 - `lua_libp2p/transport_circuit_relay_v2`: circuit relay v2 protocol, client, and AutoRelay
 - `tests`: test harness and integration tests

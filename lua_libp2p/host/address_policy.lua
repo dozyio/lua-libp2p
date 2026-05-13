@@ -1,6 +1,5 @@
 --- Host address-family policy helpers for dialing.
--- @module lua_libp2p.host.address_policy
-local multiaddr = require("lua_libp2p.multiaddr")
+local multiaddr = require("lua_libp2p.multiformats.multiaddr")
 
 local M = {}
 

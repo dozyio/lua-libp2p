@@ -1,6 +1,5 @@
 --- Identify protocol service.
 -- Registers `/ipfs/id/*` handlers and provides request helpers.
--- @module lua_libp2p.protocol_identify.service
 ---@class Libp2pIdentifyConfig
 ---@field include_push? boolean Register `/ipfs/id/push/1.0.0`. Default: true.
 ---@field run_on_connection_open? boolean Run identify after peer connection open. Default: true.
@@ -17,9 +16,9 @@ M.requires = {}
 --- Construct identify service instance.
 -- `opts.include_push` (`boolean`, default `true`) registers `/ipfs/id/push/1.0.0`.
 -- Additional options are forwarded to `identify.enable_run_on_connection_open`.
--- @tparam table host Host instance.
--- @tparam[opt] table opts
--- @treturn table service
+--- host table Host instance.
+--- opts? table
+--- table service
 function M.new(host, opts)
   local options = opts or {}
   local svc = {}

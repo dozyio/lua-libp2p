@@ -1,6 +1,6 @@
 local dcutr = require("lua_libp2p.protocol_dcutr.protocol")
 local dcutr_service = require("lua_libp2p.protocol_dcutr.service")
-local multiaddr = require("lua_libp2p.multiaddr")
+local multiaddr = require("lua_libp2p.multiformats.multiaddr")
 
 local function loopback_stream_pair()
   local a_in = ""

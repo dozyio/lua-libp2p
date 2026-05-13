@@ -1,5 +1,4 @@
 --- UPnP IGD SOAP client helpers.
--- @module lua_libp2p.upnp.igd
 local http = require("socket.http")
 local ltn12 = require("ltn12")
 
@@ -388,8 +387,8 @@ end
 
 --- List IGD port mappings.
 -- `opts.max` (`number`, default `64`) limits entry scan count.
--- @tparam[opt] table opts
--- @treturn table mappings
+--- opts? table
+--- table mappings
 function Client:list_port_mappings(opts)
   local options = opts or {}
   local max = options.max or 64
@@ -450,10 +449,10 @@ end
 --- Build IGD client from descriptor URL.
 -- `opts.debug_raw` enables raw HTTP capture.
 -- Parser options are forwarded to `parse_descriptor`.
--- @tparam string location
--- @tparam[opt] table opts
--- @treturn table|nil client
--- @treturn[opt] table err
+--- location string
+--- opts? table
+--- table|nil client
+--- table|nil err
 function M.from_location(location, opts)
   log.debug("upnp descriptor fetch started", {
     location = location,
@@ -487,9 +486,9 @@ end
 --- Discover first usable IGD via SSDP.
 -- `opts` is forwarded to `ssdp.discover(opts)` and `from_location(..., opts)`.
 -- Common fields: `max_results`, `mx_seconds`, `timeout`, `debug_raw`.
--- @tparam[opt] table opts
--- @treturn table|nil client
--- @treturn[opt] table err
+--- opts? table
+--- table|nil client
+--- table|nil err
 function M.discover(opts)
   local options = opts or {}
   local responses, err = ssdp.discover(opts)

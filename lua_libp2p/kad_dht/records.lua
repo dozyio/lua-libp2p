@@ -1,5 +1,4 @@
 --- KAD-DHT value record storage.
--- @module lua_libp2p.kad_dht.records
 local datastore = require("lua_libp2p.datastore")
 local memory_datastore = require("lua_libp2p.datastore.memory")
 local error_mod = require("lua_libp2p.error")

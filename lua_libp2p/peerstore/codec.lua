@@ -1,8 +1,7 @@
 --- Peerstore record codec.
 -- Schema-specific protobuf-style encoding for datastore-backed peerstore records.
--- @module lua_libp2p.peerstore.codec
 local error_mod = require("lua_libp2p.error")
-local multiaddr = require("lua_libp2p.multiaddr")
+local multiaddr = require("lua_libp2p.multiformats.multiaddr")
 local varint = require("lua_libp2p.multiformats.varint")
 
 local M = {}

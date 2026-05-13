@@ -1,6 +1,5 @@
 --- Security transport registry.
 -- Keeps protocol IDs centralized while loading implementations only when used.
--- @module lua_libp2p.connection_encrypter
 ---@class Libp2pSecurityTransportConfig
 ---@field noise? boolean Enable Noise (`/noise`). Default: true.
 ---@field tls? boolean Enable experimental libp2p TLS (`/tls/1.0.0`). Requires `fd_tls` for luv-native TLS.

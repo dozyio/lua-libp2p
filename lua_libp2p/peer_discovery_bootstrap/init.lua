@@ -1,8 +1,15 @@
 --- Bootstrap peer discovery source.
--- @module lua_libp2p.peer_discovery_bootstrap
+---@class Libp2pBootstrapDiscoveryConfig
+---@field peers? string[] Static bootstrap multiaddrs.
+---@field dnsaddr_resolver? function DNSAddr resolver override.
+---@field resolve_dnsaddr? boolean Resolve `/dnsaddr` entries. Default: true.
+
+---@class Libp2pBootstrapDiscoverySource
+---@field discover fun(self: Libp2pBootstrapDiscoverySource, opts?: table): table[]|nil, table|nil
+
 local dnsaddr = require("lua_libp2p.dnsaddr")
 local error_mod = require("lua_libp2p.error")
-local multiaddr = require("lua_libp2p.multiaddr")
+local multiaddr = require("lua_libp2p.multiformats.multiaddr")
 local bootstrap = require("lua_libp2p.bootstrap")
 local table_utils = require("lua_libp2p.util.tables")
 
@@ -57,9 +64,9 @@ end
 -- `opts.dnsaddr_resolver` overrides resolver function.
 -- `opts.dialable_only` (`boolean`) filters non-TCP candidates.
 -- `opts.ignore_resolve_errors` (`boolean`) skips bad records.
--- @tparam[opt] table opts
--- @treturn table|nil peers
--- @treturn[opt] table err
+--- opts? table
+--- table|nil peers
+--- table|nil err
 function BootstrapSource:discover(opts)
   local options = opts or {}
   local resolver = options.dnsaddr_resolver or self.dnsaddr_resolver
@@ -107,9 +114,11 @@ end
 -- `opts.dnsaddr_resolver` (`function`) resolver for dnsaddr records.
 -- `opts.dialable_only` (`boolean`) keeps only dialable TCP addrs.
 -- `opts.ignore_resolve_errors` (`boolean`) suppresses resolver failures.
--- @tparam[opt] table opts
--- @treturn table|nil source
--- @treturn[opt] table err
+--- opts? table
+--- table|nil source
+--- table|nil err
+---@param opts? Libp2pBootstrapDiscoveryConfig
+---@return Libp2pBootstrapDiscoverySource source
 function M.new(opts)
   local options = opts or {}
   local list = options.list

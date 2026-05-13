@@ -1,4 +1,4 @@
-local multiaddr = require("lua_libp2p.multiaddr")
+local multiaddr = require("lua_libp2p.multiformats.multiaddr")
 local deltas = require("tests.helpers.multiaddr_go_deltas")
 
 local function run()

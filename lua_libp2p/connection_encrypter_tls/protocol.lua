@@ -1,5 +1,16 @@
 --- TLS transport handshake and secure channel.
--- @module lua_libp2p.connection_encrypter_tls.protocol
+---@class Libp2pTlsHandshakeOptions
+---@field identity_keypair Libp2pIdentityKeypair
+---@field expected_remote_peer_id? string
+---@field muxer_protocols? string[]
+---@field ctx? table
+
+---@class Libp2pTlsHandshakeState
+---@field remote_peer_id string
+---@field remote_public_key? string
+---@field selected_muxer? string
+---@field used_early_muxer_negotiation? boolean
+
 local error_mod = require("lua_libp2p.error")
 local keys = require("lua_libp2p.crypto.keys")
 local log = require("lua_libp2p.log").subsystem("tls")
@@ -459,6 +470,11 @@ function SecureConn:remote_multiaddr()
   return nil
 end
 
+---@param raw_conn table
+---@param opts Libp2pTlsHandshakeOptions
+---@return table|nil secure_conn
+---@return Libp2pTlsHandshakeState|nil state
+---@return table|nil err
 function M.handshake_outbound(raw_conn, opts)
   local secure_raw, state, err = tls_handshake(raw_conn, false, opts)
   if not secure_raw then
@@ -470,6 +486,11 @@ function M.handshake_outbound(raw_conn, opts)
   return secure, state
 end
 
+---@param raw_conn table
+---@param opts Libp2pTlsHandshakeOptions
+---@return table|nil secure_conn
+---@return Libp2pTlsHandshakeState|nil state
+---@return table|nil err
 function M.handshake_inbound(raw_conn, opts)
   local secure_raw, state, err = tls_handshake(raw_conn, true, opts)
   if not secure_raw then

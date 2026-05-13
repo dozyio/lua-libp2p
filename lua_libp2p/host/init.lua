@@ -1,7 +1,6 @@
 --- Host construction and runtime orchestration.
 -- Hosts manage listeners, connections, protocol handlers, services, and
 -- cooperative background tasks.
--- @module lua_libp2p.host
 local address_manager = require("lua_libp2p.address_manager")
 local connection_encrypter = require("lua_libp2p.connection_encrypter")
 local connection_manager = require("lua_libp2p.connection_manager")

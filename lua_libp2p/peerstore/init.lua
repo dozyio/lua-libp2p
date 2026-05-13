@@ -1,5 +1,4 @@
 --- Peerstore.
--- @module lua_libp2p.peerstore
 ---@class Libp2pPeerstoreConfig
 ---@field default_addr_ttl? number Default address TTL in seconds.
 ---@field datastore? table Custom datastore backend.
@@ -369,8 +368,8 @@ end
 -- Defaults to the datastore-backed implementation with an in-memory datastore.
 -- `opts.default_addr_ttl` controls default address TTL in seconds.
 -- `opts.datastore` supplies a custom datastore backend.
--- @tparam[opt] table opts
--- @treturn table store
+--- opts? table
+--- table store
 function M.new(opts)
   local options = opts or {}
   local datastore_store = require("lua_libp2p.peerstore.datastore")

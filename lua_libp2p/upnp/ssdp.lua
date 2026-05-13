@@ -1,5 +1,4 @@
 --- SSDP discovery helpers.
--- @module lua_libp2p.upnp.ssdp
 local socket = require("socket")
 
 local error_mod = require("lua_libp2p.error")

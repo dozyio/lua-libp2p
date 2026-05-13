@@ -1,8 +1,16 @@
 --- NAT-PMP mapping service.
--- @module lua_libp2p.nat_pmp.service
+---@class Libp2pNatPmpServiceConfig
+---@field enabled? boolean
+---@field gateway? string
+---@field internal_port? integer
+---@field external_port? integer
+---@field ttl? number
+---@field protocol? 'tcp'|'udp'
+---@field client? Libp2pNatPmpClient
+
 local error_mod = require("lua_libp2p.error")
 local log = require("lua_libp2p.log").subsystem("nat_pmp")
-local multiaddr = require("lua_libp2p.multiaddr")
+local multiaddr = require("lua_libp2p.multiformats.multiaddr")
 local nat_pmp_client = require("lua_libp2p.nat_pmp.client")
 
 local M = {}
@@ -116,8 +124,8 @@ function Service:_client()
 end
 
 --- Create/refresh NAT-PMP mappings for eligible listen addresses.
--- @treturn table|nil mappings
--- @treturn[opt] table err
+--- table|nil mappings
+--- table|nil err
 function Service:map_ip_addresses()
   log.debug("nat-pmp mapping refresh started", {
     gateway = self.gateway,
@@ -223,8 +231,8 @@ function Service:map_ip_addresses()
 end
 
 --- Start NAT-PMP service and optional self-update hook.
--- @treturn true|nil ok
--- @treturn[opt] table err
+--- true|nil ok
+--- table|nil err
 function Service:start()
   if self.started then
     return true
@@ -248,7 +256,7 @@ function Service:start()
 end
 
 --- Stop NAT-PMP service and remove advertised mappings.
--- @treturn true
+--- true
 function Service:stop()
   self.started = false
   log.debug("nat-pmp service stopped", {
@@ -273,7 +281,7 @@ function Service:stop()
 end
 
 --- Return service status snapshot.
--- @treturn table
+--- table
 function Service:status()
   return {
     started = self.started,
@@ -289,10 +297,13 @@ end
 -- and `fail_on_start_error`.
 -- `opts.gateway` must be a router IP string.
 -- `opts.timeout` defaults to `0.25`, `opts.retries` defaults to `6`, `opts.ttl` defaults to `7200`.
--- @tparam table host Host instance.
--- @tparam[opt] table opts
--- @treturn table|nil service
--- @treturn[opt] table err
+--- host table Host instance.
+--- opts? table
+--- table|nil service
+--- table|nil err
+---@param host Libp2pHost
+---@param opts? Libp2pNatPmpServiceConfig
+---@return table service
 function M.new(host, opts)
   if type(host) ~= "table" then
     return nil, error_mod.new("input", "nat-pmp service requires host")

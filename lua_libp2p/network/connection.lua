@@ -1,5 +1,4 @@
 --- Connection abstraction over secure muxed sessions.
--- @module lua_libp2p.network.connection
 ---@class Libp2pStream
 ---@field read fun(self: Libp2pStream, length: integer): string|nil, table|nil
 ---@field write fun(self: Libp2pStream, payload: string): boolean|nil, table|nil
@@ -25,9 +24,9 @@ Connection.__index = Connection
 
 --- Wrap raw connection into high-level connection.
 -- `opts.session` attaches muxer session.
--- @tparam table raw_conn
--- @tparam[opt] table opts
--- @treturn table conn
+--- raw_conn table
+--- opts? table
+--- table conn
 function Connection:new(raw_conn, opts)
   local options = opts or {}
   return setmetatable({

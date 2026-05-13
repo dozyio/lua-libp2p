@@ -1,7 +1,10 @@
 --- DCUtR protocol framing and message codec.
--- @module lua_libp2p.protocol_dcutr.protocol
+---@class Libp2pDcutrMessage
+---@field type integer
+---@field addrs? string[]
+
 local error_mod = require("lua_libp2p.error")
-local multiaddr = require("lua_libp2p.multiaddr")
+local multiaddr = require("lua_libp2p.multiformats.multiaddr")
 local varint = require("lua_libp2p.multiformats.varint")
 
 local M = {}
@@ -110,6 +113,9 @@ local function skip_unknown(payload, index, wire)
   return nil, error_mod.new("decode", "unsupported protobuf wire type", { wire = wire })
 end
 
+---@param message Libp2pDcutrMessage
+---@return string|nil payload
+---@return table|nil err
 function M.encode_message(message)
   if type(message) ~= "table" then
     return nil, error_mod.new("input", "dcutr message must be a table")
@@ -140,6 +146,9 @@ function M.encode_message(message)
   return table.concat(parts)
 end
 
+---@param payload string
+---@return Libp2pDcutrMessage|nil message
+---@return table|nil err
 function M.decode_message(payload)
   local out = { obs_addrs = {} }
   local i = 1
@@ -182,6 +191,10 @@ end
 
 --- Read framed DCUtR message.
 -- `opts.max_message_size` (`number`, default `MAX_MESSAGE_SIZE`) bounds frame size.
+---@param conn Libp2pStream
+---@param opts? table
+---@return Libp2pDcutrMessage|nil message
+---@return table|nil err
 function M.read_message(conn, opts)
   local options = opts or {}
   local max_message_size = options.max_message_size or M.MAX_MESSAGE_SIZE
@@ -205,6 +218,11 @@ end
 
 --- Encode and write framed DCUtR message.
 -- `opts.max_message_size` (`number`, default `MAX_MESSAGE_SIZE`) bounds payload size.
+---@param conn Libp2pStream
+---@param message Libp2pDcutrMessage
+---@param opts? table
+---@return true|nil ok
+---@return table|nil err
 function M.write_message(conn, message, opts)
   local options = opts or {}
   local max_message_size = options.max_message_size or M.MAX_MESSAGE_SIZE

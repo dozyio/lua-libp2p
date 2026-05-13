@@ -1,5 +1,4 @@
 --- Stream muxer registry.
--- @module lua_libp2p.muxer
 ---@class Libp2pMuxerConfig
 ---@field yamux? boolean Enable yamux (`/yamux/1.0.0`). Default: true.
 local error_mod = require("lua_libp2p.error")
@@ -81,11 +80,11 @@ end
 --- Create a muxer session for a negotiated protocol.
 -- `opts` supports `is_client`, `initial_stream_window`, `max_ack_backlog`,
 -- and `max_accept_backlog`.
--- @tparam string protocol_id
--- @tparam table raw_conn
--- @tparam[opt] table opts
--- @treturn table|nil session
--- @treturn[opt] table err
+--- protocol_id string
+--- raw_conn table
+--- opts? table
+--- table|nil session
+--- table|nil err
 function M.new_session(protocol_id, raw_conn, opts)
   local impl = by_protocol[protocol_id]
   if not impl then

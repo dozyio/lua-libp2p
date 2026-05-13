@@ -1,4 +1,4 @@
-local multiaddr = require("lua_libp2p.multiaddr")
+local multiaddr = require("lua_libp2p.multiformats.multiaddr")
 
 local function run()
   local parsed, parse_err = multiaddr.parse("/dns4/bootstrap.libp2p.io/tcp/443/tls/ws")

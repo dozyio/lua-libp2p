@@ -7,7 +7,7 @@ lint-deps:
 	luarocks --lua-version=5.4 install --local luacheck
 
 docs-deps:
-	luarocks --lua-version=5.4 install --local ldoc
+	@echo "Install lua-language-server from https://github.com/LuaLS/lua-language-server/releases or your package manager"
 
 lint:
 	@command -v luacheck >/dev/null 2>&1 || { \
@@ -24,11 +24,11 @@ fmt:
 	stylua lua_libp2p tests examples
 
 docs:
-	@command -v ldoc >/dev/null 2>&1 || { \
-		echo "ldoc not found; run 'make docs-deps' and load your LuaRocks path"; \
+	@command -v lua-language-server >/dev/null 2>&1 || { \
+		echo "lua-language-server not found; run 'make docs-deps'"; \
 		exit 127; \
 	}
-	ldoc .
+	lua-language-server --doc=. --doc_out_path=docs/api --configpath=.luarc.json
 
 test:
 	LIBP2P_LOG='*=warn' lua tests/run.lua

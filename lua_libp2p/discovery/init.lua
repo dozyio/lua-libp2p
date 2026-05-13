@@ -1,5 +1,13 @@
 --- Discovery source aggregation.
--- @module lua_libp2p.discovery
+---@alias Libp2pDiscoverySource fun(opts?: table): table[]|nil, table|nil
+
+---@class Libp2pDiscoveryConfig
+---@field sources? (Libp2pDiscoverySource|table)[]
+
+---@class Libp2pDiscovery
+---@field add_source fun(self: Libp2pDiscovery, source: Libp2pDiscoverySource|table): true|nil, table|nil
+---@field discover fun(self: Libp2pDiscovery, opts?: table): table[]|nil, table|nil
+
 local error_mod = require("lua_libp2p.error")
 
 local M = {}
@@ -45,9 +53,9 @@ end
 
 --- Run all discovery sources and merge peer candidates.
 -- `opts.ignore_source_errors=true` skips failing discovery sources.
--- @tparam[opt] table opts
--- @treturn table|nil peers
--- @treturn[opt] table err
+--- opts? table
+--- table|nil peers
+--- table|nil err
 function Discovery:discover(opts)
   local out = {}
   local seen = {}
@@ -87,9 +95,9 @@ end
 
 --- Construct a discovery aggregator.
 -- `opts.sources` accepts functions or tables exposing `discover(opts)`.
--- @tparam[opt] table opts Constructor options.
--- @treturn table|nil discovery
--- @treturn[opt] table err
+---@param opts? Libp2pDiscoveryConfig Constructor options.
+---@return Libp2pDiscovery|nil discovery
+---@return table|nil err
 function M.new(opts)
   local self_obj = setmetatable({
     _sources = {},

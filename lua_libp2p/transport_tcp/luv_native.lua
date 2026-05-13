@@ -1,8 +1,7 @@
 --- Native luv TCP transport implementation.
--- @module lua_libp2p.transport_tcp.luv_native
 local error_mod = require("lua_libp2p.error")
 local log = require("lua_libp2p.log").subsystem("tcp")
-local multiaddr = require("lua_libp2p.multiaddr")
+local multiaddr = require("lua_libp2p.multiformats.multiaddr")
 
 local ok_luv, uv = pcall(require, "luv")
 local ok_socket, socket = pcall(require, "socket")
@@ -995,9 +994,9 @@ end
 -- `target` may be multiaddr string or table `{ host, port, multiaddr }`.
 -- `opts` overrides target table and supports `accept_timeout` and `io_timeout`.
 -- @param[opt] target
--- @tparam[opt] table opts
--- @treturn table|nil listener
--- @treturn[opt] table err
+--- opts? table
+--- table|nil listener
+--- table|nil err
 function M.listen(target, opts)
   if not ok_luv then
     return nil, error_mod.new("unsupported", "luv is unavailable")
@@ -1163,9 +1162,9 @@ end
 -- `opts.port` is used when target is a host string.
 -- `opts.timeout`, `opts.io_timeout`, and `opts.ctx` control timing and cancellation.
 -- @param target Dial target.
--- @tparam[opt] table opts
--- @treturn table|nil conn
--- @treturn[opt] table err
+--- opts? table
+--- table|nil conn
+--- table|nil err
 function M.dial(target, opts)
   if not ok_luv then
     return nil, error_mod.new("unsupported", "luv is unavailable")

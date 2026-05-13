@@ -1,5 +1,14 @@
 --- PCP client.
--- @module lua_libp2p.pcp.client
+---@class Libp2pPcpClientConfig
+---@field gateway? string Gateway IP address.
+---@field timeout? number UDP request timeout.
+---@field retries? integer Request retry count.
+---@field socket_factory? function Test/custom UDP socket factory.
+
+---@class Libp2pPcpClient
+---@field map fun(self: Libp2pPcpClient, opts: table): table|nil, table|nil
+---@field close fun(self: Libp2pPcpClient): true
+
 local socket = require("socket")
 
 local error_mod = require("lua_libp2p.error")
@@ -300,14 +309,14 @@ end
 --- Request PCP MAP mapping.
 -- `opts.gateway` overrides configured gateway.
 -- `opts.source_ip` pins local source address for UDP socket binding.
--- @tparam string protocol `tcp|udp`.
--- @tparam number internal_port
--- @tparam[opt] number suggested_external_port
--- @tparam[opt] number lifetime
--- @tparam[opt] string suggested_external_ip
--- @tparam[opt] table opts
--- @treturn table|nil mapping
--- @treturn[opt] table err
+--- protocol string `tcp|udp`.
+--- internal_port number
+--- suggested_external_port? number
+--- lifetime? number
+--- suggested_external_ip? string
+--- opts? table
+--- table|nil mapping
+--- table|nil err
 function Client:map_port(protocol, internal_port, suggested_external_port, lifetime, suggested_external_ip, opts)
   local proto_num
   if protocol == "tcp" then
@@ -382,6 +391,8 @@ end
 
 --- Construct a PCP client instance.
 -- `opts` includes `gateway` (required), `port`, `timeout`, and `retries`.
+---@param opts? Libp2pPcpClientConfig
+---@return Libp2pPcpClient client
 function M.new(opts)
   local options = opts or {}
   local gateway = options.gateway

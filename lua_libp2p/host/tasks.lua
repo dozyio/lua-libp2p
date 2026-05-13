@@ -1,5 +1,4 @@
 --- Host cooperative task scheduler internals.
--- @module lua_libp2p.host.tasks
 ---@class Libp2pTaskOptions
 ---@field service? string
 ---@field priority? 'front'

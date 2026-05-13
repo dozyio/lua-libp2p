@@ -43,7 +43,7 @@ local function run()
     "lua_libp2p.host.runtime_luv",
     "lua_libp2p.host.runtime_luv_native",
     "lua_libp2p.host.tasks",
-    "lua_libp2p.kbucket",
+    "lua_libp2p.kad_dht.kbucket",
     "lua_libp2p.kad_dht",
     "lua_libp2p.kad_dht.bootstrap",
     "lua_libp2p.kad_dht.maintenance",

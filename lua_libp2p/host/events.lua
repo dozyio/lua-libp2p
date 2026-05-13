@@ -1,5 +1,4 @@
 --- Host event bus internals.
--- @module lua_libp2p.host.events
 local error_mod = require("lua_libp2p.error")
 
 local M = {}
@@ -51,16 +50,16 @@ end
 
 function M.install(Host)
   --- Subscribe to host events.
-  -- @tparam string event_name Event key to subscribe to.
-  -- @tparam function handler Callback `(payload, event)`.
+  --- event_name string Event key to subscribe to.
+  --- handler function Callback `(payload, event)`.
   -- Common events/payload keys:
   -- - `connection_opened`: `{ peer_id, connection_id, direction, remote_addr, limited }`
   -- - `connection_closed`: `{ peer_id, connection_id, cause }`
   -- - `peer_identified`: `{ peer_id, protocols, observed_addr }`
   -- - `stream:negotiated`: `{ peer_id, connection_id, protocol, limited }`
   -- - `task:started|task:completed|task:failed|task:cancelled`: `{ task_id, name, service }`
-  -- @treturn true|nil ok
-  -- @treturn[opt] table err
+  --- true|nil ok
+  --- table|nil err
   function Host:on(event_name, handler)
     if type(event_name) ~= "string" or event_name == "" then
       return nil, error_mod.new("input", "event name must be non-empty")
@@ -79,10 +78,10 @@ function M.install(Host)
   end
 
   --- Emit a host event.
-  -- @tparam string event_name Event key.
-  -- @tparam[opt] table payload Event payload table.
-  -- @treturn true|nil ok
-  -- @treturn[opt] table err
+  --- event_name string Event key.
+  --- payload? table Event payload table.
+  --- true|nil ok
+  --- table|nil err
   function Host:emit(event_name, payload)
     if type(event_name) ~= "string" or event_name == "" then
       return nil, error_mod.new("input", "event name must be non-empty")
@@ -91,9 +90,9 @@ function M.install(Host)
   end
 
   --- Remove a previously registered event handler.
-  -- @tparam string event_name Event key.
-  -- @tparam function handler Previously registered callback.
-  -- @treturn boolean removed
+  --- event_name string Event key.
+  --- handler function Previously registered callback.
+  --- boolean removed
   function Host:off(event_name, handler)
     local handlers = self._event_handlers[event_name]
     if type(handlers) ~= "table" then
@@ -112,9 +111,9 @@ function M.install(Host)
   -- `event_name_or_opts` may be a string event name, or table `{ event_name|event, max_queue }`.
   -- `opts.max_queue` (`number`) overrides per-subscriber queue bound.
   -- @param[opt] event_name_or_opts Event name or options table.
-  -- @tparam[opt] table opts Options when first arg is event name.
-  -- @treturn table|nil subscriber
-  -- @treturn[opt] table err
+  --- opts? table Options when first arg is event name.
+  --- table|nil subscriber
+  --- table|nil err
   function Host:subscribe(event_name_or_opts, opts)
     local event_name = nil
     local options = opts or {}
@@ -143,7 +142,7 @@ function M.install(Host)
 
   --- Remove a queue subscription.
   -- @param subscriber Subscriber table or numeric id.
-  -- @treturn boolean removed
+  --- boolean removed
   function Host:unsubscribe(subscriber)
     local id = subscriber
     if type(subscriber) == "table" then
@@ -161,9 +160,9 @@ function M.install(Host)
 
   --- Pop next queued event from a subscription.
   -- Returns `nil` when queue is empty.
-  -- @tparam table subscriber Subscriber handle returned by @{subscribe}.
-  -- @treturn table|nil event
-  -- @treturn[opt] table err
+  --- subscriber table Subscriber handle returned by @{subscribe}.
+  --- table|nil event
+  --- table|nil err
   function Host:next_event(subscriber)
     if type(subscriber) ~= "table" or type(subscriber.id) ~= "number" then
       return nil, error_mod.new("input", "subscriber handle is required")

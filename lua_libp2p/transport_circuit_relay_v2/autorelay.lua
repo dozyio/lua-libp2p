@@ -1,6 +1,5 @@
 --- AutoRelay service.
 -- Maintains relay reservations and candidate discovery.
--- @module lua_libp2p.transport_circuit_relay_v2.autorelay
 ---@class Libp2pAutoRelayConfig
 ---@field relays? table[] Static bootstrap relay target list.
 ---@field max_reservations? integer Maximum active relay reservations. Default: 2.
@@ -20,7 +19,7 @@
 
 local error_mod = require("lua_libp2p.error")
 local log = require("lua_libp2p.log").subsystem("autorelay")
-local multiaddr = require("lua_libp2p.multiaddr")
+local multiaddr = require("lua_libp2p.multiformats.multiaddr")
 local ping = require("lua_libp2p.protocol_ping.protocol")
 local relay_client = require("lua_libp2p.transport_circuit_relay_v2.client")
 local relay_proto = require("lua_libp2p.transport_circuit_relay_v2.protocol")
@@ -537,8 +536,8 @@ function AutoRelay:_process_queue(now, limit)
 end
 
 --- Start AutoRelay event hooks and initial reservation work.
--- @treturn table|true|nil report_or_ok Startup report table, or true if already started.
--- @treturn[opt] table err
+--- table|true|nil report_or_ok Startup report table, or true if already started.
+--- table|nil err
 function AutoRelay:start()
   if self.started then
     return true
@@ -623,7 +622,7 @@ function AutoRelay:start()
 end
 
 --- Stop AutoRelay subscriptions.
--- @treturn true
+--- true
 function AutoRelay:stop()
   if self._tick_task and self.host and type(self.host.cancel_task) == "function" then
     self.host:cancel_task(self._tick_task.id)
@@ -681,13 +680,13 @@ function AutoRelay:on_host_started()
 end
 
 --- Get currently tracked active reservations.
--- @treturn table reservations
+--- table reservations
 function AutoRelay:get_reservations()
   return self.client:get_reservations()
 end
 
 --- Get current service status counters.
--- @treturn table
+--- table
 function AutoRelay:status()
   local failed = 0
   local failure_summary = {}
@@ -721,8 +720,8 @@ function AutoRelay:status()
 end
 
 --- Run one maintenance tick.
--- @tparam[opt] number now Epoch seconds override.
--- @treturn true
+--- now? number Epoch seconds override.
+--- true
 function AutoRelay:tick(now)
   if not self.started then
     return true
@@ -772,16 +771,16 @@ function AutoRelay:tick(now)
 end
 
 --- Build an AutoRelay service instance.
--- @tparam table host Host instance.
--- @tparam[opt] table opts AutoRelay options.
+--- host table Host instance.
+--- opts? table AutoRelay options.
 -- Common options: `relays`, `max_reservations`, `reservation_concurrency`,
 -- `max_queue_length`, `backoff_seconds`, `keepalive_interval`, `keepalive_timeout`,
 -- `discover`, `reserve_opts`, `refresh_margin`, `refresh_timeout`,
 -- `refresh_timeout_min`, `min_reservation_ttl`, `tick_interval`, and `fail_fast`.
 -- `opts.keepalive_interval` defaults to `DEFAULT_KEEPALIVE_INTERVAL` when nil.
 -- `opts.relays` is the static bootstrap relay target list.
--- @treturn table|nil service
--- @treturn[opt] table err
+--- table|nil service
+--- table|nil err
 function M.new(host, opts)
   if type(host) ~= "table" then
     return nil, error_mod.new("input", "autorelay requires host")

@@ -4,7 +4,6 @@
 -- reservation time for connections and streams across system, transient, peer,
 -- and protocol scopes. Memory and file-descriptor accounting can be layered on
 -- top of this API later without changing host integration points.
--- @module lua_libp2p.resource_manager
 ---@class Libp2pResourceLimits
 ---@field connections? integer
 ---@field connections_inbound? integer
@@ -260,11 +259,11 @@ function ResourceManager:_check_protocol_peer_stream_limits(peer_id, direction, 
 end
 
 --- Reserve a connection slot.
--- @tparam string direction `inbound`, `outbound`, or `unknown`.
--- @tparam[opt] string peer_id Remote peer id when already known.
--- @tparam[opt] table opts Supports `transient=true`.
--- @treturn table|nil scope
--- @treturn[opt] table err
+--- direction string `inbound`, `outbound`, or `unknown`.
+--- peer_id? string Remote peer id when already known.
+--- opts? table Supports `transient=true`.
+--- table|nil scope
+--- table|nil err
 function ResourceManager:open_connection(direction, peer_id, opts)
   local dir = direction or "unknown"
   local options = opts or {}

@@ -1,5 +1,4 @@
 --- KAD-DHT maintenance loop and peer refresh helpers.
--- @module lua_libp2p.kad_dht.maintenance
 local error_mod = require("lua_libp2p.error")
 local log = require("lua_libp2p.log").subsystem("kad_dht")
 

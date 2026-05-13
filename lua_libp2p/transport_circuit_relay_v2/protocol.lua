@@ -1,7 +1,27 @@
 --- Circuit Relay v2 protocol codec and helpers.
--- @module lua_libp2p.transport_circuit_relay_v2.protocol
+---@class Libp2pRelayPeer
+---@field id? string
+---@field peer_id? string
+---@field addrs? string[]
+
+---@class Libp2pRelayReservation
+---@field expire? integer
+---@field addrs? string[]
+---@field voucher? string
+
+---@class Libp2pRelayLimit
+---@field duration? integer
+---@field data? integer
+
+---@class Libp2pRelayMessage
+---@field type integer
+---@field peer? Libp2pRelayPeer
+---@field reservation? Libp2pRelayReservation
+---@field limit? Libp2pRelayLimit
+---@field status? integer
+
 local error_mod = require("lua_libp2p.error")
-local multiaddr = require("lua_libp2p.multiaddr")
+local multiaddr = require("lua_libp2p.multiformats.multiaddr")
 local peerid = require("lua_libp2p.peerid")
 local varint = require("lua_libp2p.multiformats.varint")
 
@@ -209,6 +229,9 @@ function M.classify_limit(limit)
   return "unlimited"
 end
 
+--- peer Libp2pRelayPeer
+--- string|nil payload
+--- table|nil err
 function M.encode_peer(peer)
   if type(peer) ~= "table" then
     return nil, error_mod.new("input", "relay peer must be a table")
@@ -235,6 +258,9 @@ function M.encode_peer(peer)
   return table.concat(parts)
 end
 
+--- payload string
+--- Libp2pRelayPeer|nil peer
+--- table|nil err
 function M.decode_peer(payload)
   local out = { addrs = {} }
   local i = 1
@@ -277,6 +303,9 @@ function M.decode_peer(payload)
   return out
 end
 
+--- reservation Libp2pRelayReservation
+--- string|nil payload
+--- table|nil err
 function M.encode_reservation(reservation)
   if type(reservation) ~= "table" then
     return nil, error_mod.new("input", "reservation must be a table")
@@ -303,6 +332,9 @@ function M.encode_reservation(reservation)
   return table.concat(parts)
 end
 
+--- payload string
+--- Libp2pRelayReservation|nil reservation
+--- table|nil err
 function M.decode_reservation(payload)
   local out = { addrs = {} }
   local i = 1
@@ -351,6 +383,9 @@ function M.decode_reservation(payload)
   return out
 end
 
+--- limit Libp2pRelayLimit
+--- string|nil payload
+--- table|nil err
 function M.encode_limit(limit)
   if type(limit) ~= "table" then
     return nil, error_mod.new("input", "limit must be a table")
@@ -367,6 +402,9 @@ function M.encode_limit(limit)
   return table.concat(parts)
 end
 
+--- payload string
+--- Libp2pRelayLimit|nil limit
+--- table|nil err
 function M.decode_limit(payload)
   local out = {}
   local i = 1
@@ -524,18 +562,30 @@ local function decode_message(payload, fields)
   return out
 end
 
+--- message Libp2pRelayMessage
+--- string|nil payload
+--- table|nil err
 function M.encode_hop_message(message)
   return encode_message(message, HOP_FIELDS)
 end
 
+--- payload string
+--- Libp2pRelayMessage|nil message
+--- table|nil err
 function M.decode_hop_message(payload)
   return decode_message(payload, HOP_FIELDS)
 end
 
+--- message Libp2pRelayMessage
+--- string|nil payload
+--- table|nil err
 function M.encode_stop_message(message)
   return encode_message(message, STOP_FIELDS)
 end
 
+--- payload string
+--- Libp2pRelayMessage|nil message
+--- table|nil err
 function M.decode_stop_message(payload)
   return decode_message(payload, STOP_FIELDS)
 end
@@ -601,10 +651,10 @@ end
 
 --- Perform a relay RESERVE request/response exchange.
 -- `opts.max_message_size` (`number`, default `MAX_MESSAGE_SIZE`) bounds response size.
--- @tparam table stream
--- @tparam[opt] table opts
--- @treturn table|nil reservation
--- @treturn[opt] table err_or_response
+--- stream table
+--- opts? table
+--- table|nil reservation
+--- table|nil err_or_response
 function M.reserve(stream, opts)
   local options = opts or {}
   local wrote, write_err = M.write_hop_message(stream, { type = M.HOP_TYPE.RESERVE })
@@ -630,11 +680,11 @@ end
 
 --- Perform a relay CONNECT request/response exchange.
 -- `opts.max_message_size` (`number`, default `MAX_MESSAGE_SIZE`) bounds response size.
--- @tparam table stream
--- @tparam string destination_peer_id
--- @tparam[opt] table opts
--- @treturn true|nil ok
--- @treturn[opt] table err_or_response
+--- stream table
+--- destination_peer_id string
+--- opts? table
+--- true|nil ok
+--- table|nil err_or_response
 function M.connect(stream, destination_peer_id, opts)
   local options = opts or {}
   local wrote, write_err = M.write_hop_message(stream, {
@@ -663,10 +713,10 @@ end
 
 --- Accept and parse a STOP-side relay CONNECT request.
 -- `opts.max_message_size` (`number`, default `MAX_MESSAGE_SIZE`) bounds request size.
--- @tparam table stream
--- @tparam[opt] table opts
--- @treturn table|nil info
--- @treturn[opt] table err
+--- stream table
+--- opts? table
+--- table|nil info
+--- table|nil err
 function M.accept_stop(stream, opts)
   local options = opts or {}
   local request, read_err = M.read_stop_message(stream, options)

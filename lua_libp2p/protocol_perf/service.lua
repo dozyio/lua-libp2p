@@ -1,5 +1,4 @@
 --- Perf protocol service.
--- @module lua_libp2p.protocol_perf.service
 ---@class Libp2pPerfConfig
 ---@field write_block_size? integer Chunk size for replies.
 ---@field yield_every_bytes? integer Cooperative yield cadence.
@@ -14,9 +13,9 @@ M.requires = {}
 --- Construct perf service instance.
 -- `opts.write_block_size` (`number`) sets chunk size for replies.
 -- `opts.yield_every_bytes` (`number`) controls cooperative yield cadence.
--- @tparam table host Host instance.
--- @tparam[opt] table opts
--- @treturn table service
+--- host table Host instance.
+--- opts? table
+--- table service
 function M.new(host, opts)
   local options = opts or {}
   local svc = {}

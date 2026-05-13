@@ -1,5 +1,4 @@
 --- Perf protocol helpers and measurement utilities.
--- @module lua_libp2p.protocol_perf.protocol
 ---@class Libp2pPerfOptions
 ---@field write_block_size? integer Send chunk size. Default: module default.
 ---@field yield_every_bytes? integer Cooperative yield cadence.

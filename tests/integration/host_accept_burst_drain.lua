@@ -1,6 +1,6 @@
 local ed25519 = require("lua_libp2p.crypto.ed25519")
 local host_mod = require("lua_libp2p.host")
-local multiaddr = require("lua_libp2p.multiaddr")
+local multiaddr = require("lua_libp2p.multiformats.multiaddr")
 
 local ok_socket, socket = pcall(require, "socket")
 

@@ -1,5 +1,4 @@
 --- Ed25519 key and signature utilities.
--- @module lua_libp2p.crypto.ed25519
 local error_mod = require("lua_libp2p.error")
 
 local ok, sodium = pcall(require, "luasodium")

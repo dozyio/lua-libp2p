@@ -1,8 +1,17 @@
 --- PCP mapping service.
--- @module lua_libp2p.pcp.service
+---@class Libp2pPcpServiceConfig
+---@field enabled? boolean
+---@field gateway? string
+---@field internal_client? string
+---@field internal_port? integer
+---@field external_port? integer
+---@field ttl? number
+---@field protocol? 'tcp'|'udp'
+---@field client? Libp2pPcpClient
+
 local error_mod = require("lua_libp2p.error")
 local log = require("lua_libp2p.log").subsystem("pcp")
-local multiaddr = require("lua_libp2p.multiaddr")
+local multiaddr = require("lua_libp2p.multiformats.multiaddr")
 local os_routing = require("lua_libp2p.os_routing")
 local pcp_client = require("lua_libp2p.pcp.client")
 
@@ -199,8 +208,8 @@ function Service:_eligible_addrs(gateway)
 end
 
 --- Create/refresh PCP mappings for eligible listen addresses.
--- @treturn table|nil mappings
--- @treturn[opt] table err
+--- table|nil mappings
+--- table|nil err
 function Service:map_ip_addresses()
   if self._mapping_in_progress then
     log.debug("pcp mapping refresh skipped", {
@@ -339,8 +348,8 @@ function Service:map_ip_addresses()
 end
 
 --- Start PCP service and optional self-update hook.
--- @treturn true|nil ok
--- @treturn[opt] table err
+--- true|nil ok
+--- table|nil err
 function Service:start()
   if self.started then
     return true
@@ -394,7 +403,7 @@ function Service:start()
 end
 
 --- Stop PCP service and remove advertised mappings.
--- @treturn true
+--- true
 function Service:stop()
   self.started = false
   if self._initial_map_task and self.host and type(self.host.cancel_task) == "function" then
@@ -428,10 +437,13 @@ end
 -- `fail_on_start_error`, `map_on_self_peer_update`, and `initial_map_delay_seconds`.
 -- `opts.gateway` may be a router IP string or `"auto"`.
 -- `opts.timeout` defaults to `0.25`, `opts.retries` defaults to `6`, `opts.ttl` defaults to `7200`.
--- @tparam table host Host instance.
--- @tparam[opt] table opts
--- @treturn table|nil service
--- @treturn[opt] table err
+--- host table Host instance.
+--- opts? table
+--- table|nil service
+--- table|nil err
+---@param host Libp2pHost
+---@param opts? Libp2pPcpServiceConfig
+---@return table service
 function M.new(host, opts)
   if type(host) ~= "table" then
     return nil, error_mod.new("input", "pcp service requires host")

@@ -1,5 +1,4 @@
 --- Host service graph construction and dependency ordering.
--- @module lua_libp2p.host.service_manager
 ---@class Libp2pServiceSpec
 ---@field module table Service module with `new(host, config, name)`.
 ---@field config? table Service-specific configuration passed to `module.new`.

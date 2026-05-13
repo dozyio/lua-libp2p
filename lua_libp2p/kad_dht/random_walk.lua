@@ -1,5 +1,4 @@
 --- KAD-DHT random-walk routing table refresh.
--- @module lua_libp2p.kad_dht.random_walk
 local error_mod = require("lua_libp2p.error")
 local operation = require("lua_libp2p.operation")
 local protocol = require("lua_libp2p.kad_dht.protocol")
@@ -31,10 +30,10 @@ end
 --- Execute a random walk immediately and return its report.
 -- This is the internal workflow used when the caller already controls any
 -- scheduler context. Public callers should use @{spawn} via `DHT:random_walk`.
--- @tparam table dht DHT instance
--- @tparam[opt] table opts Walk/query controls, including `ctx` and `yield`.
--- @treturn table|nil report
--- @treturn[opt] table err
+--- dht table DHT instance
+--- opts? table Walk/query controls, including `ctx` and `yield`.
+--- table|nil report
+--- table|nil err
 function M.run(dht, opts)
   local options = opts or {}
   local report = { queried = 0, responses = 0, failed = 0, added = 0, skipped = 0, discovered = 0, errors = {} }
@@ -252,10 +251,10 @@ end
 --- Start a scheduler-backed random walk operation.
 -- This wraps @{run} in a host task, injects the task `ctx`, and returns the
 -- repository-standard operation object for public `DHT:random_walk` callers.
--- @tparam table dht DHT instance
--- @tparam[opt] table opts Walk/query controls.
--- @treturn table|nil op
--- @treturn[opt] table err
+--- dht table DHT instance
+--- opts? table Walk/query controls.
+--- table|nil op
+--- table|nil err
 function M.spawn(dht, opts)
   if not (dht.host and type(dht.host.spawn_task) == "function") then
     return nil, error_mod.new("state", "kad_dht random_walk requires host task scheduler")

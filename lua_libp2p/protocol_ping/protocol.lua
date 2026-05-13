@@ -1,5 +1,4 @@
 --- Ping protocol primitives.
--- @module lua_libp2p.protocol_ping.protocol
 ---@class Libp2pPingHandleOptions
 ---@field max_messages? integer Stop after N messages; otherwise runs until closed.
 

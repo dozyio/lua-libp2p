@@ -1,5 +1,8 @@
 --- Plaintext transport handshake helpers.
--- @module lua_libp2p.connection_encrypter_plaintext.protocol
+---@class Libp2pPlaintextExchange
+---@field public_key string Public key protobuf bytes.
+---@field peer_id string Peer ID text.
+
 local error_mod = require("lua_libp2p.error")
 local varint = require("lua_libp2p.multiformats.varint")
 local keys = require("lua_libp2p.crypto.keys")
@@ -87,6 +90,9 @@ local function normalize_expected_peer_id(expected)
   return expected
 end
 
+---@param raw_public_key string
+---@return Libp2pPlaintextExchange|nil exchange
+---@return table|nil err
 function M.make_exchange_from_ed25519_public_key(raw_public_key)
   local pubkey_proto, pubkey_err = key_pb.encode_public_key(key_pb.KEY_TYPE.Ed25519, raw_public_key)
   if not pubkey_proto then
@@ -104,6 +110,9 @@ function M.make_exchange_from_ed25519_public_key(raw_public_key)
   }
 end
 
+---@param pubkey_proto string
+---@return Libp2pPlaintextExchange|nil exchange
+---@return table|nil err
 function M.make_exchange_from_public_key_proto(pubkey_proto)
   local decoded, decode_err = key_pb.decode_public_key(pubkey_proto)
   if not decoded then
@@ -119,6 +128,9 @@ function M.make_exchange_from_public_key_proto(pubkey_proto)
   }
 end
 
+---@param identity Libp2pIdentityKeypair
+---@return Libp2pPlaintextExchange|nil exchange
+---@return table|nil err
 function M.make_exchange_from_identity(identity)
   local pubkey_proto, pubkey_err = keys.public_key_proto(identity)
   if not pubkey_proto then
@@ -262,6 +274,11 @@ function M.verify_exchange(exchange, expected_remote_peer_id)
   }
 end
 
+---@param conn table
+---@param local_exchange Libp2pPlaintextExchange
+---@param expected_remote_peer_id? string
+---@return table|nil state
+---@return table|nil err
 function M.handshake(conn, local_exchange, expected_remote_peer_id)
   local ok, write_err = M.write_exchange(conn, local_exchange)
   if not ok then

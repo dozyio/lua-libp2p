@@ -1,10 +1,9 @@
 --- Host identify protocol glue.
--- @module lua_libp2p.host.identify
 local error_mod = require("lua_libp2p.error")
 local identify = require("lua_libp2p.protocol_identify.protocol")
 local key_pb = require("lua_libp2p.crypto.key_pb")
 local log = require("lua_libp2p.log").subsystem("identify")
-local multiaddr = require("lua_libp2p.multiaddr")
+local multiaddr = require("lua_libp2p.multiformats.multiaddr")
 
 local M = {}
 

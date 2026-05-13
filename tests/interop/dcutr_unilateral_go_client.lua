@@ -10,7 +10,7 @@ local identify_service = require("lua_libp2p.protocol_identify.service")
 local ping_service = require("lua_libp2p.protocol_ping.service")
 local dcutr_service = require("lua_libp2p.protocol_dcutr.service")
 local dcutr = require("lua_libp2p.protocol_dcutr.protocol")
-local multiaddr = require("lua_libp2p.multiaddr")
+local multiaddr = require("lua_libp2p.multiformats.multiaddr")
 
 local target_addr = arg[1]
 if not target_addr or target_addr == "" then

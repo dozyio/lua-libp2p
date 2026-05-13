@@ -1,5 +1,4 @@
 --- Host outbound dial and stream opening internals.
--- @module lua_libp2p.host.dialer
 ---@class Libp2pDialOptions
 ---@field timeout? number
 ---@field io_timeout? number
@@ -14,7 +13,7 @@
 
 local error_mod = require("lua_libp2p.error")
 local log = require("lua_libp2p.log").subsystem("host")
-local multiaddr = require("lua_libp2p.multiaddr")
+local multiaddr = require("lua_libp2p.multiformats.multiaddr")
 local relay_proto = require("lua_libp2p.transport_circuit_relay_v2.protocol")
 local upgrader = require("lua_libp2p.network.upgrader")
 

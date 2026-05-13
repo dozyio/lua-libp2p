@@ -1,5 +1,10 @@
 --- Signed envelope primitives.
--- @module lua_libp2p.record.signed_envelope
+---@class Libp2pSignedEnvelope
+---@field public_key string
+---@field payload_type string
+---@field payload string
+---@field signature string
+
 local error_mod = require("lua_libp2p.error")
 local keys = require("lua_libp2p.crypto.keys")
 local key_pb = require("lua_libp2p.crypto.key_pb")
@@ -87,6 +92,11 @@ local function normalize_expected_peer_id(expected)
 end
 
 --- Build canonical bytes for envelope signatures.
+---@param domain string
+---@param payload_type string
+---@param payload string
+---@return string|nil input
+---@return table|nil err
 function M.signature_input(domain, payload_type, payload)
   if type(domain) ~= "string" then
     return nil, error_mod.new("input", "domain must be a string")
@@ -115,6 +125,9 @@ function M.signature_input(domain, payload_type, payload)
 end
 
 --- Encode a signed envelope protobuf payload.
+---@param envelope Libp2pSignedEnvelope
+---@return string|nil bytes
+---@return table|nil err
 function M.encode(envelope)
   if type(envelope) ~= "table" then
     return nil, error_mod.new("input", "envelope must be a table")
@@ -142,6 +155,9 @@ function M.encode(envelope)
 end
 
 --- Decode a signed envelope protobuf payload.
+---@param payload string
+---@return Libp2pSignedEnvelope|nil envelope
+---@return table|nil err
 function M.decode(payload)
   if type(payload) ~= "string" then
     return nil, error_mod.new("input", "envelope payload must be bytes")
@@ -213,6 +229,12 @@ function M.sign_ed25519(keypair, domain, payload_type, payload)
 end
 
 --- Sign payload with keypair under a domain.
+---@param keypair Libp2pIdentityKeypair
+---@param domain string
+---@param payload_type string
+---@param payload string
+---@return Libp2pSignedEnvelope|nil envelope
+---@return table|nil err
 function M.sign(keypair, domain, payload_type, payload)
   if not keypair or type(keypair.public_key) ~= "string" or type(keypair.private_key) ~= "string" then
     return nil, error_mod.new("input", "keypair must contain public/private key bytes")
@@ -242,6 +264,11 @@ function M.sign(keypair, domain, payload_type, payload)
 end
 
 --- Verify envelope signature and optional expected peer.
+---@param envelope Libp2pSignedEnvelope|string
+---@param domain string
+---@param expected_peer_id? string
+---@return table|nil result
+---@return table|nil err
 function M.verify(envelope, domain, expected_peer_id)
   if type(envelope) ~= "table" then
     return nil, error_mod.new("input", "envelope must be a table")
