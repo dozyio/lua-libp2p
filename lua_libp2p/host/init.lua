@@ -1572,6 +1572,10 @@ function Host:close()
     end)(),
   })
   self._running = false
+  local services_stopped, services_stop_err = host_service_manager.stop(self)
+  if not services_stopped then
+    return nil, services_stop_err
+  end
   if self._runtime_impl and self._runtime_impl.stop then
     self._runtime_impl.stop(self)
   end

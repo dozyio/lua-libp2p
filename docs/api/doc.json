@@ -7837,11 +7837,11 @@
                 "deprecated": false,
                 "file": "lua_libp2p/host/init.lua",
                 "finish": [
-                    1677,
+                    1681,
                     20
                 ],
                 "start": [
-                    1677,
+                    1681,
                     10
                 ],
                 "type": "doc.class",
@@ -7855,22 +7855,22 @@
                 "deprecated": false,
                 "extends": {
                     "finish": [
-                        1680,
+                        1684,
                         38
                     ],
                     "start": [
-                        1680,
+                        1684,
                         29
                     ],
                     "type": "doc.type",
                     "types": [
                         {
                             "finish": [
-                                1680,
+                                1684,
                                 34
                             ],
                             "start": [
-                                1680,
+                                1684,
                                 29
                             ],
                             "type": "doc.type.name",
@@ -7878,11 +7878,11 @@
                         },
                         {
                             "finish": [
-                                1680,
+                                1684,
                                 38
                             ],
                             "start": [
-                                1680,
+                                1684,
                                 35
                             ],
                             "type": "doc.type.name",
@@ -7893,12 +7893,12 @@
                 },
                 "file": "lua_libp2p/host/init.lua",
                 "finish": [
-                    1680,
+                    1684,
                     38
                 ],
                 "name": "connection_manager",
                 "start": [
-                    1680,
+                    1684,
                     10
                 ],
                 "type": "doc.field",
@@ -7912,12 +7912,12 @@
                 "extends": {
                     "desc": " Stream muxer registry.",
                     "finish": [
-                        1679,
+                        1683,
                         34
                     ],
                     "rawdesc": " Stream muxer registry.",
                     "start": [
-                        1679,
+                        1683,
                         17
                     ],
                     "type": "doc.type",
@@ -7925,12 +7925,12 @@
                         {
                             "desc": " Stream muxer registry.",
                             "finish": [
-                                1679,
+                                1683,
                                 34
                             ],
                             "rawdesc": " Stream muxer registry.",
                             "start": [
-                                1679,
+                                1683,
                                 17
                             ],
                             "type": "doc.type.name",
@@ -7941,13 +7941,13 @@
                 },
                 "file": "lua_libp2p/host/init.lua",
                 "finish": [
-                    1679,
+                    1683,
                     34
                 ],
                 "name": "muxers",
                 "rawdesc": " Stream muxer registry.",
                 "start": [
-                    1679,
+                    1683,
                     10
                 ],
                 "type": "doc.field",
@@ -7961,12 +7961,12 @@
                 "extends": {
                     "desc": " Security transport registry.\n Keeps protocol IDs centralized while loading implementations only when used.",
                     "finish": [
-                        1678,
+                        1682,
                         59
                     ],
                     "rawdesc": " Security transport registry.\n Keeps protocol IDs centralized while loading implementations only when used.",
                     "start": [
-                        1678,
+                        1682,
                         30
                     ],
                     "type": "doc.type",
@@ -7974,12 +7974,12 @@
                         {
                             "desc": " Security transport registry.\n Keeps protocol IDs centralized while loading implementations only when used.",
                             "finish": [
-                                1678,
+                                1682,
                                 59
                             ],
                             "rawdesc": " Security transport registry.\n Keeps protocol IDs centralized while loading implementations only when used.",
                             "start": [
-                                1678,
+                                1682,
                                 30
                             ],
                             "type": "doc.type.name",
@@ -7990,13 +7990,13 @@
                 },
                 "file": "lua_libp2p/host/init.lua",
                 "finish": [
-                    1678,
+                    1682,
                     59
                 ],
                 "name": "security_transports",
                 "rawdesc": " Security transport registry.\n Keeps protocol IDs centralized while loading implementations only when used.",
                 "start": [
-                    1678,
+                    1682,
                     10
                 ],
                 "type": "doc.field",
@@ -8008,22 +8008,22 @@
                 "deprecated": false,
                 "extends": {
                     "finish": [
-                        1681,
+                        1685,
                         39
                     ],
                     "start": [
-                        1681,
+                        1685,
                         19
                     ],
                     "type": "doc.type",
                     "types": [
                         {
                             "finish": [
-                                1681,
+                                1685,
                                 39
                             ],
                             "start": [
-                                1681,
+                                1685,
                                 19
                             ],
                             "type": "doc.type.sign",
@@ -8034,12 +8034,12 @@
                 },
                 "file": "lua_libp2p/host/init.lua",
                 "finish": [
-                    1681,
+                    1685,
                     39
                 ],
                 "name": "services",
                 "start": [
-                    1681,
+                    1685,
                     10
                 ],
                 "type": "doc.field",
@@ -8058,11 +8058,11 @@
                 "deprecated": false,
                 "file": "lua_libp2p/host/init.lua",
                 "finish": [
-                    1636,
+                    1640,
                     26
                 ],
                 "start": [
-                    1636,
+                    1640,
                     10
                 ],
                 "type": "doc.class",
@@ -8076,22 +8076,22 @@
                 "deprecated": false,
                 "extends": {
                     "finish": [
-                        1660,
+                        1664,
                         32
                     ],
                     "start": [
-                        1660,
+                        1664,
                         26
                     ],
                     "type": "doc.type",
                     "types": [
                         {
                             "finish": [
-                                1660,
+                                1664,
                                 32
                             ],
                             "start": [
-                                1660,
+                                1664,
                                 26
                             ],
                             "type": "doc.type.name",
@@ -8102,12 +8102,12 @@
                 },
                 "file": "lua_libp2p/host/init.lua",
                 "finish": [
-                    1660,
+                    1664,
                     32
                 ],
                 "name": "accept_timeout",
                 "start": [
-                    1660,
+                    1664,
                     10
                 ],
                 "type": "doc.field",
@@ -8119,22 +8119,22 @@
                 "deprecated": false,
                 "extends": {
                     "finish": [
-                        1652,
+                        1656,
                         55
                     ],
                     "start": [
-                        1652,
+                        1656,
                         27
                     ],
                     "type": "doc.type",
                     "types": [
                         {
                             "finish": [
-                                1652,
+                                1656,
                                 55
                             ],
                             "start": [
-                                1652,
+                                1656,
                                 27
                             ],
                             "type": "doc.type.name",
@@ -8145,12 +8145,12 @@
                 },
                 "file": "lua_libp2p/host/init.lua",
                 "finish": [
-                    1652,
+                    1656,
                     55
                 ],
                 "name": "address_manager",
                 "start": [
-                    1652,
+                    1656,
                     10
                 ],
                 "type": "doc.field",
@@ -8162,22 +8162,22 @@
                 "deprecated": false,
                 "extends": {
                     "finish": [
-                        1644,
+                        1648,
                         37
                     ],
                     "start": [
-                        1644,
+                        1648,
                         30
                     ],
                     "type": "doc.type",
                     "types": [
                         {
                             "finish": [
-                                1644,
+                                1648,
                                 37
                             ],
                             "start": [
-                                1644,
+                                1648,
                                 30
                             ],
                             "type": "doc.type.name",
@@ -8188,12 +8188,12 @@
                 },
                 "file": "lua_libp2p/host/init.lua",
                 "finish": [
-                    1644,
+                    1648,
                     37
                 ],
                 "name": "advertise_observed",
                 "start": [
-                    1644,
+                    1648,
                     10
                 ],
                 "type": "doc.field",
@@ -8205,22 +8205,22 @@
                 "deprecated": false,
                 "extends": {
                     "finish": [
-                        1640,
+                        1644,
                         34
                     ],
                     "start": [
-                        1640,
+                        1644,
                         26
                     ],
                     "type": "doc.type",
                     "types": [
                         {
                             "finish": [
-                                1640,
+                                1644,
                                 34
                             ],
                             "start": [
-                                1640,
+                                1644,
                                 26
                             ],
                             "type": "doc.type.array",
@@ -8231,12 +8231,12 @@
                 },
                 "file": "lua_libp2p/host/init.lua",
                 "finish": [
-                    1640,
+                    1644,
                     34
                 ],
                 "name": "announce_addrs",
                 "start": [
-                    1640,
+                    1644,
                     10
                 ],
                 "type": "doc.field",
@@ -8250,12 +8250,12 @@
                 "extends": {
                     "desc": " AutoNAT v2 client/service.",
                     "finish": [
-                        1671,
+                        1675,
                         38
                     ],
                     "rawdesc": " AutoNAT v2 client/service.",
                     "start": [
-                        1671,
+                        1675,
                         19
                     ],
                     "type": "doc.type",
@@ -8263,12 +8263,12 @@
                         {
                             "desc": " AutoNAT v2 client/service.",
                             "finish": [
-                                1671,
+                                1675,
                                 38
                             ],
                             "rawdesc": " AutoNAT v2 client/service.",
                             "start": [
-                                1671,
+                                1675,
                                 19
                             ],
                             "type": "doc.type.name",
@@ -8279,13 +8279,13 @@
                 },
                 "file": "lua_libp2p/host/init.lua",
                 "finish": [
-                    1671,
+                    1675,
                     38
                 ],
                 "name": "autonat",
                 "rawdesc": " AutoNAT v2 client/service.",
                 "start": [
-                    1671,
+                    1675,
                     10
                 ],
                 "type": "doc.field",
@@ -8299,12 +8299,12 @@
                 "extends": {
                     "desc": " AutoRelay service.\n Maintains relay reservations and candidate discovery.\n\n `/p2p-circuit` listen addresses require this service; they describe relay\n listen capability rather than a TCP listener. AutoRelay can reserve explicitly\n configured relays and can discover candidates from peers advertising\n `/libp2p/circuit/relay/0.2.0/hop`.\n\n Active reservations publish relayed `/p2p-circuit` addresses through the\n address manager. Removed or expired reservations remove those addresses.\n Reservation lifecycle is emitted through `relay:reservation:active`,\n `relay:reservation:removed`, and `relay:reservation:failed` events.",
                     "finish": [
-                        1672,
+                        1676,
                         42
                     ],
                     "rawdesc": " AutoRelay service.\n Maintains relay reservations and candidate discovery.\n\n `/p2p-circuit` listen addresses require this service; they describe relay\n listen capability rather than a TCP listener. AutoRelay can reserve explicitly\n configured relays and can discover candidates from peers advertising\n `/libp2p/circuit/relay/0.2.0/hop`.\n\n Active reservations publish relayed `/p2p-circuit` addresses through the\n address manager. Removed or expired reservations remove those addresses.\n Reservation lifecycle is emitted through `relay:reservation:active`,\n `relay:reservation:removed`, and `relay:reservation:failed` events.",
                     "start": [
-                        1672,
+                        1676,
                         21
                     ],
                     "type": "doc.type",
@@ -8312,12 +8312,12 @@
                         {
                             "desc": " AutoRelay service.\n Maintains relay reservations and candidate discovery.\n\n `/p2p-circuit` listen addresses require this service; they describe relay\n listen capability rather than a TCP listener. AutoRelay can reserve explicitly\n configured relays and can discover candidates from peers advertising\n `/libp2p/circuit/relay/0.2.0/hop`.\n\n Active reservations publish relayed `/p2p-circuit` addresses through the\n address manager. Removed or expired reservations remove those addresses.\n Reservation lifecycle is emitted through `relay:reservation:active`,\n `relay:reservation:removed`, and `relay:reservation:failed` events.",
                             "finish": [
-                                1672,
+                                1676,
                                 42
                             ],
                             "rawdesc": " AutoRelay service.\n Maintains relay reservations and candidate discovery.\n\n `/p2p-circuit` listen addresses require this service; they describe relay\n listen capability rather than a TCP listener. AutoRelay can reserve explicitly\n configured relays and can discover candidates from peers advertising\n `/libp2p/circuit/relay/0.2.0/hop`.\n\n Active reservations publish relayed `/p2p-circuit` addresses through the\n address manager. Removed or expired reservations remove those addresses.\n Reservation lifecycle is emitted through `relay:reservation:active`,\n `relay:reservation:removed`, and `relay:reservation:failed` events.",
                             "start": [
-                                1672,
+                                1676,
                                 21
                             ],
                             "type": "doc.type.name",
@@ -8328,13 +8328,13 @@
                 },
                 "file": "lua_libp2p/host/init.lua",
                 "finish": [
-                    1672,
+                    1676,
                     42
                 ],
                 "name": "autorelay",
                 "rawdesc": " AutoRelay service.\n Maintains relay reservations and candidate discovery.\n\n `/p2p-circuit` listen addresses require this service; they describe relay\n listen capability rather than a TCP listener. AutoRelay can reserve explicitly\n configured relays and can discover candidates from peers advertising\n `/libp2p/circuit/relay/0.2.0/hop`.\n\n Active reservations publish relayed `/p2p-circuit` addresses through the\n address manager. Removed or expired reservations remove those addresses.\n Reservation lifecycle is emitted through `relay:reservation:active`,\n `relay:reservation:removed`, and `relay:reservation:failed` events.",
                 "start": [
-                    1672,
+                    1676,
                     10
                 ],
                 "type": "doc.field",
@@ -8346,22 +8346,22 @@
                 "deprecated": false,
                 "extends": {
                     "finish": [
-                        1657,
+                        1661,
                         27
                     ],
                     "start": [
-                        1657,
+                        1661,
                         20
                     ],
                     "type": "doc.type",
                     "types": [
                         {
                             "finish": [
-                                1657,
+                                1661,
                                 27
                             ],
                             "start": [
-                                1657,
+                                1661,
                                 20
                             ],
                             "type": "doc.type.name",
@@ -8372,12 +8372,12 @@
                 },
                 "file": "lua_libp2p/host/init.lua",
                 "finish": [
-                    1657,
+                    1661,
                     27
                 ],
                 "name": "blocking",
                 "start": [
-                    1657,
+                    1661,
                     10
                 ],
                 "type": "doc.field",
@@ -8389,22 +8389,22 @@
                 "deprecated": false,
                 "extends": {
                     "finish": [
-                        1658,
+                        1662,
                         33
                     ],
                     "start": [
-                        1658,
+                        1662,
                         27
                     ],
                     "type": "doc.type",
                     "types": [
                         {
                             "finish": [
-                                1658,
+                                1662,
                                 33
                             ],
                             "start": [
-                                1658,
+                                1662,
                                 27
                             ],
                             "type": "doc.type.name",
@@ -8415,12 +8415,12 @@
                 },
                 "file": "lua_libp2p/host/init.lua",
                 "finish": [
-                    1658,
+                    1662,
                     33
                 ],
                 "name": "connect_timeout",
                 "start": [
-                    1658,
+                    1662,
                     10
                 ],
                 "type": "doc.field",
@@ -8434,12 +8434,12 @@
                 "extends": {
                     "desc": " Connection manager with dial queue and reuse policy.",
                     "finish": [
-                        1655,
+                        1659,
                         97
                     ],
                     "rawdesc": " Connection manager with dial queue and reuse policy.",
                     "start": [
-                        1655,
+                        1659,
                         30
                     ],
                     "type": "doc.type",
@@ -8447,12 +8447,12 @@
                         {
                             "desc": " Connection manager with dial queue and reuse policy.",
                             "finish": [
-                                1655,
+                                1659,
                                 59
                             ],
                             "rawdesc": " Connection manager with dial queue and reuse policy.",
                             "start": [
-                                1655,
+                                1659,
                                 30
                             ],
                             "type": "doc.type.name",
@@ -8460,11 +8460,11 @@
                         },
                         {
                             "finish": [
-                                1655,
+                                1659,
                                 91
                             ],
                             "start": [
-                                1655,
+                                1659,
                                 60
                             ],
                             "type": "doc.type.name",
@@ -8472,11 +8472,11 @@
                         },
                         {
                             "finish": [
-                                1655,
+                                1659,
                                 97
                             ],
                             "start": [
-                                1655,
+                                1659,
                                 92
                             ],
                             "type": "doc.type.boolean",
@@ -8487,13 +8487,13 @@
                 },
                 "file": "lua_libp2p/host/init.lua",
                 "finish": [
-                    1655,
+                    1659,
                     97
                 ],
                 "name": "connection_manager",
                 "rawdesc": "Options map, prebuilt manager object, or false.",
                 "start": [
-                    1655,
+                    1659,
                     10
                 ],
                 "type": "doc.field",
@@ -8505,22 +8505,22 @@
                 "deprecated": false,
                 "extends": {
                     "finish": [
-                        1666,
+                        1670,
                         42
                     ],
                     "start": [
-                        1666,
+                        1670,
                         35
                     ],
                     "type": "doc.type",
                     "types": [
                         {
                             "finish": [
-                                1666,
+                                1670,
                                 42
                             ],
                             "start": [
-                                1666,
+                                1670,
                                 35
                             ],
                             "type": "doc.type.name",
@@ -8531,12 +8531,12 @@
                 },
                 "file": "lua_libp2p/host/init.lua",
                 "finish": [
-                    1666,
+                    1670,
                     42
                 ],
                 "name": "debug_connection_events",
                 "start": [
-                    1666,
+                    1670,
                     10
                 ],
                 "type": "doc.field",
@@ -8550,12 +8550,12 @@
                 "extends": {
                     "desc": " Identify protocol service.\n Registers `/ipfs/id/*` handlers and provides request helpers.",
                     "finish": [
-                        1670,
+                        1674,
                         40
                     ],
                     "rawdesc": " Identify protocol service.\n Registers `/ipfs/id/*` handlers and provides request helpers.",
                     "start": [
-                        1670,
+                        1674,
                         20
                     ],
                     "type": "doc.type",
@@ -8563,12 +8563,12 @@
                         {
                             "desc": " Identify protocol service.\n Registers `/ipfs/id/*` handlers and provides request helpers.",
                             "finish": [
-                                1670,
+                                1674,
                                 40
                             ],
                             "rawdesc": " Identify protocol service.\n Registers `/ipfs/id/*` handlers and provides request helpers.",
                             "start": [
-                                1670,
+                                1674,
                                 20
                             ],
                             "type": "doc.type.name",
@@ -8579,13 +8579,13 @@
                 },
                 "file": "lua_libp2p/host/init.lua",
                 "finish": [
-                    1670,
+                    1674,
                     40
                 ],
                 "name": "identify",
                 "rawdesc": " Identify protocol service.\n Registers `/ipfs/id/*` handlers and provides request helpers.",
                 "start": [
-                    1670,
+                    1674,
                     10
                 ],
                 "type": "doc.field",
@@ -8598,22 +8598,22 @@
                 "desc": "Local identity keypair. Generated when omitted.",
                 "extends": {
                     "finish": [
-                        1637,
+                        1641,
                         41
                     ],
                     "start": [
-                        1637,
+                        1641,
                         20
                     ],
                     "type": "doc.type",
                     "types": [
                         {
                             "finish": [
-                                1637,
+                                1641,
                                 41
                             ],
                             "start": [
-                                1637,
+                                1641,
                                 20
                             ],
                             "type": "doc.type.name",
@@ -8624,13 +8624,13 @@
                 },
                 "file": "lua_libp2p/host/init.lua",
                 "finish": [
-                    1637,
+                    1641,
                     41
                 ],
                 "name": "identity",
                 "rawdesc": "Local identity keypair. Generated when omitted.",
                 "start": [
-                    1637,
+                    1641,
                     10
                 ],
                 "type": "doc.field",
@@ -8644,12 +8644,12 @@
                 "extends": {
                     "desc": " Key loading and signing helpers.",
                     "finish": [
-                        1638,
+                        1642,
                         43
                     ],
                     "rawdesc": " Key loading and signing helpers.",
                     "start": [
-                        1638,
+                        1642,
                         25
                     ],
                     "type": "doc.type",
@@ -8657,12 +8657,12 @@
                         {
                             "desc": " Key loading and signing helpers.",
                             "finish": [
-                                1638,
+                                1642,
                                 43
                             ],
                             "rawdesc": " Key loading and signing helpers.",
                             "start": [
-                                1638,
+                                1642,
                                 25
                             ],
                             "type": "doc.type.name",
@@ -8673,13 +8673,13 @@
                 },
                 "file": "lua_libp2p/host/init.lua",
                 "finish": [
-                    1638,
+                    1642,
                     43
                 ],
                 "name": "identity_type",
                 "rawdesc": "Key type used when generating identity. Default: `ed25519`.",
                 "start": [
-                    1638,
+                    1642,
                     10
                 ],
                 "type": "doc.field",
@@ -8691,22 +8691,22 @@
                 "deprecated": false,
                 "extends": {
                     "finish": [
-                        1659,
+                        1663,
                         28
                     ],
                     "start": [
-                        1659,
+                        1663,
                         22
                     ],
                     "type": "doc.type",
                     "types": [
                         {
                             "finish": [
-                                1659,
+                                1663,
                                 28
                             ],
                             "start": [
-                                1659,
+                                1663,
                                 22
                             ],
                             "type": "doc.type.name",
@@ -8717,12 +8717,12 @@
                 },
                 "file": "lua_libp2p/host/init.lua",
                 "finish": [
-                    1659,
+                    1663,
                     28
                 ],
                 "name": "io_timeout",
                 "start": [
-                    1659,
+                    1663,
                     10
                 ],
                 "type": "doc.field",
@@ -8736,12 +8736,12 @@
                 "extends": {
                     "desc": " Kademlia DHT service and client operations.\n\n The default profile targets the public libp2p DHT: `k = 20`,\n `alpha = 10`, `disjoint_paths = 10`, and `max_concurrent_queries = 32`.\n DHT messages use `lua_libp2p.network.MESSAGE_SIZE_MAX` by default, matching\n the practical 4 MiB KAD RPC cap used by Go and JS implementations.\n\n Address filtering is separate from transport dialability. The built-in modes\n are `public`, `private`, and `all`; callers may also pass a function for\n custom policy. Provider records default to a 48 hour TTL, provider addresses\n learned from provider records default to 24 hours, and background reprovide\n runs every 22 hours when enabled.\n\n The DHT starts in client mode by default. Set `mode = \"server\"` or enable\n server-mode behavior explicitly when the node should serve and advertise KAD.",
                     "finish": [
-                        1673,
+                        1677,
                         37
                     ],
                     "rawdesc": " Kademlia DHT service and client operations.\n\n The default profile targets the public libp2p DHT: `k = 20`,\n `alpha = 10`, `disjoint_paths = 10`, and `max_concurrent_queries = 32`.\n DHT messages use `lua_libp2p.network.MESSAGE_SIZE_MAX` by default, matching\n the practical 4 MiB KAD RPC cap used by Go and JS implementations.\n\n Address filtering is separate from transport dialability. The built-in modes\n are `public`, `private`, and `all`; callers may also pass a function for\n custom policy. Provider records default to a 48 hour TTL, provider addresses\n learned from provider records default to 24 hours, and background reprovide\n runs every 22 hours when enabled.\n\n The DHT starts in client mode by default. Set `mode = \"server\"` or enable\n server-mode behavior explicitly when the node should serve and advertise KAD.",
                     "start": [
-                        1673,
+                        1677,
                         19
                     ],
                     "type": "doc.type",
@@ -8749,12 +8749,12 @@
                         {
                             "desc": " Kademlia DHT service and client operations.\n\n The default profile targets the public libp2p DHT: `k = 20`,\n `alpha = 10`, `disjoint_paths = 10`, and `max_concurrent_queries = 32`.\n DHT messages use `lua_libp2p.network.MESSAGE_SIZE_MAX` by default, matching\n the practical 4 MiB KAD RPC cap used by Go and JS implementations.\n\n Address filtering is separate from transport dialability. The built-in modes\n are `public`, `private`, and `all`; callers may also pass a function for\n custom policy. Provider records default to a 48 hour TTL, provider addresses\n learned from provider records default to 24 hours, and background reprovide\n runs every 22 hours when enabled.\n\n The DHT starts in client mode by default. Set `mode = \"server\"` or enable\n server-mode behavior explicitly when the node should serve and advertise KAD.",
                             "finish": [
-                                1673,
+                                1677,
                                 37
                             ],
                             "rawdesc": " Kademlia DHT service and client operations.\n\n The default profile targets the public libp2p DHT: `k = 20`,\n `alpha = 10`, `disjoint_paths = 10`, and `max_concurrent_queries = 32`.\n DHT messages use `lua_libp2p.network.MESSAGE_SIZE_MAX` by default, matching\n the practical 4 MiB KAD RPC cap used by Go and JS implementations.\n\n Address filtering is separate from transport dialability. The built-in modes\n are `public`, `private`, and `all`; callers may also pass a function for\n custom policy. Provider records default to a 48 hour TTL, provider addresses\n learned from provider records default to 24 hours, and background reprovide\n runs every 22 hours when enabled.\n\n The DHT starts in client mode by default. Set `mode = \"server\"` or enable\n server-mode behavior explicitly when the node should serve and advertise KAD.",
                             "start": [
-                                1673,
+                                1677,
                                 19
                             ],
                             "type": "doc.type.name",
@@ -8765,13 +8765,13 @@
                 },
                 "file": "lua_libp2p/host/init.lua",
                 "finish": [
-                    1673,
+                    1677,
                     37
                 ],
                 "name": "kad_dht",
                 "rawdesc": " Kademlia DHT service and client operations.\n\n The default profile targets the public libp2p DHT: `k = 20`,\n `alpha = 10`, `disjoint_paths = 10`, and `max_concurrent_queries = 32`.\n DHT messages use `lua_libp2p.network.MESSAGE_SIZE_MAX` by default, matching\n the practical 4 MiB KAD RPC cap used by Go and JS implementations.\n\n Address filtering is separate from transport dialability. The built-in modes\n are `public`, `private`, and `all`; callers may also pass a function for\n custom policy. Provider records default to a 48 hour TTL, provider addresses\n learned from provider records default to 24 hours, and background reprovide\n runs every 22 hours when enabled.\n\n The DHT starts in client mode by default. Set `mode = \"server\"` or enable\n server-mode behavior explicitly when the node should serve and advertise KAD.",
                 "start": [
-                    1673,
+                    1677,
                     10
                 ],
                 "type": "doc.field",
@@ -8783,22 +8783,22 @@
                 "deprecated": false,
                 "extends": {
                     "finish": [
-                        1639,
+                        1643,
                         32
                     ],
                     "start": [
-                        1639,
+                        1643,
                         24
                     ],
                     "type": "doc.type",
                     "types": [
                         {
                             "finish": [
-                                1639,
+                                1643,
                                 32
                             ],
                             "start": [
-                                1639,
+                                1643,
                                 24
                             ],
                             "type": "doc.type.array",
@@ -8809,12 +8809,12 @@
                 },
                 "file": "lua_libp2p/host/init.lua",
                 "finish": [
-                    1639,
+                    1643,
                     32
                 ],
                 "name": "listen_addrs",
                 "start": [
-                    1639,
+                    1643,
                     10
                 ],
                 "type": "doc.field",
@@ -8826,22 +8826,22 @@
                 "deprecated": false,
                 "extends": {
                     "finish": [
-                        1661,
+                        1665,
                         33
                     ],
                     "start": [
-                        1661,
+                        1665,
                         26
                     ],
                     "type": "doc.type",
                     "types": [
                         {
                             "finish": [
-                                1661,
+                                1665,
                                 33
                             ],
                             "start": [
-                                1661,
+                                1665,
                                 26
                             ],
                             "type": "doc.type.name",
@@ -8852,12 +8852,12 @@
                 },
                 "file": "lua_libp2p/host/init.lua",
                 "finish": [
-                    1661,
+                    1665,
                     33
                 ],
                 "name": "max_iterations",
                 "start": [
-                    1661,
+                    1665,
                     10
                 ],
                 "type": "doc.field",
@@ -8871,12 +8871,12 @@
                 "extends": {
                     "desc": " Stream muxer registry.",
                     "finish": [
-                        1647,
+                        1651,
                         35
                     ],
                     "rawdesc": " Stream muxer registry.",
                     "start": [
-                        1647,
+                        1651,
                         18
                     ],
                     "type": "doc.type",
@@ -8884,12 +8884,12 @@
                         {
                             "desc": " Stream muxer registry.",
                             "finish": [
-                                1647,
+                                1651,
                                 35
                             ],
                             "rawdesc": " Stream muxer registry.",
                             "start": [
-                                1647,
+                                1651,
                                 18
                             ],
                             "type": "doc.type.name",
@@ -8900,13 +8900,13 @@
                 },
                 "file": "lua_libp2p/host/init.lua",
                 "finish": [
-                    1647,
+                    1651,
                     35
                 ],
                 "name": "muxers",
                 "rawdesc": " Stream muxer registry.",
                 "start": [
-                    1647,
+                    1651,
                     10
                 ],
                 "type": "doc.field",
@@ -8918,22 +8918,22 @@
                 "deprecated": false,
                 "extends": {
                     "finish": [
-                        1641,
+                        1645,
                         37
                     ],
                     "start": [
-                        1641,
+                        1645,
                         29
                     ],
                     "type": "doc.type",
                     "types": [
                         {
                             "finish": [
-                                1641,
+                                1645,
                                 37
                             ],
                             "start": [
-                                1641,
+                                1645,
                                 29
                             ],
                             "type": "doc.type.array",
@@ -8944,12 +8944,12 @@
                 },
                 "file": "lua_libp2p/host/init.lua",
                 "finish": [
-                    1641,
+                    1645,
                     37
                 ],
                 "name": "no_announce_addrs",
                 "start": [
-                    1641,
+                    1645,
                     10
                 ],
                 "type": "doc.field",
@@ -8961,22 +8961,22 @@
                 "deprecated": false,
                 "extends": {
                     "finish": [
-                        1642,
+                        1646,
                         34
                     ],
                     "start": [
-                        1642,
+                        1646,
                         26
                     ],
                     "type": "doc.type",
                     "types": [
                         {
                             "finish": [
-                                1642,
+                                1646,
                                 34
                             ],
                             "start": [
-                                1642,
+                                1646,
                                 26
                             ],
                             "type": "doc.type.array",
@@ -8987,12 +8987,12 @@
                 },
                 "file": "lua_libp2p/host/init.lua",
                 "finish": [
-                    1642,
+                    1646,
                     34
                 ],
                 "name": "observed_addrs",
                 "start": [
-                    1642,
+                    1646,
                     10
                 ],
                 "type": "doc.field",
@@ -9004,22 +9004,22 @@
                 "deprecated": false,
                 "extends": {
                     "finish": [
-                        1667,
+                        1671,
                         51
                     ],
                     "start": [
-                        1667,
+                        1671,
                         14
                     ],
                     "type": "doc.type",
                     "types": [
                         {
                             "finish": [
-                                1667,
+                                1671,
                                 51
                             ],
                             "start": [
-                                1667,
+                                1671,
                                 14
                             ],
                             "type": "doc.type.sign",
@@ -9030,12 +9030,12 @@
                 },
                 "file": "lua_libp2p/host/init.lua",
                 "finish": [
-                    1667,
+                    1671,
                     51
                 ],
                 "name": "on",
                 "start": [
-                    1667,
+                    1671,
                     10
                 ],
                 "type": "doc.field",
@@ -9047,11 +9047,11 @@
                 "deprecated": false,
                 "extends": {
                     "finish": [
-                        1668,
+                        1672,
                         43
                     ],
                     "start": [
-                        1668,
+                        1672,
                         22
                     ],
                     "type": "doc.type",
@@ -9060,24 +9060,24 @@
                             "args": [
                                 {
                                     "finish": [
-                                        1668,
+                                        1672,
                                         42
                                     ],
                                     "name": {
                                         "[1]": "host",
                                         "finish": [
-                                            1668,
+                                            1672,
                                             30
                                         ],
                                         "start": [
-                                            1668,
+                                            1672,
                                             26
                                         ],
                                         "type": "doc.type.arg.name",
                                         "view": "host"
                                     },
                                     "start": [
-                                        1668,
+                                        1672,
                                         26
                                     ],
                                     "type": "doc.type.arg",
@@ -9085,14 +9085,14 @@
                                 }
                             ],
                             "finish": [
-                                1668,
+                                1672,
                                 43
                             ],
                             "returns": {
                                 "view": "unknown"
                             },
                             "start": [
-                                1668,
+                                1672,
                                 22
                             ],
                             "type": "doc.type.function",
@@ -9103,12 +9103,12 @@
                 },
                 "file": "lua_libp2p/host/init.lua",
                 "finish": [
-                    1668,
+                    1672,
                     43
                 ],
                 "name": "on_started",
                 "start": [
-                    1668,
+                    1672,
                     10
                 ],
                 "type": "doc.field",
@@ -9120,22 +9120,22 @@
                 "deprecated": false,
                 "extends": {
                     "finish": [
-                        1649,
+                        1653,
                         46
                     ],
                     "start": [
-                        1649,
+                        1653,
                         26
                     ],
                     "type": "doc.type",
                     "types": [
                         {
                             "finish": [
-                                1649,
+                                1653,
                                 46
                             ],
                             "start": [
-                                1649,
+                                1653,
                                 26
                             ],
                             "type": "doc.type.name",
@@ -9146,12 +9146,12 @@
                 },
                 "file": "lua_libp2p/host/init.lua",
                 "finish": [
-                    1649,
+                    1653,
                     46
                 ],
                 "name": "peer_discovery",
                 "start": [
-                    1649,
+                    1653,
                     10
                 ],
                 "type": "doc.field",
@@ -9163,22 +9163,22 @@
                 "deprecated": false,
                 "extends": {
                     "finish": [
-                        1650,
+                        1654,
                         44
                     ],
                     "start": [
-                        1650,
+                        1654,
                         21
                     ],
                     "type": "doc.type",
                     "types": [
                         {
                             "finish": [
-                                1650,
+                                1654,
                                 44
                             ],
                             "start": [
-                                1650,
+                                1654,
                                 21
                             ],
                             "type": "doc.type.name",
@@ -9189,12 +9189,12 @@
                 },
                 "file": "lua_libp2p/host/init.lua",
                 "finish": [
-                    1650,
+                    1654,
                     44
                 ],
                 "name": "peerstore",
                 "start": [
-                    1650,
+                    1654,
                     10
                 ],
                 "type": "doc.field",
@@ -9208,12 +9208,12 @@
                 "extends": {
                     "desc": " Peerstore.",
                     "finish": [
-                        1651,
+                        1655,
                         50
                     ],
                     "rawdesc": " Peerstore.",
                     "start": [
-                        1651,
+                        1655,
                         29
                     ],
                     "type": "doc.type",
@@ -9221,12 +9221,12 @@
                         {
                             "desc": " Peerstore.",
                             "finish": [
-                                1651,
+                                1655,
                                 50
                             ],
                             "rawdesc": " Peerstore.",
                             "start": [
-                                1651,
+                                1655,
                                 29
                             ],
                             "type": "doc.type.name",
@@ -9237,13 +9237,13 @@
                 },
                 "file": "lua_libp2p/host/init.lua",
                 "finish": [
-                    1651,
+                    1655,
                     50
                 ],
                 "name": "peerstore_options",
                 "rawdesc": " Peerstore.",
                 "start": [
-                    1651,
+                    1655,
                     10
                 ],
                 "type": "doc.field",
@@ -9257,12 +9257,12 @@
                 "extends": {
                     "desc": " Perf protocol service.",
                     "finish": [
-                        1674,
+                        1678,
                         32
                     ],
                     "rawdesc": " Perf protocol service.",
                     "start": [
-                        1674,
+                        1678,
                         16
                     ],
                     "type": "doc.type",
@@ -9270,12 +9270,12 @@
                         {
                             "desc": " Perf protocol service.",
                             "finish": [
-                                1674,
+                                1678,
                                 32
                             ],
                             "rawdesc": " Perf protocol service.",
                             "start": [
-                                1674,
+                                1678,
                                 16
                             ],
                             "type": "doc.type.name",
@@ -9286,13 +9286,13 @@
                 },
                 "file": "lua_libp2p/host/init.lua",
                 "finish": [
-                    1674,
+                    1678,
                     32
                 ],
                 "name": "perf",
                 "rawdesc": " Perf protocol service.",
                 "start": [
-                    1674,
+                    1678,
                     10
                 ],
                 "type": "doc.field",
@@ -9304,22 +9304,22 @@
                 "deprecated": false,
                 "extends": {
                     "finish": [
-                        1662,
+                        1666,
                         31
                     ],
                     "start": [
-                        1662,
+                        1666,
                         25
                     ],
                     "type": "doc.type",
                     "types": [
                         {
                             "finish": [
-                                1662,
+                                1666,
                                 31
                             ],
                             "start": [
-                                1662,
+                                1666,
                                 25
                             ],
                             "type": "doc.type.name",
@@ -9330,12 +9330,12 @@
                 },
                 "file": "lua_libp2p/host/init.lua",
                 "finish": [
-                    1662,
+                    1666,
                     31
                 ],
                 "name": "poll_interval",
                 "start": [
-                    1662,
+                    1666,
                     10
                 ],
                 "type": "doc.field",
@@ -9347,22 +9347,22 @@
                 "deprecated": false,
                 "extends": {
                     "finish": [
-                        1643,
+                        1647,
                         31
                     ],
                     "start": [
-                        1643,
+                        1647,
                         23
                     ],
                     "type": "doc.type",
                     "types": [
                         {
                             "finish": [
-                                1643,
+                                1647,
                                 31
                             ],
                             "start": [
-                                1643,
+                                1647,
                                 23
                             ],
                             "type": "doc.type.array",
@@ -9373,12 +9373,12 @@
                 },
                 "file": "lua_libp2p/host/init.lua",
                 "finish": [
-                    1643,
+                    1647,
                     31
                 ],
                 "name": "relay_addrs",
                 "start": [
-                    1643,
+                    1647,
                     10
                 ],
                 "type": "doc.field",
@@ -9390,22 +9390,22 @@
                 "deprecated": false,
                 "extends": {
                     "finish": [
-                        1653,
+                        1657,
                         91
                     ],
                     "start": [
-                        1653,
+                        1657,
                         28
                     ],
                     "type": "doc.type",
                     "types": [
                         {
                             "finish": [
-                                1653,
+                                1657,
                                 55
                             ],
                             "start": [
-                                1653,
+                                1657,
                                 28
                             ],
                             "type": "doc.type.name",
@@ -9413,11 +9413,11 @@
                         },
                         {
                             "finish": [
-                                1653,
+                                1657,
                                 85
                             ],
                             "start": [
-                                1653,
+                                1657,
                                 56
                             ],
                             "type": "doc.type.name",
@@ -9425,11 +9425,11 @@
                         },
                         {
                             "finish": [
-                                1653,
+                                1657,
                                 91
                             ],
                             "start": [
-                                1653,
+                                1657,
                                 86
                             ],
                             "type": "doc.type.boolean",
@@ -9440,12 +9440,12 @@
                 },
                 "file": "lua_libp2p/host/init.lua",
                 "finish": [
-                    1653,
+                    1657,
                     91
                 ],
                 "name": "resource_manager",
                 "start": [
-                    1653,
+                    1657,
                     10
                 ],
                 "type": "doc.field",
@@ -9457,22 +9457,22 @@
                 "deprecated": false,
                 "extends": {
                     "finish": [
-                        1654,
+                        1658,
                         63
                     ],
                     "start": [
-                        1654,
+                        1658,
                         36
                     ],
                     "type": "doc.type",
                     "types": [
                         {
                             "finish": [
-                                1654,
+                                1658,
                                 63
                             ],
                             "start": [
-                                1654,
+                                1658,
                                 36
                             ],
                             "type": "doc.type.name",
@@ -9483,12 +9483,12 @@
                 },
                 "file": "lua_libp2p/host/init.lua",
                 "finish": [
-                    1654,
+                    1658,
                     63
                 ],
                 "name": "resource_manager_options",
                 "start": [
-                    1654,
+                    1658,
                     10
                 ],
                 "type": "doc.field",
@@ -9500,22 +9500,22 @@
                 "deprecated": false,
                 "extends": {
                     "finish": [
-                        1656,
+                        1660,
                         31
                     ],
                     "start": [
-                        1656,
+                        1660,
                         19
                     ],
                     "type": "doc.type",
                     "types": [
                         {
                             "finish": [
-                                1656,
+                                1660,
                                 25
                             ],
                             "start": [
-                                1656,
+                                1660,
                                 19
                             ],
                             "type": "doc.type.string",
@@ -9523,11 +9523,11 @@
                         },
                         {
                             "finish": [
-                                1656,
+                                1660,
                                 31
                             ],
                             "start": [
-                                1656,
+                                1660,
                                 26
                             ],
                             "type": "doc.type.string",
@@ -9538,12 +9538,12 @@
                 },
                 "file": "lua_libp2p/host/init.lua",
                 "finish": [
-                    1656,
+                    1660,
                     31
                 ],
                 "name": "runtime",
                 "start": [
-                    1656,
+                    1660,
                     10
                 ],
                 "type": "doc.field",
@@ -9557,12 +9557,12 @@
                 "extends": {
                     "desc": " Security transport registry.\n Keeps protocol IDs centralized while loading implementations only when used.",
                     "finish": [
-                        1646,
+                        1650,
                         60
                     ],
                     "rawdesc": " Security transport registry.\n Keeps protocol IDs centralized while loading implementations only when used.",
                     "start": [
-                        1646,
+                        1650,
                         31
                     ],
                     "type": "doc.type",
@@ -9570,12 +9570,12 @@
                         {
                             "desc": " Security transport registry.\n Keeps protocol IDs centralized while loading implementations only when used.",
                             "finish": [
-                                1646,
+                                1650,
                                 60
                             ],
                             "rawdesc": " Security transport registry.\n Keeps protocol IDs centralized while loading implementations only when used.",
                             "start": [
-                                1646,
+                                1650,
                                 31
                             ],
                             "type": "doc.type.name",
@@ -9586,13 +9586,13 @@
                 },
                 "file": "lua_libp2p/host/init.lua",
                 "finish": [
-                    1646,
+                    1650,
                     60
                 ],
                 "name": "security_transports",
                 "rawdesc": " Security transport registry.\n Keeps protocol IDs centralized while loading implementations only when used.",
                 "start": [
-                    1646,
+                    1650,
                     10
                 ],
                 "type": "doc.field",
@@ -9604,22 +9604,22 @@
                 "deprecated": false,
                 "extends": {
                     "finish": [
-                        1648,
+                        1652,
                         40
                     ],
                     "start": [
-                        1648,
+                        1652,
                         20
                     ],
                     "type": "doc.type",
                     "types": [
                         {
                             "finish": [
-                                1648,
+                                1652,
                                 40
                             ],
                             "start": [
-                                1648,
+                                1652,
                                 20
                             ],
                             "type": "doc.type.name",
@@ -9630,12 +9630,12 @@
                 },
                 "file": "lua_libp2p/host/init.lua",
                 "finish": [
-                    1648,
+                    1652,
                     40
                 ],
                 "name": "services",
                 "start": [
-                    1648,
+                    1652,
                     10
                 ],
                 "type": "doc.field",
@@ -9647,22 +9647,22 @@
                 "deprecated": false,
                 "extends": {
                     "finish": [
-                        1665,
+                        1669,
                         37
                     ],
                     "start": [
-                        1665,
+                        1669,
                         31
                     ],
                     "type": "doc.type",
                     "types": [
                         {
                             "finish": [
-                                1665,
+                                1669,
                                 37
                             ],
                             "start": [
-                                1665,
+                                1669,
                                 31
                             ],
                             "type": "doc.type.name",
@@ -9673,12 +9673,12 @@
                 },
                 "file": "lua_libp2p/host/init.lua",
                 "finish": [
-                    1665,
+                    1669,
                     37
                 ],
                 "name": "task_prune_interval",
                 "start": [
-                    1665,
+                    1669,
                     10
                 ],
                 "type": "doc.field",
@@ -9690,22 +9690,22 @@
                 "deprecated": false,
                 "extends": {
                     "finish": [
-                        1663,
+                        1667,
                         37
                     ],
                     "start": [
-                        1663,
+                        1667,
                         30
                     ],
                     "type": "doc.type",
                     "types": [
                         {
                             "finish": [
-                                1663,
+                                1667,
                                 37
                             ],
                             "start": [
-                                1663,
+                                1667,
                                 30
                             ],
                             "type": "doc.type.name",
@@ -9716,12 +9716,12 @@
                 },
                 "file": "lua_libp2p/host/init.lua",
                 "finish": [
-                    1663,
+                    1667,
                     37
                 ],
                 "name": "task_resume_budget",
                 "start": [
-                    1663,
+                    1667,
                     10
                 ],
                 "type": "doc.field",
@@ -9733,22 +9733,22 @@
                 "deprecated": false,
                 "extends": {
                     "finish": [
-                        1664,
+                        1668,
                         32
                     ],
                     "start": [
-                        1664,
+                        1668,
                         26
                     ],
                     "type": "doc.type",
                     "types": [
                         {
                             "finish": [
-                                1664,
+                                1668,
                                 32
                             ],
                             "start": [
-                                1664,
+                                1668,
                                 26
                             ],
                             "type": "doc.type.name",
@@ -9759,12 +9759,12 @@
                 },
                 "file": "lua_libp2p/host/init.lua",
                 "finish": [
-                    1664,
+                    1668,
                     32
                 ],
                 "name": "task_retention",
                 "start": [
-                    1664,
+                    1668,
                     10
                 ],
                 "type": "doc.field",
@@ -9778,12 +9778,12 @@
                 "extends": {
                     "desc": " Poll-based TCP transport implementation.",
                     "finish": [
-                        1669,
+                        1673,
                         30
                     ],
                     "rawdesc": " Poll-based TCP transport implementation.",
                     "start": [
-                        1669,
+                        1673,
                         15
                     ],
                     "type": "doc.type",
@@ -9791,12 +9791,12 @@
                         {
                             "desc": " Poll-based TCP transport implementation.",
                             "finish": [
-                                1669,
+                                1673,
                                 30
                             ],
                             "rawdesc": " Poll-based TCP transport implementation.",
                             "start": [
-                                1669,
+                                1673,
                                 15
                             ],
                             "type": "doc.type.name",
@@ -9807,13 +9807,13 @@
                 },
                 "file": "lua_libp2p/host/init.lua",
                 "finish": [
-                    1669,
+                    1673,
                     30
                 ],
                 "name": "tcp",
                 "rawdesc": " Poll-based TCP transport implementation.",
                 "start": [
-                    1669,
+                    1673,
                     10
                 ],
                 "type": "doc.field",
@@ -9825,22 +9825,22 @@
                 "deprecated": false,
                 "extends": {
                     "finish": [
-                        1645,
+                        1649,
                         43
                     ],
                     "start": [
-                        1645,
+                        1649,
                         22
                     ],
                     "type": "doc.type",
                     "types": [
                         {
                             "finish": [
-                                1645,
+                                1649,
                                 43
                             ],
                             "start": [
-                                1645,
+                                1649,
                                 22
                             ],
                             "type": "doc.type.array",
@@ -9851,12 +9851,12 @@
                 },
                 "file": "lua_libp2p/host/init.lua",
                 "finish": [
-                    1645,
+                    1649,
                     43
                 ],
                 "name": "transports",
                 "start": [
-                    1645,
+                    1649,
                     10
                 ],
                 "type": "doc.field",
@@ -9870,12 +9870,12 @@
                 "extends": {
                     "desc": " UPnP NAT mapping service.",
                     "finish": [
-                        1675,
+                        1679,
                         39
                     ],
                     "rawdesc": " UPnP NAT mapping service.",
                     "start": [
-                        1675,
+                        1679,
                         20
                     ],
                     "type": "doc.type",
@@ -9883,12 +9883,12 @@
                         {
                             "desc": " UPnP NAT mapping service.",
                             "finish": [
-                                1675,
+                                1679,
                                 39
                             ],
                             "rawdesc": " UPnP NAT mapping service.",
                             "start": [
-                                1675,
+                                1679,
                                 20
                             ],
                             "type": "doc.type.name",
@@ -9899,13 +9899,13 @@
                 },
                 "file": "lua_libp2p/host/init.lua",
                 "finish": [
-                    1675,
+                    1679,
                     39
                 ],
                 "name": "upnp_nat",
                 "rawdesc": " UPnP NAT mapping service.",
                 "start": [
-                    1675,
+                    1679,
                     10
                 ],
                 "type": "doc.field",
@@ -9922,11 +9922,11 @@
             {
                 "file": "lua_libp2p/host/init.lua",
                 "finish": [
-                    1634,
+                    1638,
                     55
                 ],
                 "start": [
-                    1634,
+                    1638,
                     10
                 ],
                 "type": "doc.alias",
@@ -14733,6 +14733,1619 @@
         "name": "Libp2pLogger",
         "type": "type",
         "view": "Libp2pLogger"
+    },
+    {
+        "defines": [
+            {
+                "async": false,
+                "deprecated": false,
+                "file": "lua_libp2p/peer_discovery_mdns/init.lua",
+                "finish": [
+                    18,
+                    26
+                ],
+                "start": [
+                    18,
+                    10
+                ],
+                "type": "doc.class",
+                "view": "Libp2pMdnsConfig",
+                "visible": "public"
+            }
+        ],
+        "fields": [
+            {
+                "async": false,
+                "deprecated": false,
+                "desc": "Whether to advertise public IP addresses. Default `false`.",
+                "extends": {
+                    "finish": [
+                        30,
+                        37
+                    ],
+                    "start": [
+                        30,
+                        30
+                    ],
+                    "type": "doc.type",
+                    "types": [
+                        {
+                            "finish": [
+                                30,
+                                37
+                            ],
+                            "start": [
+                                30,
+                                30
+                            ],
+                            "type": "doc.type.name",
+                            "view": "boolean"
+                        }
+                    ],
+                    "view": "boolean?"
+                },
+                "file": "lua_libp2p/peer_discovery_mdns/init.lua",
+                "finish": [
+                    30,
+                    37
+                ],
+                "name": "allow_public_addrs",
+                "rawdesc": "Whether to advertise public IP addresses. Default `false`.",
+                "start": [
+                    30,
+                    10
+                ],
+                "type": "doc.field",
+                "view": "boolean?",
+                "visible": "public"
+            },
+            {
+                "async": false,
+                "deprecated": false,
+                "desc": "IPv4 bind address. Default `0.0.0.0`.",
+                "extends": {
+                    "finish": [
+                        25,
+                        27
+                    ],
+                    "start": [
+                        25,
+                        21
+                    ],
+                    "type": "doc.type",
+                    "types": [
+                        {
+                            "finish": [
+                                25,
+                                27
+                            ],
+                            "start": [
+                                25,
+                                21
+                            ],
+                            "type": "doc.type.name",
+                            "view": "string"
+                        }
+                    ],
+                    "view": "string?"
+                },
+                "file": "lua_libp2p/peer_discovery_mdns/init.lua",
+                "finish": [
+                    25,
+                    27
+                ],
+                "name": "bind_addr",
+                "rawdesc": "IPv4 bind address. Default `0.0.0.0`.",
+                "start": [
+                    25,
+                    10
+                ],
+                "type": "doc.field",
+                "view": "string?",
+                "visible": "public"
+            },
+            {
+                "async": false,
+                "deprecated": false,
+                "desc": "IPv6 bind address. Default `::`.",
+                "extends": {
+                    "finish": [
+                        26,
+                        28
+                    ],
+                    "start": [
+                        26,
+                        22
+                    ],
+                    "type": "doc.type",
+                    "types": [
+                        {
+                            "finish": [
+                                26,
+                                28
+                            ],
+                            "start": [
+                                26,
+                                22
+                            ],
+                            "type": "doc.type.name",
+                            "view": "string"
+                        }
+                    ],
+                    "view": "string?"
+                },
+                "file": "lua_libp2p/peer_discovery_mdns/init.lua",
+                "finish": [
+                    26,
+                    28
+                ],
+                "name": "bind_addr6",
+                "rawdesc": "IPv6 bind address. Default `::`.",
+                "start": [
+                    26,
+                    10
+                ],
+                "type": "doc.field",
+                "view": "string?",
+                "visible": "public"
+            },
+            {
+                "async": false,
+                "deprecated": false,
+                "desc": "Whether to answer mDNS queries. Default `true`.",
+                "extends": {
+                    "finish": [
+                        29,
+                        28
+                    ],
+                    "start": [
+                        29,
+                        21
+                    ],
+                    "type": "doc.type",
+                    "types": [
+                        {
+                            "finish": [
+                                29,
+                                28
+                            ],
+                            "start": [
+                                29,
+                                21
+                            ],
+                            "type": "doc.type.name",
+                            "view": "boolean"
+                        }
+                    ],
+                    "view": "boolean?"
+                },
+                "file": "lua_libp2p/peer_discovery_mdns/init.lua",
+                "finish": [
+                    29,
+                    28
+                ],
+                "name": "broadcast",
+                "rawdesc": "Whether to answer mDNS queries. Default `true`.",
+                "start": [
+                    29,
+                    10
+                ],
+                "type": "doc.field",
+                "view": "boolean?",
+                "visible": "public"
+            },
+            {
+                "async": false,
+                "deprecated": false,
+                "desc": "Query interval in seconds. Default `10`; `0` disables periodic queries.",
+                "extends": {
+                    "finish": [
+                        27,
+                        26
+                    ],
+                    "start": [
+                        27,
+                        20
+                    ],
+                    "type": "doc.type",
+                    "types": [
+                        {
+                            "finish": [
+                                27,
+                                26
+                            ],
+                            "start": [
+                                27,
+                                20
+                            ],
+                            "type": "doc.type.name",
+                            "view": "number"
+                        }
+                    ],
+                    "view": "number?"
+                },
+                "file": "lua_libp2p/peer_discovery_mdns/init.lua",
+                "finish": [
+                    27,
+                    26
+                ],
+                "name": "interval",
+                "rawdesc": "Query interval in seconds. Default `10`; `0` disables periodic queries.",
+                "start": [
+                    27,
+                    10
+                ],
+                "type": "doc.field",
+                "view": "number?",
+                "visible": "public"
+            },
+            {
+                "async": false,
+                "deprecated": false,
+                "desc": "Whether to open IPv4 mDNS socket. Default `true`.",
+                "extends": {
+                    "finish": [
+                        31,
+                        23
+                    ],
+                    "start": [
+                        31,
+                        16
+                    ],
+                    "type": "doc.type",
+                    "types": [
+                        {
+                            "finish": [
+                                31,
+                                23
+                            ],
+                            "start": [
+                                31,
+                                16
+                            ],
+                            "type": "doc.type.name",
+                            "view": "boolean"
+                        }
+                    ],
+                    "view": "boolean?"
+                },
+                "file": "lua_libp2p/peer_discovery_mdns/init.lua",
+                "finish": [
+                    31,
+                    23
+                ],
+                "name": "ipv4",
+                "rawdesc": "Whether to open IPv4 mDNS socket. Default `true`.",
+                "start": [
+                    31,
+                    10
+                ],
+                "type": "doc.field",
+                "view": "boolean?",
+                "visible": "public"
+            },
+            {
+                "async": false,
+                "deprecated": false,
+                "desc": "Whether to open IPv6 mDNS socket. Default `true`.",
+                "extends": {
+                    "finish": [
+                        32,
+                        23
+                    ],
+                    "start": [
+                        32,
+                        16
+                    ],
+                    "type": "doc.type",
+                    "types": [
+                        {
+                            "finish": [
+                                32,
+                                23
+                            ],
+                            "start": [
+                                32,
+                                16
+                            ],
+                            "type": "doc.type.name",
+                            "view": "boolean"
+                        }
+                    ],
+                    "view": "boolean?"
+                },
+                "file": "lua_libp2p/peer_discovery_mdns/init.lua",
+                "finish": [
+                    32,
+                    23
+                ],
+                "name": "ipv6",
+                "rawdesc": "Whether to open IPv6 mDNS socket. Default `true`.",
+                "start": [
+                    32,
+                    10
+                ],
+                "type": "doc.field",
+                "view": "boolean?",
+                "visible": "public"
+            },
+            {
+                "async": false,
+                "deprecated": false,
+                "desc": "IPv4 multicast group. Default `224.0.0.251`.",
+                "extends": {
+                    "finish": [
+                        22,
+                        32
+                    ],
+                    "start": [
+                        22,
+                        26
+                    ],
+                    "type": "doc.type",
+                    "types": [
+                        {
+                            "finish": [
+                                22,
+                                32
+                            ],
+                            "start": [
+                                22,
+                                26
+                            ],
+                            "type": "doc.type.name",
+                            "view": "string"
+                        }
+                    ],
+                    "view": "string?"
+                },
+                "file": "lua_libp2p/peer_discovery_mdns/init.lua",
+                "finish": [
+                    22,
+                    32
+                ],
+                "name": "multicast_addr",
+                "rawdesc": "IPv4 multicast group. Default `224.0.0.251`.",
+                "start": [
+                    22,
+                    10
+                ],
+                "type": "doc.field",
+                "view": "string?",
+                "visible": "public"
+            },
+            {
+                "async": false,
+                "deprecated": false,
+                "desc": "IPv6 multicast group. Default `ff02::fb`.",
+                "extends": {
+                    "finish": [
+                        23,
+                        33
+                    ],
+                    "start": [
+                        23,
+                        27
+                    ],
+                    "type": "doc.type",
+                    "types": [
+                        {
+                            "finish": [
+                                23,
+                                33
+                            ],
+                            "start": [
+                                23,
+                                27
+                            ],
+                            "type": "doc.type.name",
+                            "view": "string"
+                        }
+                    ],
+                    "view": "string?"
+                },
+                "file": "lua_libp2p/peer_discovery_mdns/init.lua",
+                "finish": [
+                    23,
+                    33
+                ],
+                "name": "multicast_addr6",
+                "rawdesc": "IPv6 multicast group. Default `ff02::fb`.",
+                "start": [
+                    23,
+                    10
+                ],
+                "type": "doc.field",
+                "view": "string?",
+                "visible": "public"
+            },
+            {
+                "async": false,
+                "deprecated": false,
+                "desc": "DNS-SD instance label. Random 32-byte label when omitted.",
+                "extends": {
+                    "finish": [
+                        20,
+                        27
+                    ],
+                    "start": [
+                        20,
+                        21
+                    ],
+                    "type": "doc.type",
+                    "types": [
+                        {
+                            "finish": [
+                                20,
+                                27
+                            ],
+                            "start": [
+                                20,
+                                21
+                            ],
+                            "type": "doc.type.name",
+                            "view": "string"
+                        }
+                    ],
+                    "view": "string?"
+                },
+                "file": "lua_libp2p/peer_discovery_mdns/init.lua",
+                "finish": [
+                    20,
+                    27
+                ],
+                "name": "peer_name",
+                "rawdesc": "DNS-SD instance label. Random 32-byte label when omitted.",
+                "start": [
+                    20,
+                    10
+                ],
+                "type": "doc.field",
+                "view": "string?",
+                "visible": "public"
+            },
+            {
+                "async": false,
+                "deprecated": false,
+                "desc": "Random peer name length when `peer_name` is omitted.",
+                "extends": {
+                    "finish": [
+                        21,
+                        35
+                    ],
+                    "start": [
+                        21,
+                        28
+                    ],
+                    "type": "doc.type",
+                    "types": [
+                        {
+                            "finish": [
+                                21,
+                                35
+                            ],
+                            "start": [
+                                21,
+                                28
+                            ],
+                            "type": "doc.type.name",
+                            "view": "integer"
+                        }
+                    ],
+                    "view": "integer?"
+                },
+                "file": "lua_libp2p/peer_discovery_mdns/init.lua",
+                "finish": [
+                    21,
+                    35
+                ],
+                "name": "peer_name_length",
+                "rawdesc": "Random peer name length when `peer_name` is omitted.",
+                "start": [
+                    21,
+                    10
+                ],
+                "type": "doc.field",
+                "view": "integer?",
+                "visible": "public"
+            },
+            {
+                "async": false,
+                "deprecated": false,
+                "desc": "Discovered peer TTL in seconds. Default `120`.",
+                "extends": {
+                    "finish": [
+                        28,
+                        26
+                    ],
+                    "start": [
+                        28,
+                        20
+                    ],
+                    "type": "doc.type",
+                    "types": [
+                        {
+                            "finish": [
+                                28,
+                                26
+                            ],
+                            "start": [
+                                28,
+                                20
+                            ],
+                            "type": "doc.type.name",
+                            "view": "number"
+                        }
+                    ],
+                    "view": "number?"
+                },
+                "file": "lua_libp2p/peer_discovery_mdns/init.lua",
+                "finish": [
+                    28,
+                    26
+                ],
+                "name": "peer_ttl",
+                "rawdesc": "Discovered peer TTL in seconds. Default `120`.",
+                "start": [
+                    28,
+                    10
+                ],
+                "type": "doc.field",
+                "view": "number?",
+                "visible": "public"
+            },
+            {
+                "async": false,
+                "deprecated": false,
+                "desc": "UDP port. Default `5353`.",
+                "extends": {
+                    "finish": [
+                        24,
+                        23
+                    ],
+                    "start": [
+                        24,
+                        16
+                    ],
+                    "type": "doc.type",
+                    "types": [
+                        {
+                            "finish": [
+                                24,
+                                23
+                            ],
+                            "start": [
+                                24,
+                                16
+                            ],
+                            "type": "doc.type.name",
+                            "view": "integer"
+                        }
+                    ],
+                    "view": "integer?"
+                },
+                "file": "lua_libp2p/peer_discovery_mdns/init.lua",
+                "finish": [
+                    24,
+                    23
+                ],
+                "name": "port",
+                "rawdesc": "UDP port. Default `5353`.",
+                "start": [
+                    24,
+                    10
+                ],
+                "type": "doc.field",
+                "view": "integer?",
+                "visible": "public"
+            },
+            {
+                "async": false,
+                "deprecated": false,
+                "desc": "Whether to send an immediate query when started. Default `true`.",
+                "extends": {
+                    "finish": [
+                        34,
+                        33
+                    ],
+                    "start": [
+                        34,
+                        26
+                    ],
+                    "type": "doc.type",
+                    "types": [
+                        {
+                            "finish": [
+                                34,
+                                33
+                            ],
+                            "start": [
+                                34,
+                                26
+                            ],
+                            "type": "doc.type.name",
+                            "view": "boolean"
+                        }
+                    ],
+                    "view": "boolean?"
+                },
+                "file": "lua_libp2p/peer_discovery_mdns/init.lua",
+                "finish": [
+                    34,
+                    33
+                ],
+                "name": "query_on_start",
+                "rawdesc": "Whether to send an immediate query when started. Default `true`.",
+                "start": [
+                    34,
+                    10
+                ],
+                "type": "doc.field",
+                "view": "boolean?",
+                "visible": "public"
+            },
+            {
+                "async": false,
+                "deprecated": false,
+                "desc": "Whether multicast membership failure is fatal for a socket. Default `true`.",
+                "extends": {
+                    "finish": [
+                        33,
+                        37
+                    ],
+                    "start": [
+                        33,
+                        30
+                    ],
+                    "type": "doc.type",
+                    "types": [
+                        {
+                            "finish": [
+                                33,
+                                37
+                            ],
+                            "start": [
+                                33,
+                                30
+                            ],
+                            "type": "doc.type.name",
+                            "view": "boolean"
+                        }
+                    ],
+                    "view": "boolean?"
+                },
+                "file": "lua_libp2p/peer_discovery_mdns/init.lua",
+                "finish": [
+                    33,
+                    37
+                ],
+                "name": "require_membership",
+                "rawdesc": "Whether multicast membership failure is fatal for a socket. Default `true`.",
+                "start": [
+                    33,
+                    10
+                ],
+                "type": "doc.field",
+                "view": "boolean?",
+                "visible": "public"
+            },
+            {
+                "async": false,
+                "deprecated": false,
+                "desc": "mDNS service name. Default `_p2p._udp.local`.",
+                "extends": {
+                    "finish": [
+                        19,
+                        30
+                    ],
+                    "start": [
+                        19,
+                        24
+                    ],
+                    "type": "doc.type",
+                    "types": [
+                        {
+                            "finish": [
+                                19,
+                                30
+                            ],
+                            "start": [
+                                19,
+                                24
+                            ],
+                            "type": "doc.type.name",
+                            "view": "string"
+                        }
+                    ],
+                    "view": "string?"
+                },
+                "file": "lua_libp2p/peer_discovery_mdns/init.lua",
+                "finish": [
+                    19,
+                    30
+                ],
+                "name": "service_name",
+                "rawdesc": "mDNS service name. Default `_p2p._udp.local`.",
+                "start": [
+                    19,
+                    10
+                ],
+                "type": "doc.field",
+                "view": "string?",
+                "visible": "public"
+            },
+            {
+                "async": false,
+                "deprecated": false,
+                "desc": "Test hook returning socket-like object.",
+                "extends": {
+                    "finish": [
+                        35,
+                        64
+                    ],
+                    "start": [
+                        35,
+                        26
+                    ],
+                    "type": "doc.type",
+                    "types": [
+                        {
+                            "args": [
+                                {
+                                    "finish": [
+                                        35,
+                                        56
+                                    ],
+                                    "name": {
+                                        "[1]": "service",
+                                        "finish": [
+                                            35,
+                                            37
+                                        ],
+                                        "start": [
+                                            35,
+                                            30
+                                        ],
+                                        "type": "doc.type.arg.name",
+                                        "view": "service"
+                                    },
+                                    "start": [
+                                        35,
+                                        30
+                                    ],
+                                    "type": "doc.type.arg",
+                                    "view": "Libp2pMdnsService"
+                                }
+                            ],
+                            "finish": [
+                                35,
+                                64
+                            ],
+                            "returns": [
+                                {
+                                    "finish": [
+                                        35,
+                                        64
+                                    ],
+                                    "start": [
+                                        35,
+                                        59
+                                    ],
+                                    "type": "doc.type",
+                                    "types": [
+                                        {
+                                            "finish": [
+                                                35,
+                                                64
+                                            ],
+                                            "start": [
+                                                35,
+                                                59
+                                            ],
+                                            "type": "doc.type.name",
+                                            "view": "table"
+                                        }
+                                    ],
+                                    "view": "table"
+                                }
+                            ],
+                            "start": [
+                                35,
+                                26
+                            ],
+                            "type": "doc.type.function",
+                            "view": "fun(service: Libp2pMdnsService):table"
+                        }
+                    ],
+                    "view": "(fun(service: Libp2pMdnsService):table)?"
+                },
+                "file": "lua_libp2p/peer_discovery_mdns/init.lua",
+                "finish": [
+                    35,
+                    64
+                ],
+                "name": "socket_factory",
+                "rawdesc": "Test hook returning socket-like object.",
+                "start": [
+                    35,
+                    10
+                ],
+                "type": "doc.field",
+                "view": "(fun(service: Libp2pMdnsService):table)?",
+                "visible": "public"
+            }
+        ],
+        "name": "Libp2pMdnsConfig",
+        "type": "type",
+        "view": "Libp2pMdnsConfig"
+    },
+    {
+        "defines": [
+            {
+                "async": false,
+                "deprecated": false,
+                "file": "lua_libp2p/peer_discovery_mdns/init.lua",
+                "finish": [
+                    37,
+                    27
+                ],
+                "start": [
+                    37,
+                    10
+                ],
+                "type": "doc.class",
+                "view": "Libp2pMdnsService",
+                "visible": "public"
+            }
+        ],
+        "fields": [
+            {
+                "async": false,
+                "deprecated": false,
+                "extends": {
+                    "finish": [
+                        49,
+                        36
+                    ],
+                    "start": [
+                        49,
+                        29
+                    ],
+                    "type": "doc.type",
+                    "types": [
+                        {
+                            "finish": [
+                                49,
+                                36
+                            ],
+                            "start": [
+                                49,
+                                29
+                            ],
+                            "type": "doc.type.name",
+                            "view": "boolean"
+                        }
+                    ],
+                    "view": "boolean"
+                },
+                "file": "lua_libp2p/peer_discovery_mdns/init.lua",
+                "finish": [
+                    49,
+                    36
+                ],
+                "name": "allow_public_addrs",
+                "start": [
+                    49,
+                    10
+                ],
+                "type": "doc.field",
+                "view": "boolean",
+                "visible": "public"
+            },
+            {
+                "async": false,
+                "deprecated": false,
+                "extends": {
+                    "finish": [
+                        44,
+                        26
+                    ],
+                    "start": [
+                        44,
+                        20
+                    ],
+                    "type": "doc.type",
+                    "types": [
+                        {
+                            "finish": [
+                                44,
+                                26
+                            ],
+                            "start": [
+                                44,
+                                20
+                            ],
+                            "type": "doc.type.name",
+                            "view": "string"
+                        }
+                    ],
+                    "view": "string"
+                },
+                "file": "lua_libp2p/peer_discovery_mdns/init.lua",
+                "finish": [
+                    44,
+                    26
+                ],
+                "name": "bind_addr",
+                "start": [
+                    44,
+                    10
+                ],
+                "type": "doc.field",
+                "view": "string",
+                "visible": "public"
+            },
+            {
+                "async": false,
+                "deprecated": false,
+                "extends": {
+                    "finish": [
+                        45,
+                        27
+                    ],
+                    "start": [
+                        45,
+                        21
+                    ],
+                    "type": "doc.type",
+                    "types": [
+                        {
+                            "finish": [
+                                45,
+                                27
+                            ],
+                            "start": [
+                                45,
+                                21
+                            ],
+                            "type": "doc.type.name",
+                            "view": "string"
+                        }
+                    ],
+                    "view": "string"
+                },
+                "file": "lua_libp2p/peer_discovery_mdns/init.lua",
+                "finish": [
+                    45,
+                    27
+                ],
+                "name": "bind_addr6",
+                "start": [
+                    45,
+                    10
+                ],
+                "type": "doc.field",
+                "view": "string",
+                "visible": "public"
+            },
+            {
+                "async": false,
+                "deprecated": false,
+                "extends": {
+                    "finish": [
+                        48,
+                        27
+                    ],
+                    "start": [
+                        48,
+                        20
+                    ],
+                    "type": "doc.type",
+                    "types": [
+                        {
+                            "finish": [
+                                48,
+                                27
+                            ],
+                            "start": [
+                                48,
+                                20
+                            ],
+                            "type": "doc.type.name",
+                            "view": "boolean"
+                        }
+                    ],
+                    "view": "boolean"
+                },
+                "file": "lua_libp2p/peer_discovery_mdns/init.lua",
+                "finish": [
+                    48,
+                    27
+                ],
+                "name": "broadcast",
+                "start": [
+                    48,
+                    10
+                ],
+                "type": "doc.field",
+                "view": "boolean",
+                "visible": "public"
+            },
+            {
+                "async": false,
+                "deprecated": false,
+                "extends": {
+                    "finish": [
+                        38,
+                        24
+                    ],
+                    "start": [
+                        38,
+                        15
+                    ],
+                    "type": "doc.type",
+                    "types": [
+                        {
+                            "finish": [
+                                38,
+                                20
+                            ],
+                            "start": [
+                                38,
+                                15
+                            ],
+                            "type": "doc.type.name",
+                            "view": "table"
+                        },
+                        {
+                            "finish": [
+                                38,
+                                24
+                            ],
+                            "start": [
+                                38,
+                                21
+                            ],
+                            "type": "doc.type.name",
+                            "view": "nil"
+                        }
+                    ],
+                    "view": "table|nil"
+                },
+                "file": "lua_libp2p/peer_discovery_mdns/init.lua",
+                "finish": [
+                    38,
+                    24
+                ],
+                "name": "host",
+                "start": [
+                    38,
+                    10
+                ],
+                "type": "doc.field",
+                "view": "table|nil",
+                "visible": "public"
+            },
+            {
+                "async": false,
+                "deprecated": false,
+                "extends": {
+                    "finish": [
+                        46,
+                        25
+                    ],
+                    "start": [
+                        46,
+                        19
+                    ],
+                    "type": "doc.type",
+                    "types": [
+                        {
+                            "finish": [
+                                46,
+                                25
+                            ],
+                            "start": [
+                                46,
+                                19
+                            ],
+                            "type": "doc.type.name",
+                            "view": "number"
+                        }
+                    ],
+                    "view": "number"
+                },
+                "file": "lua_libp2p/peer_discovery_mdns/init.lua",
+                "finish": [
+                    46,
+                    25
+                ],
+                "name": "interval",
+                "start": [
+                    46,
+                    10
+                ],
+                "type": "doc.field",
+                "view": "number",
+                "visible": "public"
+            },
+            {
+                "async": false,
+                "deprecated": false,
+                "extends": {
+                    "finish": [
+                        50,
+                        22
+                    ],
+                    "start": [
+                        50,
+                        15
+                    ],
+                    "type": "doc.type",
+                    "types": [
+                        {
+                            "finish": [
+                                50,
+                                22
+                            ],
+                            "start": [
+                                50,
+                                15
+                            ],
+                            "type": "doc.type.name",
+                            "view": "boolean"
+                        }
+                    ],
+                    "view": "boolean"
+                },
+                "file": "lua_libp2p/peer_discovery_mdns/init.lua",
+                "finish": [
+                    50,
+                    22
+                ],
+                "name": "ipv4",
+                "start": [
+                    50,
+                    10
+                ],
+                "type": "doc.field",
+                "view": "boolean",
+                "visible": "public"
+            },
+            {
+                "async": false,
+                "deprecated": false,
+                "extends": {
+                    "finish": [
+                        51,
+                        22
+                    ],
+                    "start": [
+                        51,
+                        15
+                    ],
+                    "type": "doc.type",
+                    "types": [
+                        {
+                            "finish": [
+                                51,
+                                22
+                            ],
+                            "start": [
+                                51,
+                                15
+                            ],
+                            "type": "doc.type.name",
+                            "view": "boolean"
+                        }
+                    ],
+                    "view": "boolean"
+                },
+                "file": "lua_libp2p/peer_discovery_mdns/init.lua",
+                "finish": [
+                    51,
+                    22
+                ],
+                "name": "ipv6",
+                "start": [
+                    51,
+                    10
+                ],
+                "type": "doc.field",
+                "view": "boolean",
+                "visible": "public"
+            },
+            {
+                "async": false,
+                "deprecated": false,
+                "extends": {
+                    "finish": [
+                        41,
+                        31
+                    ],
+                    "start": [
+                        41,
+                        25
+                    ],
+                    "type": "doc.type",
+                    "types": [
+                        {
+                            "finish": [
+                                41,
+                                31
+                            ],
+                            "start": [
+                                41,
+                                25
+                            ],
+                            "type": "doc.type.name",
+                            "view": "string"
+                        }
+                    ],
+                    "view": "string"
+                },
+                "file": "lua_libp2p/peer_discovery_mdns/init.lua",
+                "finish": [
+                    41,
+                    31
+                ],
+                "name": "multicast_addr",
+                "start": [
+                    41,
+                    10
+                ],
+                "type": "doc.field",
+                "view": "string",
+                "visible": "public"
+            },
+            {
+                "async": false,
+                "deprecated": false,
+                "extends": {
+                    "finish": [
+                        42,
+                        32
+                    ],
+                    "start": [
+                        42,
+                        26
+                    ],
+                    "type": "doc.type",
+                    "types": [
+                        {
+                            "finish": [
+                                42,
+                                32
+                            ],
+                            "start": [
+                                42,
+                                26
+                            ],
+                            "type": "doc.type.name",
+                            "view": "string"
+                        }
+                    ],
+                    "view": "string"
+                },
+                "file": "lua_libp2p/peer_discovery_mdns/init.lua",
+                "finish": [
+                    42,
+                    32
+                ],
+                "name": "multicast_addr6",
+                "start": [
+                    42,
+                    10
+                ],
+                "type": "doc.field",
+                "view": "string",
+                "visible": "public"
+            },
+            {
+                "async": false,
+                "deprecated": false,
+                "extends": {
+                    "finish": [
+                        40,
+                        26
+                    ],
+                    "start": [
+                        40,
+                        20
+                    ],
+                    "type": "doc.type",
+                    "types": [
+                        {
+                            "finish": [
+                                40,
+                                26
+                            ],
+                            "start": [
+                                40,
+                                20
+                            ],
+                            "type": "doc.type.name",
+                            "view": "string"
+                        }
+                    ],
+                    "view": "string"
+                },
+                "file": "lua_libp2p/peer_discovery_mdns/init.lua",
+                "finish": [
+                    40,
+                    26
+                ],
+                "name": "peer_name",
+                "start": [
+                    40,
+                    10
+                ],
+                "type": "doc.field",
+                "view": "string",
+                "visible": "public"
+            },
+            {
+                "async": false,
+                "deprecated": false,
+                "extends": {
+                    "finish": [
+                        47,
+                        25
+                    ],
+                    "start": [
+                        47,
+                        19
+                    ],
+                    "type": "doc.type",
+                    "types": [
+                        {
+                            "finish": [
+                                47,
+                                25
+                            ],
+                            "start": [
+                                47,
+                                19
+                            ],
+                            "type": "doc.type.name",
+                            "view": "number"
+                        }
+                    ],
+                    "view": "number"
+                },
+                "file": "lua_libp2p/peer_discovery_mdns/init.lua",
+                "finish": [
+                    47,
+                    25
+                ],
+                "name": "peer_ttl",
+                "start": [
+                    47,
+                    10
+                ],
+                "type": "doc.field",
+                "view": "number",
+                "visible": "public"
+            },
+            {
+                "async": false,
+                "deprecated": false,
+                "extends": {
+                    "finish": [
+                        43,
+                        22
+                    ],
+                    "start": [
+                        43,
+                        15
+                    ],
+                    "type": "doc.type",
+                    "types": [
+                        {
+                            "finish": [
+                                43,
+                                22
+                            ],
+                            "start": [
+                                43,
+                                15
+                            ],
+                            "type": "doc.type.name",
+                            "view": "integer"
+                        }
+                    ],
+                    "view": "integer"
+                },
+                "file": "lua_libp2p/peer_discovery_mdns/init.lua",
+                "finish": [
+                    43,
+                    22
+                ],
+                "name": "port",
+                "start": [
+                    43,
+                    10
+                ],
+                "type": "doc.field",
+                "view": "integer",
+                "visible": "public"
+            },
+            {
+                "async": false,
+                "deprecated": false,
+                "extends": {
+                    "finish": [
+                        53,
+                        32
+                    ],
+                    "start": [
+                        53,
+                        25
+                    ],
+                    "type": "doc.type",
+                    "types": [
+                        {
+                            "finish": [
+                                53,
+                                32
+                            ],
+                            "start": [
+                                53,
+                                25
+                            ],
+                            "type": "doc.type.name",
+                            "view": "boolean"
+                        }
+                    ],
+                    "view": "boolean"
+                },
+                "file": "lua_libp2p/peer_discovery_mdns/init.lua",
+                "finish": [
+                    53,
+                    32
+                ],
+                "name": "query_on_start",
+                "start": [
+                    53,
+                    10
+                ],
+                "type": "doc.field",
+                "view": "boolean",
+                "visible": "public"
+            },
+            {
+                "async": false,
+                "deprecated": false,
+                "extends": {
+                    "finish": [
+                        52,
+                        36
+                    ],
+                    "start": [
+                        52,
+                        29
+                    ],
+                    "type": "doc.type",
+                    "types": [
+                        {
+                            "finish": [
+                                52,
+                                36
+                            ],
+                            "start": [
+                                52,
+                                29
+                            ],
+                            "type": "doc.type.name",
+                            "view": "boolean"
+                        }
+                    ],
+                    "view": "boolean"
+                },
+                "file": "lua_libp2p/peer_discovery_mdns/init.lua",
+                "finish": [
+                    52,
+                    36
+                ],
+                "name": "require_membership",
+                "start": [
+                    52,
+                    10
+                ],
+                "type": "doc.field",
+                "view": "boolean",
+                "visible": "public"
+            },
+            {
+                "async": false,
+                "deprecated": false,
+                "extends": {
+                    "finish": [
+                        39,
+                        29
+                    ],
+                    "start": [
+                        39,
+                        23
+                    ],
+                    "type": "doc.type",
+                    "types": [
+                        {
+                            "finish": [
+                                39,
+                                29
+                            ],
+                            "start": [
+                                39,
+                                23
+                            ],
+                            "type": "doc.type.name",
+                            "view": "string"
+                        }
+                    ],
+                    "view": "string"
+                },
+                "file": "lua_libp2p/peer_discovery_mdns/init.lua",
+                "finish": [
+                    39,
+                    29
+                ],
+                "name": "service_name",
+                "start": [
+                    39,
+                    10
+                ],
+                "type": "doc.field",
+                "view": "string",
+                "visible": "public"
+            },
+            {
+                "async": false,
+                "deprecated": false,
+                "extends": {
+                    "finish": [
+                        54,
+                        25
+                    ],
+                    "start": [
+                        54,
+                        18
+                    ],
+                    "type": "doc.type",
+                    "types": [
+                        {
+                            "finish": [
+                                54,
+                                25
+                            ],
+                            "start": [
+                                54,
+                                18
+                            ],
+                            "type": "doc.type.name",
+                            "view": "boolean"
+                        }
+                    ],
+                    "view": "boolean"
+                },
+                "file": "lua_libp2p/peer_discovery_mdns/init.lua",
+                "finish": [
+                    54,
+                    25
+                ],
+                "name": "started",
+                "start": [
+                    54,
+                    10
+                ],
+                "type": "doc.field",
+                "view": "boolean",
+                "visible": "public"
+            }
+        ],
+        "name": "Libp2pMdnsService",
+        "type": "type",
+        "view": "Libp2pMdnsService"
     },
     {
         "defines": [
@@ -30055,12 +31668,12 @@
                 "desc": "```lua\nLibp2pTransportName:\n    | 'tcp'\n```",
                 "file": "lua_libp2p/host/init.lua",
                 "finish": [
-                    1633,
+                    1637,
                     35
                 ],
                 "rawdesc": "```lua\nLibp2pTransportName:\n    | 'tcp'\n```",
                 "start": [
-                    1633,
+                    1637,
                     10
                 ],
                 "type": "doc.alias",
@@ -32303,6 +33916,35 @@
                     "type": "select",
                     "view": "string"
                 },
+                "file": "examples/mdns_chat.lua",
+                "finish": [
+                    0,
+                    12
+                ],
+                "name": "path",
+                "start": [
+                    0,
+                    0
+                ],
+                "type": "setfield",
+                "view": "string",
+                "visible": "public"
+            },
+            {
+                "async": false,
+                "deprecated": false,
+                "extends": {
+                    "finish": [
+                        4,
+                        7
+                    ],
+                    "start": [
+                        0,
+                        15
+                    ],
+                    "type": "select",
+                    "view": "string"
+                },
                 "file": "examples/nat_pmp_demo.lua",
                 "finish": [
                     0,
@@ -32768,6 +34410,35 @@
                     "view": "string"
                 },
                 "file": "tests/interop/kad_dht_lua_provider.lua",
+                "finish": [
+                    0,
+                    12
+                ],
+                "name": "path",
+                "start": [
+                    0,
+                    0
+                ],
+                "type": "setfield",
+                "view": "string",
+                "visible": "public"
+            },
+            {
+                "async": false,
+                "deprecated": false,
+                "extends": {
+                    "finish": [
+                        4,
+                        7
+                    ],
+                    "start": [
+                        0,
+                        15
+                    ],
+                    "type": "select",
+                    "view": "string"
+                },
+                "file": "tests/interop/mdns_go_lua_discover.lua",
                 "finish": [
                     0,
                     12
