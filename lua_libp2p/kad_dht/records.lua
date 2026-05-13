@@ -182,6 +182,33 @@ function Store:cleanup()
   return removed
 end
 
+function Store:stats()
+  local now = now_seconds(self)
+  local keys, list_err = self._datastore:list("kad_dht/records/")
+  if not keys then
+    return nil, list_err
+  end
+  local value_records = 0
+  local removed = 0
+  for _, key in ipairs(keys) do
+    local entry, get_err = self._datastore:get(key)
+    if get_err then
+      return nil, get_err
+    end
+    local normalized = validate_persisted_entry(entry)
+    if entry and (not normalized or expired(normalized, now)) then
+      self._datastore:delete(key)
+      removed = removed + 1
+    elseif normalized then
+      value_records = value_records + 1
+    end
+  end
+  return {
+    value_records = value_records,
+    removed_expired = removed,
+  }
+end
+
 function M.new(opts)
   local options = opts or {}
   local store, store_err = datastore.assert_store(options.datastore or memory_datastore.new())

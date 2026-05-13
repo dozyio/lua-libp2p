@@ -324,19 +324,29 @@ function M.install(Host)
         end
       elseif dial_err then
         last_err = dial_err
-        log.debug("host dial address failed", {
+        local fields = {
           peer_id = resolved.peer_id,
           addr = addr,
           cause = tostring(dial_err),
-        })
+        }
+        if error_mod.is_fd_exhaustion(dial_err) then
+          log.error("host dial address failed: file descriptor limit reached", fields)
+        else
+          log.debug("host dial address failed", fields)
+        end
       end
     end
 
-    log.debug("host dial failed", {
+    local failed_fields = {
       peer_id = resolved.peer_id,
       candidate_addrs = #candidate_addrs,
       cause = tostring(last_err),
-    })
+    }
+    if error_mod.is_fd_exhaustion(last_err) then
+      log.error("host dial failed: file descriptor limit reached", failed_fields)
+    else
+      log.debug("host dial failed", failed_fields)
+    end
     return nil, nil, last_err or error_mod.new("io", "all dial addresses failed")
   end
 

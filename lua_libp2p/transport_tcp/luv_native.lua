@@ -147,7 +147,50 @@ local function classify_uv_error(err, io_message)
   if upper == "ETIMEDOUT" or string.find(upper, "TIMEDOUT", 1, true) ~= nil then
     return error_mod.new("timeout", "operation timed out", { cause = err })
   end
+  if error_mod.is_fd_exhaustion(err) then
+    return error_mod.new("resource", "file descriptor limit reached", { cause = err, code = "EMFILE" })
+  end
   return error_mod.new("io", io_message or "native luv io failed", { cause = err })
+end
+
+local function new_tcp_handle(context)
+  local ok, handle_or_err, extra = pcall(uv.new_tcp)
+  if not ok then
+    local err = classify_uv_error(handle_or_err, "failed creating native luv tcp handle")
+    if error_mod.is_fd_exhaustion(err) then
+      log.error("tcp handle creation failed: file descriptor limit reached", {
+        context = context,
+        cause = tostring(handle_or_err),
+      })
+    end
+    return nil, err
+  end
+  if not handle_or_err then
+    local cause = extra or handle_or_err
+    local err = classify_uv_error(cause, "failed creating native luv tcp handle")
+    if error_mod.is_fd_exhaustion(err) then
+      log.error("tcp handle creation failed: file descriptor limit reached", {
+        context = context,
+        cause = tostring(cause),
+      })
+    end
+    return nil, err
+  end
+  return handle_or_err
+end
+
+local function log_fd_exhaustion_once(owner, message, fields)
+  if not owner then
+    log.error(message, fields or {})
+    return true
+  end
+  local now = os.time()
+  if owner._last_fd_exhaustion_log_at == nil or now - owner._last_fd_exhaustion_log_at >= 10 then
+    owner._last_fd_exhaustion_log_at = now
+    log.error(message, fields or {})
+    return true
+  end
+  return false
 end
 
 local function is_closed_error(err)
@@ -872,6 +915,7 @@ function NativeListener:new(server, opts)
     _callback_total = 0,
     _accepted_total = 0,
     _accept_failed_total = 0,
+    _accept_resource_failed_total = 0,
     _callback_error_total = 0,
   }, self)
 end
@@ -953,6 +997,7 @@ function NativeListener:stats()
     callback_total = self._callback_total or 0,
     accepted_total = self._accepted_total or 0,
     accept_failed_total = self._accept_failed_total or 0,
+    accept_resource_failed_total = self._accept_resource_failed_total or 0,
     callback_error_total = self._callback_error_total or 0,
     watchers = self._watch_callbacks and #self._watch_callbacks or 0,
     closed = self._closed == true,
@@ -1038,7 +1083,10 @@ function M.listen(target, opts)
     host = normalized_host,
     port = port,
   })
-  local server = uv.new_tcp()
+  local server, server_err = new_tcp_handle("listen")
+  if not server then
+    return nil, server_err
+  end
   local ok, bind_err = bind_listener_socket(server, normalized_host, port, options.require_ipv6_only)
   if not ok then
     log.debug("tcp listen failed", {
@@ -1080,7 +1128,25 @@ function M.listen(target, opts)
     local accepted_count = 0
     local max_accepts = math.max(1, listener._accept_batch or DEFAULT_ACCEPT_BATCH)
     while accepted_count < max_accepts do
-      local client = uv.new_tcp()
+      local client, client_err = new_tcp_handle("accept")
+      if not client then
+        listener._accept_failed_total = (listener._accept_failed_total or 0) + 1
+        if error_mod.is_fd_exhaustion(client_err) then
+          listener._accept_resource_failed_total = (listener._accept_resource_failed_total or 0) + 1
+          log_fd_exhaustion_once(listener, "tcp accept failed: file descriptor limit reached", {
+            listen_host = listener._listen_host,
+            listen_port = listener._listen_port,
+            cause = tostring(client_err),
+          })
+        else
+          log.debug("tcp accept handle creation failed", {
+            listen_host = listener._listen_host,
+            listen_port = listener._listen_port,
+            cause = tostring(client_err),
+          })
+        end
+        break
+      end
       local accepted = server:accept(client)
       if not accepted then
         if accepted_count == 0 then
@@ -1207,7 +1273,10 @@ function M.dial(target, opts)
     host = dial_host,
     port = port,
   })
-  local conn = uv.new_tcp()
+  local conn, conn_err = new_tcp_handle("dial")
+  if not conn then
+    return nil, conn_err
+  end
   local done = false
   local dial_err = nil
   local connect_watchers = {}

@@ -1,6 +1,7 @@
 local kad_dht = require("lua_libp2p.kad_dht")
 local kad_protocol = require("lua_libp2p.kad_dht.protocol")
 local multihash = require("lua_libp2p.multiformats.multihash")
+local peerstore = require("lua_libp2p.peerstore")
 
 local CONTENT_KEY = assert(multihash.sha2_256("cid-key"))
 
@@ -1100,6 +1101,63 @@ local function run()
   end
   if reply.closer_peers[1].id ~= "peer-a" then
     return nil, "unexpected first rpc handler closer peer"
+  end
+
+  local warm_ps = peerstore.new_memory_direct()
+  warm_ps:merge("peer-a", {
+    addrs = { "/ip4/8.8.8.8/tcp/4001" },
+    protocols = { kad_dht.PROTOCOL_ID },
+  })
+  warm_ps:tag("peer-a", kad_dht.KAD_PEER_TAG_NAME, { value = kad_dht.KAD_PEER_TAG_VALUE, ttl = math.huge })
+  warm_ps:merge("peer-b", {
+    addrs = { "/ip4/8.8.4.4/tcp/4001" },
+    protocols = { kad_dht.PROTOCOL_ID },
+  })
+  warm_ps:tag("peer-b", kad_dht.KAD_PEER_TAG_NAME, { value = kad_dht.KAD_PEER_TAG_VALUE, ttl = math.huge })
+  warm_ps:merge("closest-a", {
+    addrs = { "/ip4/1.1.1.1/tcp/4001" },
+    protocols = { kad_dht.PROTOCOL_ID },
+  })
+
+  local warm_host = {
+    _peer = { id = "local" },
+    listen_addrs = { "/ip4/0.0.0.0/tcp/4001" },
+    peerstore = warm_ps,
+  }
+  attach_dial_policy(warm_host)
+  function warm_host:peer_id()
+    return self._peer
+  end
+  function warm_host.new_stream()
+    return {
+      close_write = function()
+        return true
+      end,
+      close = function()
+        return true
+      end,
+    }, kad_dht.PROTOCOL_ID, {}, nil
+  end
+
+  local warm_dht = assert(kad_dht.new(warm_host, {
+    hash_function = fake_hash,
+    populate_from_peerstore_limit = 1,
+  }))
+  local warm_report, warm_err = warm_dht:_populate_routing_table_from_peerstore()
+  if not warm_report then
+    return nil, warm_err
+  end
+  if warm_report.candidates ~= 1 or warm_report.added ~= 1 then
+    return nil, "peerstore warm start should honor candidate limit and add one tagged peer"
+  end
+  if not warm_dht:get_local_peer("peer-a") then
+    return nil, "peerstore warm start should add tagged kad peer"
+  end
+  if warm_dht:get_local_peer("peer-b") then
+    return nil, "peerstore warm start should honor populate_from_peerstore_limit"
+  end
+  if warm_dht:get_local_peer("closest-a") then
+    return nil, "peerstore warm start should skip untagged kad peers"
   end
 
   local stopped, stop_err = dht:stop()

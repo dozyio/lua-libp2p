@@ -26,6 +26,28 @@ local function sql_string(value)
   return "'" .. tostring(value):gsub("'", "''") .. "'"
 end
 
+local function prefix_upper_bound(prefix)
+  if prefix == "" then
+    return nil
+  end
+  for i = #prefix, 1, -1 do
+    local byte = prefix:byte(i)
+    if byte < 255 then
+      return prefix:sub(1, i - 1) .. string.char(byte + 1)
+    end
+  end
+  return nil
+end
+
+local function prefix_where(prefix)
+  local upper = prefix_upper_bound(prefix)
+  local where = "key >= " .. sql_string(prefix)
+  if upper then
+    where = where .. " AND key < " .. sql_string(upper)
+  end
+  return where
+end
+
 local function hex_encode(value)
   return (value:gsub(".", function(c)
     return string.format("%02x", c:byte())
@@ -237,7 +259,10 @@ function Store:list(prefix)
   if not ok then
     return nil, key_err
   end
-  local cursor, query_err = exec(self._conn, "SELECT key, expires_at FROM " .. self._table .. " ORDER BY key")
+  local cursor, query_err = exec(
+    self._conn,
+    "SELECT key, expires_at FROM " .. self._table .. " WHERE " .. prefix_where(prefix) .. " ORDER BY key"
+  )
   if not cursor then
     return nil, query_err
   end
@@ -251,12 +276,36 @@ function Store:list(prefix)
     local expires_at = tonumber(row.expires_at)
     if expires_at and expires_at <= os.time() then
       self:delete(key)
-    elseif key:sub(1, #prefix) == prefix then
+    else
       keys[#keys + 1] = key
     end
   end
   cursor_close(cursor)
   return keys
+end
+
+function Store:count(prefix)
+  local ok, key_err = datastore.validate_key(prefix)
+  if not ok then
+    return nil, key_err
+  end
+  local now = os.time()
+  local cursor, query_err = exec(
+    self._conn,
+    "SELECT COUNT(*) AS count FROM "
+      .. self._table
+      .. " WHERE "
+      .. prefix_where(prefix)
+      .. " AND (expires_at IS NULL OR expires_at > "
+      .. tostring(now)
+      .. ")"
+  )
+  if not cursor then
+    return nil, query_err
+  end
+  local row = cursor:fetch({}, "a")
+  cursor_close(cursor)
+  return tonumber(row and row.count) or 0
 end
 
 function Store:close()
