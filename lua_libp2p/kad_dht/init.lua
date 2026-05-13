@@ -46,6 +46,9 @@
 ---@field peer_diversity_filter? function
 ---@field peer_diversity_max_peers_per_ip_group? integer|false
 ---@field peer_diversity_max_peers_per_ip_group_per_bucket? integer|false
+---@field populate_from_peerstore_on_start? boolean Default: true.
+---@field populate_from_peerstore_limit? integer Default: 1000.
+---@field populate_from_peerstore_protocol_check_timeout? number
 ---@field dnsaddr_resolver? function
 ---@field auto_server_mode? boolean Enable automatic server-mode advertisement.
 ---@field maintenance_enabled? boolean Default: true.
@@ -126,6 +129,11 @@ M.DEFAULT_REPROVIDER_TIMEOUT = reprovider.DEFAULT_TIMEOUT
 M.DEFAULT_PEER_ID_BYTES_CACHE_SIZE = 4096
 M.DEFAULT_FILTERED_ADDR_CACHE_SIZE = 4096
 M.DEFAULT_FILTERED_ADDR_CACHE_TTL_SECONDS = 2
+M.DEFAULT_POPULATE_FROM_PEERSTORE_ON_START = true
+M.DEFAULT_POPULATE_FROM_PEERSTORE_LIMIT = 1000
+M.DEFAULT_POPULATE_FROM_PEERSTORE_PROTOCOL_CHECK_TIMEOUT = 10
+M.KAD_PEER_TAG_NAME = "kad-peer"
+M.KAD_PEER_TAG_VALUE = 1
 M.MODE_CLIENT = "client"
 M.MODE_SERVER = "server"
 M.MODE_AUTO = "auto"
@@ -201,6 +209,15 @@ local function has_public_direct_addr(addrs)
   return false
 end
 
+local function list_contains(list, value)
+  for _, item in ipairs(list or {}) do
+    if item == value then
+      return true
+    end
+  end
+  return false
+end
+
 local DHT = {}
 DHT.__index = DHT
 
@@ -220,6 +237,11 @@ function DHT:start()
   end
 
   self._running = true
+
+  local peerstore_ok, peerstore_err = self:_start_peerstore_population()
+  if not peerstore_ok then
+    return nil, peerstore_err
+  end
 
   local maintenance_ok, maintenance_err = maintenance.start(self)
   if not maintenance_ok then
@@ -327,6 +349,10 @@ function DHT:stop()
     end
   end
   self:_unregister_handler()
+  if self._peerstore_populate_task and self.host and type(self.host.cancel_task) == "function" then
+    self.host:cancel_task(self._peerstore_populate_task.id)
+  end
+  self._peerstore_populate_task = nil
   maintenance.stop(self)
   reprovider.stop(self)
   self._running = false
@@ -557,6 +583,7 @@ function DHT:add_peer(peer_id, opts)
     log.debug("kad dht peer added", {
       peer_id = peer_id,
     })
+    self:_tag_kad_peer(peer_id)
     if not had_routing_peers then
       maintenance.trigger(self)
     end
@@ -576,6 +603,33 @@ function DHT:_peerstore_supports_kad(peer_id)
     and self.host.peerstore:supports_protocol(peer_id, self.protocol_id) == true
 end
 
+function DHT:_tag_kad_peer(peer_id)
+  if
+    type(peer_id) == "string"
+    and peer_id ~= ""
+    and self.host
+    and self.host.peerstore
+    and type(self.host.peerstore.tag) == "function"
+  then
+    self.host.peerstore:tag(peer_id, M.KAD_PEER_TAG_NAME, {
+      value = M.KAD_PEER_TAG_VALUE,
+      ttl = math.huge,
+    })
+  end
+end
+
+function DHT:_untag_kad_peer(peer_id)
+  if
+    type(peer_id) == "string"
+    and peer_id ~= ""
+    and self.host
+    and self.host.peerstore
+    and type(self.host.peerstore.untag) == "function"
+  then
+    self.host.peerstore:untag(peer_id, M.KAD_PEER_TAG_NAME)
+  end
+end
+
 function DHT:_record_kad_peer(peer_id, addrs)
   if type(peer_id) ~= "string" or peer_id == "" then
     return nil
@@ -586,7 +640,136 @@ function DHT:_record_kad_peer(peer_id, addrs)
       protocols = { self.protocol_id },
     })
   end
-  return self:add_peer(peer_id)
+  local added, add_err = self:add_peer(peer_id)
+  if added then
+    self:_tag_kad_peer(peer_id)
+  end
+  return added, add_err
+end
+
+function DHT:_populate_routing_table_from_peerstore(opts)
+  local options = opts or {}
+  local ps = self.host and self.host.peerstore
+  if not (ps and type(ps.all) == "function") then
+    return { scanned = 0, candidates = 0, added = 0, skipped = 0, failed = 0, errors = {} }
+  end
+
+  local peers, peers_err = ps:all()
+  if not peers then
+    return nil, peers_err
+  end
+
+  local limit = options.limit or self._populate_from_peerstore_limit or M.DEFAULT_POPULATE_FROM_PEERSTORE_LIMIT
+  local report = { scanned = 0, candidates = 0, added = 0, skipped = 0, failed = 0, errors = {} }
+  local local_peer_id = self.local_peer_id
+  for _, peer in ipairs(peers) do
+    if report.candidates >= limit then
+      break
+    end
+    report.scanned = report.scanned + 1
+
+    local peer_id = peer and peer.peer_id
+    if type(peer_id) ~= "string" or peer_id == "" or peer_id == local_peer_id then
+      report.skipped = report.skipped + 1
+      goto continue_peer
+    end
+
+    local tags = peer.tags or {}
+    if tags[M.KAD_PEER_TAG_NAME] == nil then
+      report.skipped = report.skipped + 1
+      goto continue_peer
+    end
+
+    if not list_contains(peer.protocols or {}, self.protocol_id) then
+      report.skipped = report.skipped + 1
+      goto continue_peer
+    end
+
+    local addrs = peer.addrs
+    if (type(addrs) ~= "table" or #addrs == 0) and type(ps.get_addrs) == "function" then
+      addrs = ps:get_addrs(peer_id)
+    end
+    addrs = self:_filter_addrs(addrs or {}, { peer_id = peer_id, purpose = "peerstore_warm_start" })
+    local dialable_addrs, dialable_err = self:_dialable_tcp_addrs(addrs)
+    if not dialable_addrs then
+      report.failed = report.failed + 1
+      report.errors[#report.errors + 1] = dialable_err
+      goto continue_peer
+    end
+    if #dialable_addrs == 0 then
+      report.skipped = report.skipped + 1
+      goto continue_peer
+    end
+
+    report.candidates = report.candidates + 1
+    local supported, support_err = self:_supports_kad_protocol(peer_id, {
+      ctx = options.ctx,
+      timeout = options.protocol_check_timeout
+        or self._populate_from_peerstore_protocol_check_timeout
+        or M.DEFAULT_POPULATE_FROM_PEERSTORE_PROTOCOL_CHECK_TIMEOUT,
+    })
+    if not supported then
+      self:_untag_kad_peer(peer_id)
+      report.failed = report.failed + 1
+      report.errors[#report.errors + 1] = support_err
+      goto continue_peer
+    end
+
+    local added, add_err = self:add_peer(peer_id, {
+      addrs = dialable_addrs,
+      allow_replace = true,
+    })
+    if added then
+      report.added = report.added + 1
+    elseif add_err then
+      self:_untag_kad_peer(peer_id)
+      report.failed = report.failed + 1
+      report.errors[#report.errors + 1] = add_err
+    else
+      report.skipped = report.skipped + 1
+    end
+
+    ::continue_peer::
+  end
+
+  return report
+end
+
+function DHT:_start_peerstore_population()
+  if not self._populate_from_peerstore_on_start then
+    return true
+  end
+  if not (self.host and type(self.host.spawn_task) == "function") then
+    return true
+  end
+  if not (self.host.peerstore and type(self.host.peerstore.all) == "function") then
+    return true
+  end
+  if self._peerstore_populate_task then
+    return true
+  end
+
+  local task, task_err = self.host:spawn_task("kad.peerstore_populate", function(ctx)
+    local report, report_err = self:_populate_routing_table_from_peerstore({
+      ctx = ctx,
+      limit = self._populate_from_peerstore_limit,
+      protocol_check_timeout = self._populate_from_peerstore_protocol_check_timeout,
+    })
+    if not report then
+      log.debug("kad dht peerstore warm start failed", { cause = tostring(report_err) })
+      return true
+    end
+    log.debug("kad dht peerstore warm start completed", report)
+    if self.host and type(self.host.emit) == "function" then
+      self.host:emit("kad_dht:peerstore_populate", report)
+    end
+    return true
+  end, { service = "kad_dht" })
+  if not task then
+    return nil, task_err
+  end
+  self._peerstore_populate_task = task
+  return true
 end
 
 local function rpc_target_peer_id(peer_or_addr)
@@ -613,7 +796,11 @@ end
 --- boolean removed
 function DHT:remove_peer(peer_id)
   self._peer_health[peer_id] = nil
-  return self.routing_table:remove_peer(peer_id)
+  local removed = self.routing_table:remove_peer(peer_id)
+  if removed then
+    self:_untag_kad_peer(peer_id)
+  end
+  return removed
 end
 
 --- Lookup a peer in local routing table.
@@ -2036,6 +2223,20 @@ function M.new(host, opts)
     end
   end
 
+  local populate_from_peerstore_limit = options.populate_from_peerstore_limit or M.DEFAULT_POPULATE_FROM_PEERSTORE_LIMIT
+  populate_from_peerstore_limit = tonumber(populate_from_peerstore_limit)
+  if not populate_from_peerstore_limit or populate_from_peerstore_limit < 0 then
+    return nil, error_mod.new("input", "populate_from_peerstore_limit must be a non-negative number")
+  end
+
+  local populate_from_peerstore_protocol_check_timeout = options.populate_from_peerstore_protocol_check_timeout
+    or M.DEFAULT_POPULATE_FROM_PEERSTORE_PROTOCOL_CHECK_TIMEOUT
+  populate_from_peerstore_protocol_check_timeout = tonumber(populate_from_peerstore_protocol_check_timeout)
+  if not populate_from_peerstore_protocol_check_timeout or populate_from_peerstore_protocol_check_timeout <= 0 then
+    return nil,
+      error_mod.new("input", "populate_from_peerstore_protocol_check_timeout must be a positive number")
+  end
+
   local local_peer_id = options.local_peer_id
   if not local_peer_id and host and type(host.peer_id) == "function" then
     local p = host:peer_id()
@@ -2175,6 +2376,10 @@ function M.new(host, opts)
     _filtered_addr_cache_ttl_seconds = options.filtered_addr_cache_ttl_seconds == nil
         and M.DEFAULT_FILTERED_ADDR_CACHE_TTL_SECONDS
       or options.filtered_addr_cache_ttl_seconds,
+    _populate_from_peerstore_on_start = options.populate_from_peerstore_on_start ~= false,
+    _populate_from_peerstore_limit = populate_from_peerstore_limit,
+    _populate_from_peerstore_protocol_check_timeout = populate_from_peerstore_protocol_check_timeout,
+    _peerstore_populate_task = nil,
     _running = false,
   }, DHT)
 

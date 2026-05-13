@@ -8,6 +8,8 @@ local host_mod = require("lua_libp2p.host")
 local identify_service = require("lua_libp2p.protocol_identify.service")
 local ping_service = require("lua_libp2p.protocol_ping.service")
 local kad_dht_service = require("lua_libp2p.kad_dht")
+local sqlite_datastore = require("lua_libp2p.datastore.sqlite")
+local peerstore = require("lua_libp2p.peerstore")
 local keys = require("lua_libp2p.crypto.keys")
 local ed25519 = require("lua_libp2p.crypto.ed25519")
 local bootstrap_defaults = require("lua_libp2p.bootstrap")
@@ -81,10 +83,14 @@ end
 local function usage()
   io.stderr:write("usage:\n")
   io.stderr:write(
-    "  lua examples/kad_dht_bootstrap_demo.lua server [--default-bootstrap] [--bootstrap <multiaddr> ...] [--identity-key <path>] [listen-multiaddr ...]\n"
+    "  lua examples/kad_dht_bootstrap_demo.lua server [--default-bootstrap] [--bootstrap <multiaddr> ...] [--identity-key <path>] [--datastore <sqlite-path>] [--peerstore <sqlite-path>] [listen-multiaddr ...]\n"
   )
-  io.stderr:write("  lua examples/kad_dht_bootstrap_demo.lua client </bootstrap-multiaddr-with-p2p>\n")
-  io.stderr:write("  lua examples/kad_dht_bootstrap_demo.lua client --default-bootstrap\n")
+  io.stderr:write(
+    "  lua examples/kad_dht_bootstrap_demo.lua client </bootstrap-multiaddr-with-p2p> [--datastore <sqlite-path>] [--peerstore <sqlite-path>]\n"
+  )
+  io.stderr:write(
+    "  lua examples/kad_dht_bootstrap_demo.lua client --default-bootstrap [--datastore <sqlite-path>] [--peerstore <sqlite-path>]\n"
+  )
   io.stderr:write("  (note: bootstrap multiaddr must start with '/'; e.g. /ip4/127.0.0.1/tcp/12345/p2p/12D3KooW...)\n")
   io.stderr:write(
     "  (server defaults to /ip4/0.0.0.0/tcp/4001 and /ip6/::/tcp/4001 when no listen addrs are provided)\n"
@@ -113,6 +119,33 @@ local function load_or_create_identity(path)
     return nil, save_err
   end
   return keypair
+end
+
+local function open_optional_datastore(path)
+  if path == nil then
+    return nil
+  end
+  local store, store_err = sqlite_datastore.new({ path = path })
+  if not store then
+    return nil, store_err
+  end
+  return store
+end
+
+local function open_optional_peerstore(path)
+  if path == nil then
+    return nil
+  end
+  local store, store_err = open_optional_datastore(path)
+  if not store then
+    return nil, nil, store_err
+  end
+  local ps, ps_err = peerstore.new({ datastore = store })
+  if not ps then
+    store:close()
+    return nil, nil, ps_err
+  end
+  return ps, store
 end
 
 local function summarize_error(err)
@@ -358,14 +391,16 @@ local function run_server()
   local bootstrappers = {}
   local use_default_bootstrap = false
   local identity_key_path = ".kad_dht_bootstrap_demo.ed25519.key"
+  local datastore_path
+  local peerstore_path
 
-  local i = 2
-  while i <= #arg do
-    local name = arg[i]
-    local value = arg[i + 1]
+  local arg_i = 2
+  while arg_i <= #arg do
+    local name = arg[arg_i]
+    local value = arg[arg_i + 1]
     if name == "--default-bootstrap" then
       use_default_bootstrap = true
-      i = i + 1
+      arg_i = arg_i + 1
     elseif name == "--bootstrap" then
       if not value then
         io.stderr:write("--bootstrap requires a multiaddr\n")
@@ -373,7 +408,7 @@ local function run_server()
         os.exit(2)
       end
       bootstrappers[#bootstrappers + 1] = value
-      i = i + 2
+      arg_i = arg_i + 2
     elseif name == "--identity-key" then
       if not value or value == "" then
         io.stderr:write("--identity-key requires a path\n")
@@ -381,10 +416,26 @@ local function run_server()
         os.exit(2)
       end
       identity_key_path = value
-      i = i + 2
+      arg_i = arg_i + 2
+    elseif name == "--datastore" then
+      if not value or value == "" then
+        io.stderr:write("--datastore requires a SQLite path\n")
+        usage()
+        os.exit(2)
+      end
+      datastore_path = value
+      arg_i = arg_i + 2
+    elseif name == "--peerstore" then
+      if not value or value == "" then
+        io.stderr:write("--peerstore requires a SQLite path\n")
+        usage()
+        os.exit(2)
+      end
+      peerstore_path = value
+      arg_i = arg_i + 2
     else
       listen_addrs[#listen_addrs + 1] = name
-      i = i + 1
+      arg_i = arg_i + 1
     end
   end
 
@@ -420,8 +471,24 @@ local function run_server()
     os.exit(1)
   end
 
+  local dht_datastore, datastore_err = open_optional_datastore(datastore_path)
+  if datastore_path and not dht_datastore then
+    io.stderr:write("datastore init failed: " .. tostring(datastore_err) .. "\n")
+    os.exit(1)
+  end
+
+  local ps, ps_datastore, ps_err = open_optional_peerstore(peerstore_path)
+  if peerstore_path and not ps then
+    if dht_datastore and dht_datastore.close then
+      dht_datastore:close()
+    end
+    io.stderr:write("peerstore init failed: " .. tostring(ps_err) .. "\n")
+    os.exit(1)
+  end
+
   local host, host_err = host_mod.new({
     identity = identity,
+    peerstore = ps,
     listen_addrs = listen_addrs,
     peer_discovery = bootstrap_config and { bootstrap = bootstrap_config } or nil,
     services = {
@@ -431,6 +498,7 @@ local function run_server()
         module = kad_dht_service,
         config = {
           mode = "server",
+          datastore = dht_datastore,
           max_concurrent_queries = 4,
         },
       },
@@ -460,16 +528,34 @@ local function run_server()
       end
       io.stdout:write("running; Ctrl-C to stop\n")
       io.stdout:write("identity key: " .. tostring(identity_key_path) .. "\n")
+      if datastore_path then
+        io.stdout:write("kad datastore: " .. tostring(datastore_path) .. "\n")
+      end
+      if peerstore_path then
+        io.stdout:write("peerstore: " .. tostring(peerstore_path) .. "\n")
+      end
       io.stdout:flush()
     end,
   })
   if not host then
+    if dht_datastore and dht_datastore.close then
+      dht_datastore:close()
+    end
+    if ps_datastore and ps_datastore.close then
+      ps_datastore:close()
+    end
     io.stderr:write("host init failed: " .. tostring(host_err) .. "\n")
     os.exit(1)
   end
 
   local started, start_err = host:start()
   if not started then
+    if dht_datastore and dht_datastore.close then
+      dht_datastore:close()
+    end
+    if ps_datastore and ps_datastore.close then
+      ps_datastore:close()
+    end
     io.stderr:write("host stopped with error: " .. tostring(start_err) .. "\n")
     os.exit(1)
   end
@@ -539,7 +625,9 @@ local function run_server()
 end
 
 local function run_client()
-  local bootstrap_arg = arg[2]
+  local bootstrap_arg
+  local datastore_path
+  local peerstore_path
   local bootstrap_addrs
   local parsed_input
   local dns_cache = {}
@@ -571,6 +659,36 @@ local function run_client()
   end
   io.stdout:write("dnsaddr resolver: lua_libp2p.dnsaddr.default_resolver\n")
 
+  local arg_i = 2
+  while arg_i <= #arg do
+    local name = arg[arg_i]
+    local value = arg[arg_i + 1]
+    if name == "--datastore" then
+      if not value or value == "" then
+        io.stderr:write("--datastore requires a SQLite path\n")
+        usage()
+        os.exit(2)
+      end
+      datastore_path = value
+      arg_i = arg_i + 2
+    elseif name == "--peerstore" then
+      if not value or value == "" then
+        io.stderr:write("--peerstore requires a SQLite path\n")
+        usage()
+        os.exit(2)
+      end
+      peerstore_path = value
+      arg_i = arg_i + 2
+    elseif bootstrap_arg == nil then
+      bootstrap_arg = name
+      arg_i = arg_i + 1
+    else
+      io.stderr:write("unexpected argument: " .. tostring(name) .. "\n")
+      usage()
+      os.exit(2)
+    end
+  end
+
   if bootstrap_arg == "--default-bootstrap" then
     bootstrap_addrs = bootstrap_defaults.default_bootstrappers()
     if #bootstrap_addrs == 0 then
@@ -599,8 +717,24 @@ local function run_client()
     bootstrap_addrs = { bootstrap_addr }
   end
 
+  local dht_datastore, datastore_err = open_optional_datastore(datastore_path)
+  if datastore_path and not dht_datastore then
+    io.stderr:write("datastore init failed: " .. tostring(datastore_err) .. "\n")
+    os.exit(1)
+  end
+
+  local ps, ps_datastore, ps_err = open_optional_peerstore(peerstore_path)
+  if peerstore_path and not ps then
+    if dht_datastore and dht_datastore.close then
+      dht_datastore:close()
+    end
+    io.stderr:write("peerstore init failed: " .. tostring(ps_err) .. "\n")
+    os.exit(1)
+  end
+
   local host, host_err = host_mod.new({
     runtime = "luv",
+    peerstore = ps,
     peer_discovery = {
       bootstrap = {
         module = peer_discovery_bootstrap,
@@ -620,6 +754,7 @@ local function run_client()
         module = kad_dht_service,
         config = {
           mode = "client",
+          datastore = dht_datastore,
         },
       },
     },
@@ -629,12 +764,24 @@ local function run_client()
     accept_timeout = 0.05,
   })
   if not host then
+    if dht_datastore and dht_datastore.close then
+      dht_datastore:close()
+    end
+    if ps_datastore and ps_datastore.close then
+      ps_datastore:close()
+    end
     io.stderr:write("host init failed: " .. tostring(host_err) .. "\n")
     os.exit(1)
   end
 
   local started, start_err = host:start()
   if not started then
+    if dht_datastore and dht_datastore.close then
+      dht_datastore:close()
+    end
+    if ps_datastore and ps_datastore.close then
+      ps_datastore:close()
+    end
     io.stderr:write("host start failed: " .. tostring(start_err) .. "\n")
     os.exit(1)
   end
@@ -743,6 +890,12 @@ local function run_client()
   end
 
   host:stop()
+  if dht_datastore and dht_datastore.close then
+    dht_datastore:close()
+  end
+  if ps_datastore and ps_datastore.close then
+    ps_datastore:close()
+  end
 end
 
 if mode == "server" then
