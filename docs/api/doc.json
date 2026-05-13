@@ -14741,11 +14741,11 @@
                 "deprecated": false,
                 "file": "lua_libp2p/peer_discovery_mdns/init.lua",
                 "finish": [
-                    18,
+                    21,
                     26
                 ],
                 "start": [
-                    18,
+                    21,
                     10
                 ],
                 "type": "doc.class",
@@ -14760,22 +14760,22 @@
                 "desc": "Whether to advertise public IP addresses. Default `false`.",
                 "extends": {
                     "finish": [
-                        30,
+                        33,
                         37
                     ],
                     "start": [
-                        30,
+                        33,
                         30
                     ],
                     "type": "doc.type",
                     "types": [
                         {
                             "finish": [
-                                30,
+                                33,
                                 37
                             ],
                             "start": [
-                                30,
+                                33,
                                 30
                             ],
                             "type": "doc.type.name",
@@ -14786,13 +14786,13 @@
                 },
                 "file": "lua_libp2p/peer_discovery_mdns/init.lua",
                 "finish": [
-                    30,
+                    33,
                     37
                 ],
                 "name": "allow_public_addrs",
                 "rawdesc": "Whether to advertise public IP addresses. Default `false`.",
                 "start": [
-                    30,
+                    33,
                     10
                 ],
                 "type": "doc.field",
@@ -14805,22 +14805,22 @@
                 "desc": "IPv4 bind address. Default `0.0.0.0`.",
                 "extends": {
                     "finish": [
-                        25,
+                        28,
                         27
                     ],
                     "start": [
-                        25,
+                        28,
                         21
                     ],
                     "type": "doc.type",
                     "types": [
                         {
                             "finish": [
-                                25,
+                                28,
                                 27
                             ],
                             "start": [
-                                25,
+                                28,
                                 21
                             ],
                             "type": "doc.type.name",
@@ -14831,13 +14831,13 @@
                 },
                 "file": "lua_libp2p/peer_discovery_mdns/init.lua",
                 "finish": [
-                    25,
+                    28,
                     27
                 ],
                 "name": "bind_addr",
                 "rawdesc": "IPv4 bind address. Default `0.0.0.0`.",
                 "start": [
-                    25,
+                    28,
                     10
                 ],
                 "type": "doc.field",
@@ -14850,22 +14850,22 @@
                 "desc": "IPv6 bind address. Default `::`.",
                 "extends": {
                     "finish": [
-                        26,
+                        29,
                         28
                     ],
                     "start": [
-                        26,
+                        29,
                         22
                     ],
                     "type": "doc.type",
                     "types": [
                         {
                             "finish": [
-                                26,
+                                29,
                                 28
                             ],
                             "start": [
-                                26,
+                                29,
                                 22
                             ],
                             "type": "doc.type.name",
@@ -14876,13 +14876,13 @@
                 },
                 "file": "lua_libp2p/peer_discovery_mdns/init.lua",
                 "finish": [
-                    26,
+                    29,
                     28
                 ],
                 "name": "bind_addr6",
                 "rawdesc": "IPv6 bind address. Default `::`.",
                 "start": [
-                    26,
+                    29,
                     10
                 ],
                 "type": "doc.field",
@@ -14895,22 +14895,22 @@
                 "desc": "Whether to answer mDNS queries. Default `true`.",
                 "extends": {
                     "finish": [
-                        29,
+                        32,
                         28
                     ],
                     "start": [
-                        29,
+                        32,
                         21
                     ],
                     "type": "doc.type",
                     "types": [
                         {
                             "finish": [
-                                29,
+                                32,
                                 28
                             ],
                             "start": [
-                                29,
+                                32,
                                 21
                             ],
                             "type": "doc.type.name",
@@ -14921,13 +14921,13 @@
                 },
                 "file": "lua_libp2p/peer_discovery_mdns/init.lua",
                 "finish": [
-                    29,
+                    32,
                     28
                 ],
                 "name": "broadcast",
                 "rawdesc": "Whether to answer mDNS queries. Default `true`.",
                 "start": [
-                    29,
+                    32,
                     10
                 ],
                 "type": "doc.field",
@@ -14940,22 +14940,22 @@
                 "desc": "Query interval in seconds. Default `10`; `0` disables periodic queries.",
                 "extends": {
                     "finish": [
-                        27,
+                        30,
                         26
                     ],
                     "start": [
-                        27,
+                        30,
                         20
                     ],
                     "type": "doc.type",
                     "types": [
                         {
                             "finish": [
-                                27,
+                                30,
                                 26
                             ],
                             "start": [
-                                27,
+                                30,
                                 20
                             ],
                             "type": "doc.type.name",
@@ -14966,13 +14966,13 @@
                 },
                 "file": "lua_libp2p/peer_discovery_mdns/init.lua",
                 "finish": [
-                    27,
+                    30,
                     26
                 ],
                 "name": "interval",
                 "rawdesc": "Query interval in seconds. Default `10`; `0` disables periodic queries.",
                 "start": [
-                    27,
+                    30,
                     10
                 ],
                 "type": "doc.field",
@@ -14985,22 +14985,22 @@
                 "desc": "Whether to open IPv4 mDNS socket. Default `true`.",
                 "extends": {
                     "finish": [
-                        31,
+                        34,
                         23
                     ],
                     "start": [
-                        31,
+                        34,
                         16
                     ],
                     "type": "doc.type",
                     "types": [
                         {
                             "finish": [
-                                31,
+                                34,
                                 23
                             ],
                             "start": [
-                                31,
+                                34,
                                 16
                             ],
                             "type": "doc.type.name",
@@ -15011,13 +15011,13 @@
                 },
                 "file": "lua_libp2p/peer_discovery_mdns/init.lua",
                 "finish": [
-                    31,
+                    34,
                     23
                 ],
                 "name": "ipv4",
                 "rawdesc": "Whether to open IPv4 mDNS socket. Default `true`.",
                 "start": [
-                    31,
+                    34,
                     10
                 ],
                 "type": "doc.field",
@@ -15030,22 +15030,22 @@
                 "desc": "Whether to open IPv6 mDNS socket. Default `true`.",
                 "extends": {
                     "finish": [
-                        32,
+                        35,
                         23
                     ],
                     "start": [
-                        32,
+                        35,
                         16
                     ],
                     "type": "doc.type",
                     "types": [
                         {
                             "finish": [
-                                32,
+                                35,
                                 23
                             ],
                             "start": [
-                                32,
+                                35,
                                 16
                             ],
                             "type": "doc.type.name",
@@ -15056,13 +15056,13 @@
                 },
                 "file": "lua_libp2p/peer_discovery_mdns/init.lua",
                 "finish": [
-                    32,
+                    35,
                     23
                 ],
                 "name": "ipv6",
                 "rawdesc": "Whether to open IPv6 mDNS socket. Default `true`.",
                 "start": [
-                    32,
+                    35,
                     10
                 ],
                 "type": "doc.field",
@@ -15075,22 +15075,22 @@
                 "desc": "IPv4 multicast group. Default `224.0.0.251`.",
                 "extends": {
                     "finish": [
-                        22,
+                        25,
                         32
                     ],
                     "start": [
-                        22,
+                        25,
                         26
                     ],
                     "type": "doc.type",
                     "types": [
                         {
                             "finish": [
-                                22,
+                                25,
                                 32
                             ],
                             "start": [
-                                22,
+                                25,
                                 26
                             ],
                             "type": "doc.type.name",
@@ -15101,13 +15101,13 @@
                 },
                 "file": "lua_libp2p/peer_discovery_mdns/init.lua",
                 "finish": [
-                    22,
+                    25,
                     32
                 ],
                 "name": "multicast_addr",
                 "rawdesc": "IPv4 multicast group. Default `224.0.0.251`.",
                 "start": [
-                    22,
+                    25,
                     10
                 ],
                 "type": "doc.field",
@@ -15120,22 +15120,22 @@
                 "desc": "IPv6 multicast group. Default `ff02::fb`.",
                 "extends": {
                     "finish": [
-                        23,
+                        26,
                         33
                     ],
                     "start": [
-                        23,
+                        26,
                         27
                     ],
                     "type": "doc.type",
                     "types": [
                         {
                             "finish": [
-                                23,
+                                26,
                                 33
                             ],
                             "start": [
-                                23,
+                                26,
                                 27
                             ],
                             "type": "doc.type.name",
@@ -15146,13 +15146,13 @@
                 },
                 "file": "lua_libp2p/peer_discovery_mdns/init.lua",
                 "finish": [
-                    23,
+                    26,
                     33
                 ],
                 "name": "multicast_addr6",
                 "rawdesc": "IPv6 multicast group. Default `ff02::fb`.",
                 "start": [
-                    23,
+                    26,
                     10
                 ],
                 "type": "doc.field",
@@ -15165,22 +15165,22 @@
                 "desc": "DNS-SD instance label. Random 32-byte label when omitted.",
                 "extends": {
                     "finish": [
-                        20,
+                        23,
                         27
                     ],
                     "start": [
-                        20,
+                        23,
                         21
                     ],
                     "type": "doc.type",
                     "types": [
                         {
                             "finish": [
-                                20,
+                                23,
                                 27
                             ],
                             "start": [
-                                20,
+                                23,
                                 21
                             ],
                             "type": "doc.type.name",
@@ -15191,13 +15191,13 @@
                 },
                 "file": "lua_libp2p/peer_discovery_mdns/init.lua",
                 "finish": [
-                    20,
+                    23,
                     27
                 ],
                 "name": "peer_name",
                 "rawdesc": "DNS-SD instance label. Random 32-byte label when omitted.",
                 "start": [
-                    20,
+                    23,
                     10
                 ],
                 "type": "doc.field",
@@ -15210,22 +15210,22 @@
                 "desc": "Random peer name length when `peer_name` is omitted.",
                 "extends": {
                     "finish": [
-                        21,
+                        24,
                         35
                     ],
                     "start": [
-                        21,
+                        24,
                         28
                     ],
                     "type": "doc.type",
                     "types": [
                         {
                             "finish": [
-                                21,
+                                24,
                                 35
                             ],
                             "start": [
-                                21,
+                                24,
                                 28
                             ],
                             "type": "doc.type.name",
@@ -15236,13 +15236,13 @@
                 },
                 "file": "lua_libp2p/peer_discovery_mdns/init.lua",
                 "finish": [
-                    21,
+                    24,
                     35
                 ],
                 "name": "peer_name_length",
                 "rawdesc": "Random peer name length when `peer_name` is omitted.",
                 "start": [
-                    21,
+                    24,
                     10
                 ],
                 "type": "doc.field",
@@ -15255,22 +15255,22 @@
                 "desc": "Discovered peer TTL in seconds. Default `120`.",
                 "extends": {
                     "finish": [
-                        28,
+                        31,
                         26
                     ],
                     "start": [
-                        28,
+                        31,
                         20
                     ],
                     "type": "doc.type",
                     "types": [
                         {
                             "finish": [
-                                28,
+                                31,
                                 26
                             ],
                             "start": [
-                                28,
+                                31,
                                 20
                             ],
                             "type": "doc.type.name",
@@ -15281,13 +15281,13 @@
                 },
                 "file": "lua_libp2p/peer_discovery_mdns/init.lua",
                 "finish": [
-                    28,
+                    31,
                     26
                 ],
                 "name": "peer_ttl",
                 "rawdesc": "Discovered peer TTL in seconds. Default `120`.",
                 "start": [
-                    28,
+                    31,
                     10
                 ],
                 "type": "doc.field",
@@ -15300,22 +15300,22 @@
                 "desc": "UDP port. Default `5353`.",
                 "extends": {
                     "finish": [
-                        24,
+                        27,
                         23
                     ],
                     "start": [
-                        24,
+                        27,
                         16
                     ],
                     "type": "doc.type",
                     "types": [
                         {
                             "finish": [
-                                24,
+                                27,
                                 23
                             ],
                             "start": [
-                                24,
+                                27,
                                 16
                             ],
                             "type": "doc.type.name",
@@ -15326,13 +15326,13 @@
                 },
                 "file": "lua_libp2p/peer_discovery_mdns/init.lua",
                 "finish": [
-                    24,
+                    27,
                     23
                 ],
                 "name": "port",
                 "rawdesc": "UDP port. Default `5353`.",
                 "start": [
-                    24,
+                    27,
                     10
                 ],
                 "type": "doc.field",
@@ -15345,22 +15345,22 @@
                 "desc": "Whether to send an immediate query when started. Default `true`.",
                 "extends": {
                     "finish": [
-                        34,
+                        37,
                         33
                     ],
                     "start": [
-                        34,
+                        37,
                         26
                     ],
                     "type": "doc.type",
                     "types": [
                         {
                             "finish": [
-                                34,
+                                37,
                                 33
                             ],
                             "start": [
-                                34,
+                                37,
                                 26
                             ],
                             "type": "doc.type.name",
@@ -15371,13 +15371,13 @@
                 },
                 "file": "lua_libp2p/peer_discovery_mdns/init.lua",
                 "finish": [
-                    34,
+                    37,
                     33
                 ],
                 "name": "query_on_start",
                 "rawdesc": "Whether to send an immediate query when started. Default `true`.",
                 "start": [
-                    34,
+                    37,
                     10
                 ],
                 "type": "doc.field",
@@ -15390,22 +15390,22 @@
                 "desc": "Whether multicast membership failure is fatal for a socket. Default `true`.",
                 "extends": {
                     "finish": [
-                        33,
+                        36,
                         37
                     ],
                     "start": [
-                        33,
+                        36,
                         30
                     ],
                     "type": "doc.type",
                     "types": [
                         {
                             "finish": [
-                                33,
+                                36,
                                 37
                             ],
                             "start": [
-                                33,
+                                36,
                                 30
                             ],
                             "type": "doc.type.name",
@@ -15416,13 +15416,13 @@
                 },
                 "file": "lua_libp2p/peer_discovery_mdns/init.lua",
                 "finish": [
-                    33,
+                    36,
                     37
                 ],
                 "name": "require_membership",
                 "rawdesc": "Whether multicast membership failure is fatal for a socket. Default `true`.",
                 "start": [
-                    33,
+                    36,
                     10
                 ],
                 "type": "doc.field",
@@ -15435,22 +15435,22 @@
                 "desc": "mDNS service name. Default `_p2p._udp.local`.",
                 "extends": {
                     "finish": [
-                        19,
+                        22,
                         30
                     ],
                     "start": [
-                        19,
+                        22,
                         24
                     ],
                     "type": "doc.type",
                     "types": [
                         {
                             "finish": [
-                                19,
+                                22,
                                 30
                             ],
                             "start": [
-                                19,
+                                22,
                                 24
                             ],
                             "type": "doc.type.name",
@@ -15461,13 +15461,13 @@
                 },
                 "file": "lua_libp2p/peer_discovery_mdns/init.lua",
                 "finish": [
-                    19,
+                    22,
                     30
                 ],
                 "name": "service_name",
                 "rawdesc": "mDNS service name. Default `_p2p._udp.local`.",
                 "start": [
-                    19,
+                    22,
                     10
                 ],
                 "type": "doc.field",
@@ -15480,11 +15480,11 @@
                 "desc": "Test hook returning socket-like object.",
                 "extends": {
                     "finish": [
-                        35,
+                        38,
                         64
                     ],
                     "start": [
-                        35,
+                        38,
                         26
                     ],
                     "type": "doc.type",
@@ -15493,24 +15493,24 @@
                             "args": [
                                 {
                                     "finish": [
-                                        35,
+                                        38,
                                         56
                                     ],
                                     "name": {
                                         "[1]": "service",
                                         "finish": [
-                                            35,
+                                            38,
                                             37
                                         ],
                                         "start": [
-                                            35,
+                                            38,
                                             30
                                         ],
                                         "type": "doc.type.arg.name",
                                         "view": "service"
                                     },
                                     "start": [
-                                        35,
+                                        38,
                                         30
                                     ],
                                     "type": "doc.type.arg",
@@ -15518,28 +15518,28 @@
                                 }
                             ],
                             "finish": [
-                                35,
+                                38,
                                 64
                             ],
                             "returns": [
                                 {
                                     "finish": [
-                                        35,
+                                        38,
                                         64
                                     ],
                                     "start": [
-                                        35,
+                                        38,
                                         59
                                     ],
                                     "type": "doc.type",
                                     "types": [
                                         {
                                             "finish": [
-                                                35,
+                                                38,
                                                 64
                                             ],
                                             "start": [
-                                                35,
+                                                38,
                                                 59
                                             ],
                                             "type": "doc.type.name",
@@ -15550,7 +15550,7 @@
                                 }
                             ],
                             "start": [
-                                35,
+                                38,
                                 26
                             ],
                             "type": "doc.type.function",
@@ -15561,13 +15561,13 @@
                 },
                 "file": "lua_libp2p/peer_discovery_mdns/init.lua",
                 "finish": [
-                    35,
+                    38,
                     64
                 ],
                 "name": "socket_factory",
                 "rawdesc": "Test hook returning socket-like object.",
                 "start": [
-                    35,
+                    38,
                     10
                 ],
                 "type": "doc.field",
@@ -15586,11 +15586,11 @@
                 "deprecated": false,
                 "file": "lua_libp2p/peer_discovery_mdns/init.lua",
                 "finish": [
-                    37,
+                    40,
                     27
                 ],
                 "start": [
-                    37,
+                    40,
                     10
                 ],
                 "type": "doc.class",
@@ -15604,22 +15604,22 @@
                 "deprecated": false,
                 "extends": {
                     "finish": [
-                        49,
+                        52,
                         36
                     ],
                     "start": [
-                        49,
+                        52,
                         29
                     ],
                     "type": "doc.type",
                     "types": [
                         {
                             "finish": [
-                                49,
+                                52,
                                 36
                             ],
                             "start": [
-                                49,
+                                52,
                                 29
                             ],
                             "type": "doc.type.name",
@@ -15630,12 +15630,12 @@
                 },
                 "file": "lua_libp2p/peer_discovery_mdns/init.lua",
                 "finish": [
-                    49,
+                    52,
                     36
                 ],
                 "name": "allow_public_addrs",
                 "start": [
-                    49,
+                    52,
                     10
                 ],
                 "type": "doc.field",
@@ -15647,22 +15647,22 @@
                 "deprecated": false,
                 "extends": {
                     "finish": [
-                        44,
+                        47,
                         26
                     ],
                     "start": [
-                        44,
+                        47,
                         20
                     ],
                     "type": "doc.type",
                     "types": [
                         {
                             "finish": [
-                                44,
+                                47,
                                 26
                             ],
                             "start": [
-                                44,
+                                47,
                                 20
                             ],
                             "type": "doc.type.name",
@@ -15673,12 +15673,12 @@
                 },
                 "file": "lua_libp2p/peer_discovery_mdns/init.lua",
                 "finish": [
-                    44,
+                    47,
                     26
                 ],
                 "name": "bind_addr",
                 "start": [
-                    44,
+                    47,
                     10
                 ],
                 "type": "doc.field",
@@ -15690,22 +15690,22 @@
                 "deprecated": false,
                 "extends": {
                     "finish": [
-                        45,
+                        48,
                         27
                     ],
                     "start": [
-                        45,
+                        48,
                         21
                     ],
                     "type": "doc.type",
                     "types": [
                         {
                             "finish": [
-                                45,
+                                48,
                                 27
                             ],
                             "start": [
-                                45,
+                                48,
                                 21
                             ],
                             "type": "doc.type.name",
@@ -15716,12 +15716,12 @@
                 },
                 "file": "lua_libp2p/peer_discovery_mdns/init.lua",
                 "finish": [
-                    45,
+                    48,
                     27
                 ],
                 "name": "bind_addr6",
                 "start": [
-                    45,
+                    48,
                     10
                 ],
                 "type": "doc.field",
@@ -15733,22 +15733,22 @@
                 "deprecated": false,
                 "extends": {
                     "finish": [
-                        48,
+                        51,
                         27
                     ],
                     "start": [
-                        48,
+                        51,
                         20
                     ],
                     "type": "doc.type",
                     "types": [
                         {
                             "finish": [
-                                48,
+                                51,
                                 27
                             ],
                             "start": [
-                                48,
+                                51,
                                 20
                             ],
                             "type": "doc.type.name",
@@ -15759,12 +15759,12 @@
                 },
                 "file": "lua_libp2p/peer_discovery_mdns/init.lua",
                 "finish": [
-                    48,
+                    51,
                     27
                 ],
                 "name": "broadcast",
                 "start": [
-                    48,
+                    51,
                     10
                 ],
                 "type": "doc.field",
@@ -15776,22 +15776,22 @@
                 "deprecated": false,
                 "extends": {
                     "finish": [
-                        38,
+                        41,
                         24
                     ],
                     "start": [
-                        38,
+                        41,
                         15
                     ],
                     "type": "doc.type",
                     "types": [
                         {
                             "finish": [
-                                38,
+                                41,
                                 20
                             ],
                             "start": [
-                                38,
+                                41,
                                 15
                             ],
                             "type": "doc.type.name",
@@ -15799,11 +15799,11 @@
                         },
                         {
                             "finish": [
-                                38,
+                                41,
                                 24
                             ],
                             "start": [
-                                38,
+                                41,
                                 21
                             ],
                             "type": "doc.type.name",
@@ -15814,12 +15814,12 @@
                 },
                 "file": "lua_libp2p/peer_discovery_mdns/init.lua",
                 "finish": [
-                    38,
+                    41,
                     24
                 ],
                 "name": "host",
                 "start": [
-                    38,
+                    41,
                     10
                 ],
                 "type": "doc.field",
@@ -15831,22 +15831,22 @@
                 "deprecated": false,
                 "extends": {
                     "finish": [
-                        46,
+                        49,
                         25
                     ],
                     "start": [
-                        46,
+                        49,
                         19
                     ],
                     "type": "doc.type",
                     "types": [
                         {
                             "finish": [
-                                46,
+                                49,
                                 25
                             ],
                             "start": [
-                                46,
+                                49,
                                 19
                             ],
                             "type": "doc.type.name",
@@ -15857,12 +15857,12 @@
                 },
                 "file": "lua_libp2p/peer_discovery_mdns/init.lua",
                 "finish": [
-                    46,
+                    49,
                     25
                 ],
                 "name": "interval",
                 "start": [
-                    46,
+                    49,
                     10
                 ],
                 "type": "doc.field",
@@ -15874,22 +15874,22 @@
                 "deprecated": false,
                 "extends": {
                     "finish": [
-                        50,
+                        53,
                         22
                     ],
                     "start": [
-                        50,
+                        53,
                         15
                     ],
                     "type": "doc.type",
                     "types": [
                         {
                             "finish": [
-                                50,
+                                53,
                                 22
                             ],
                             "start": [
-                                50,
+                                53,
                                 15
                             ],
                             "type": "doc.type.name",
@@ -15900,12 +15900,12 @@
                 },
                 "file": "lua_libp2p/peer_discovery_mdns/init.lua",
                 "finish": [
-                    50,
+                    53,
                     22
                 ],
                 "name": "ipv4",
                 "start": [
-                    50,
+                    53,
                     10
                 ],
                 "type": "doc.field",
@@ -15917,22 +15917,22 @@
                 "deprecated": false,
                 "extends": {
                     "finish": [
-                        51,
+                        54,
                         22
                     ],
                     "start": [
-                        51,
+                        54,
                         15
                     ],
                     "type": "doc.type",
                     "types": [
                         {
                             "finish": [
-                                51,
+                                54,
                                 22
                             ],
                             "start": [
-                                51,
+                                54,
                                 15
                             ],
                             "type": "doc.type.name",
@@ -15943,12 +15943,12 @@
                 },
                 "file": "lua_libp2p/peer_discovery_mdns/init.lua",
                 "finish": [
-                    51,
+                    54,
                     22
                 ],
                 "name": "ipv6",
                 "start": [
-                    51,
+                    54,
                     10
                 ],
                 "type": "doc.field",
@@ -15960,22 +15960,22 @@
                 "deprecated": false,
                 "extends": {
                     "finish": [
-                        41,
+                        44,
                         31
                     ],
                     "start": [
-                        41,
+                        44,
                         25
                     ],
                     "type": "doc.type",
                     "types": [
                         {
                             "finish": [
-                                41,
+                                44,
                                 31
                             ],
                             "start": [
-                                41,
+                                44,
                                 25
                             ],
                             "type": "doc.type.name",
@@ -15986,12 +15986,12 @@
                 },
                 "file": "lua_libp2p/peer_discovery_mdns/init.lua",
                 "finish": [
-                    41,
+                    44,
                     31
                 ],
                 "name": "multicast_addr",
                 "start": [
-                    41,
+                    44,
                     10
                 ],
                 "type": "doc.field",
@@ -16003,22 +16003,22 @@
                 "deprecated": false,
                 "extends": {
                     "finish": [
-                        42,
+                        45,
                         32
                     ],
                     "start": [
-                        42,
+                        45,
                         26
                     ],
                     "type": "doc.type",
                     "types": [
                         {
                             "finish": [
-                                42,
+                                45,
                                 32
                             ],
                             "start": [
-                                42,
+                                45,
                                 26
                             ],
                             "type": "doc.type.name",
@@ -16029,12 +16029,12 @@
                 },
                 "file": "lua_libp2p/peer_discovery_mdns/init.lua",
                 "finish": [
-                    42,
+                    45,
                     32
                 ],
                 "name": "multicast_addr6",
                 "start": [
-                    42,
+                    45,
                     10
                 ],
                 "type": "doc.field",
@@ -16046,22 +16046,22 @@
                 "deprecated": false,
                 "extends": {
                     "finish": [
-                        40,
+                        43,
                         26
                     ],
                     "start": [
-                        40,
+                        43,
                         20
                     ],
                     "type": "doc.type",
                     "types": [
                         {
                             "finish": [
-                                40,
+                                43,
                                 26
                             ],
                             "start": [
-                                40,
+                                43,
                                 20
                             ],
                             "type": "doc.type.name",
@@ -16072,12 +16072,12 @@
                 },
                 "file": "lua_libp2p/peer_discovery_mdns/init.lua",
                 "finish": [
-                    40,
+                    43,
                     26
                 ],
                 "name": "peer_name",
                 "start": [
-                    40,
+                    43,
                     10
                 ],
                 "type": "doc.field",
@@ -16089,22 +16089,22 @@
                 "deprecated": false,
                 "extends": {
                     "finish": [
-                        47,
+                        50,
                         25
                     ],
                     "start": [
-                        47,
+                        50,
                         19
                     ],
                     "type": "doc.type",
                     "types": [
                         {
                             "finish": [
-                                47,
+                                50,
                                 25
                             ],
                             "start": [
-                                47,
+                                50,
                                 19
                             ],
                             "type": "doc.type.name",
@@ -16115,12 +16115,12 @@
                 },
                 "file": "lua_libp2p/peer_discovery_mdns/init.lua",
                 "finish": [
-                    47,
+                    50,
                     25
                 ],
                 "name": "peer_ttl",
                 "start": [
-                    47,
+                    50,
                     10
                 ],
                 "type": "doc.field",
@@ -16132,22 +16132,22 @@
                 "deprecated": false,
                 "extends": {
                     "finish": [
-                        43,
+                        46,
                         22
                     ],
                     "start": [
-                        43,
+                        46,
                         15
                     ],
                     "type": "doc.type",
                     "types": [
                         {
                             "finish": [
-                                43,
+                                46,
                                 22
                             ],
                             "start": [
-                                43,
+                                46,
                                 15
                             ],
                             "type": "doc.type.name",
@@ -16158,12 +16158,12 @@
                 },
                 "file": "lua_libp2p/peer_discovery_mdns/init.lua",
                 "finish": [
-                    43,
+                    46,
                     22
                 ],
                 "name": "port",
                 "start": [
-                    43,
+                    46,
                     10
                 ],
                 "type": "doc.field",
@@ -16175,22 +16175,22 @@
                 "deprecated": false,
                 "extends": {
                     "finish": [
-                        53,
+                        56,
                         32
                     ],
                     "start": [
-                        53,
+                        56,
                         25
                     ],
                     "type": "doc.type",
                     "types": [
                         {
                             "finish": [
-                                53,
+                                56,
                                 32
                             ],
                             "start": [
-                                53,
+                                56,
                                 25
                             ],
                             "type": "doc.type.name",
@@ -16201,12 +16201,12 @@
                 },
                 "file": "lua_libp2p/peer_discovery_mdns/init.lua",
                 "finish": [
-                    53,
+                    56,
                     32
                 ],
                 "name": "query_on_start",
                 "start": [
-                    53,
+                    56,
                     10
                 ],
                 "type": "doc.field",
@@ -16218,22 +16218,22 @@
                 "deprecated": false,
                 "extends": {
                     "finish": [
-                        52,
+                        55,
                         36
                     ],
                     "start": [
-                        52,
+                        55,
                         29
                     ],
                     "type": "doc.type",
                     "types": [
                         {
                             "finish": [
-                                52,
+                                55,
                                 36
                             ],
                             "start": [
-                                52,
+                                55,
                                 29
                             ],
                             "type": "doc.type.name",
@@ -16244,12 +16244,12 @@
                 },
                 "file": "lua_libp2p/peer_discovery_mdns/init.lua",
                 "finish": [
-                    52,
+                    55,
                     36
                 ],
                 "name": "require_membership",
                 "start": [
-                    52,
+                    55,
                     10
                 ],
                 "type": "doc.field",
@@ -16261,22 +16261,22 @@
                 "deprecated": false,
                 "extends": {
                     "finish": [
-                        39,
+                        42,
                         29
                     ],
                     "start": [
-                        39,
+                        42,
                         23
                     ],
                     "type": "doc.type",
                     "types": [
                         {
                             "finish": [
-                                39,
+                                42,
                                 29
                             ],
                             "start": [
-                                39,
+                                42,
                                 23
                             ],
                             "type": "doc.type.name",
@@ -16287,12 +16287,12 @@
                 },
                 "file": "lua_libp2p/peer_discovery_mdns/init.lua",
                 "finish": [
-                    39,
+                    42,
                     29
                 ],
                 "name": "service_name",
                 "start": [
-                    39,
+                    42,
                     10
                 ],
                 "type": "doc.field",
@@ -16304,22 +16304,22 @@
                 "deprecated": false,
                 "extends": {
                     "finish": [
-                        54,
+                        57,
                         25
                     ],
                     "start": [
-                        54,
+                        57,
                         18
                     ],
                     "type": "doc.type",
                     "types": [
                         {
                             "finish": [
-                                54,
+                                57,
                                 25
                             ],
                             "start": [
-                                54,
+                                57,
                                 18
                             ],
                             "type": "doc.type.name",
@@ -16330,12 +16330,12 @@
                 },
                 "file": "lua_libp2p/peer_discovery_mdns/init.lua",
                 "finish": [
-                    54,
+                    57,
                     25
                 ],
                 "name": "started",
                 "start": [
-                    54,
+                    57,
                     10
                 ],
                 "type": "doc.field",

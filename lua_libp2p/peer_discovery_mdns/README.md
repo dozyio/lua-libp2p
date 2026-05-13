@@ -1,6 +1,9 @@
 # lua_libp2p.peer_discovery_mdns
 
-Multicast DNS peer discovery service.
+Multicast DNS peer discovery service for LAN peer discovery.
+
+This service advertises reachable host addresses as `dnsaddr=` TXT records
+and emits `peer_discovered` events when nearby libp2p peers are found.
 
 ### Libp2pMdnsConfig
 

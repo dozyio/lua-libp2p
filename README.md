@@ -12,8 +12,8 @@ This project provides a Lua 5.4 libp2p host with TCP transport, Noise security, 
 - Noise secure channel by default
 - Experimental libp2p TLS support when explicitly enabled
 - Yamux stream multiplexing
-- Identify, ping, perf, AutoNAT, DCUtR, circuit relay v2, and AutoRelay services
-- Peerstore, signed records, multiaddr, multiformats, and key helpers
+- Identify, ping, perf, mDNS, AutoNAT, DCUtR, circuit relay v2, and AutoRelay services
+- Peerstore, peer discovery, signed records, multiaddr, multiformats, and key helpers
 - Kademlia DHT client/server components with bootstrap discovery
 
 Plaintext security exists for tests and compatibility checks only.
@@ -73,7 +73,7 @@ Host behavior is configured in `host.new(...)`; `Host:start()` takes no options.
 - `lua_libp2p.muxer`: stream multiplexer registry and Yamux support.
 - `lua_libp2p.protocol_*`: built-in protocol services such as identify, ping, perf, and DCUtR.
 - `lua_libp2p.kad_dht`: Kademlia DHT, routing table, provider records, and value records.
-- `lua_libp2p.discovery` and `lua_libp2p.peer_discovery_bootstrap`: peer discovery sources.
+- `lua_libp2p.discovery`, `lua_libp2p.peer_discovery_bootstrap`, and `lua_libp2p.peer_discovery_mdns`: peer discovery sources.
 - `lua_libp2p.peerstore`: peer metadata and address/protocol books.
 - `lua_libp2p.record`: signed envelopes and peer records.
 - `lua_libp2p.crypto`: key generation, signing, verification, and protobuf key encoding.
@@ -162,7 +162,7 @@ Focused single-test pattern:
 lua -e 'package.path="./?.lua;./?/init.lua;"..package.path; local t=require("tests.unit.ping"); local ok,err=t.run(); if not ok then error(err) end; print(t.name)'
 ```
 
-Interop targets are available through the `Makefile`, including Yamux, Noise, TLS, DCUtR, and JS perf checks.
+Interop targets are available through the `Makefile`, including Yamux, Noise, TLS, mDNS, DCUtR, and JS perf checks.
 
 ## Docs
 
