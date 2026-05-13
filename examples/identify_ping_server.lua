@@ -69,7 +69,6 @@ local host, host_err = host_mod.new({
     perf = { module = perf_service },
   },
   blocking = true,
-  poll_interval = 0.01,
   accept_timeout = 0.05,
   on_started = on_started,
 })

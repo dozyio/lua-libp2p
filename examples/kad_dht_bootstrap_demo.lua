@@ -453,7 +453,6 @@ local function run_server()
     tcp = {
       listen_backlog = 4096,
     },
-    poll_interval = 0.05,
     on_started = function(h)
       io.stdout:write("kad-dht demo server listening:\n")
       for _, addr in ipairs(h:get_multiaddrs()) do

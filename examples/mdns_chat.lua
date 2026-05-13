@@ -114,7 +114,6 @@ local host, host_err = host_mod.new({
   },
   blocking = false,
   accept_timeout = 0.05,
-  poll_interval = 0.01,
   on_started = function(h)
     io.stdout:write("mDNS chat started\n")
     io.stdout:write("name: " .. name .. "\n")
