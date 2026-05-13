@@ -64,6 +64,7 @@ local tests = {
   (require("tests.unit.host_nonfatal_errors")),
   (require("tests.unit.host_perf")),
   (require("tests.unit.host_runtime_luv")),
+  (require("tests.unit.mdns")),
   (require("tests.unit.autonat_v2")),
   (require("tests.unit.autonat_v1")),
   (require("tests.unit.autonat_client")),

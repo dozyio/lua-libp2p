@@ -239,6 +239,40 @@ interop-dcutr-unilateral-go:
 interop-dcutr-unilateral-go-luv-native:
 	LUA_LIBP2P_INTEROP_RUNTIME=luv $(MAKE) interop-dcutr-unilateral-go
 
+interop-mdns-go:
+	peer_file=$$(mktemp); lua_peer_file=$$(mktemp); err_file=$$(mktemp); \
+	( cd tests/interop/go_mdns_advertiser && go run . ) > $$peer_file 2> $$err_file & pid=$$!; \
+	for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30; do \
+		if [ -s $$peer_file ]; then break; fi; \
+		sleep 0.2; \
+	done; \
+	if ! [ -s $$peer_file ]; then \
+		kill $$pid 2>/dev/null || true; \
+		cat $$err_file; \
+		rm -f $$peer_file $$lua_peer_file $$err_file; \
+		exit 1; \
+	fi; \
+	peer_id=$$(head -n 1 $$peer_file | tr -d '\n'); \
+	lua tests/interop/mdns_go_lua_discover.lua $$peer_id $$lua_peer_file; \
+	status=$$?; \
+	if [ $$status -eq 0 ]; then \
+		lua_peer_id=$$(head -n 1 $$lua_peer_file | tr -d '\n'); \
+		found_lua=0; \
+		for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do \
+			if grep -q "^FOUND $$lua_peer_id$$" $$peer_file; then found_lua=1; break; fi; \
+			sleep 0.2; \
+		done; \
+		if [ $$found_lua -ne 1 ]; then \
+			echo "go mdns did not discover lua peer $$lua_peer_id" >&2; \
+			status=1; \
+		fi; \
+	fi; \
+	kill $$pid 2>/dev/null || true; \
+	wait $$pid 2>/dev/null || true; \
+	if [ $$status -ne 0 ]; then cat $$err_file; fi; \
+	rm -f $$peer_file $$lua_peer_file $$err_file; \
+	exit $$status
+
 interop-dht-go-find-provider:
 	addr_file=$$(mktemp); err_file=$$(mktemp); \
 	( cd tests/interop/go_dht_provider && go run . ) > $$addr_file 2> $$err_file & pid=$$!; \

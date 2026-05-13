@@ -280,4 +280,31 @@ function M.on_host_started(host)
   return true
 end
 
+function M.stop(host)
+  local stopped = {}
+  for i = #(host._service_order or {}), 1, -1 do
+    local service_name = host._service_order[i]
+    local service = host._services and host._services[service_name]
+    stopped[service_name] = true
+    if service and type(service.stop) == "function" then
+      log.debug("host service stopping", {
+        service = service_name,
+      })
+      local ok, err = service:stop()
+      if not ok then
+        return nil, err
+      end
+    end
+  end
+  for service_name, service in pairs(host._services or {}) do
+    if not stopped[service_name] and type(service.stop) == "function" then
+      local ok, err = service:stop()
+      if not ok then
+        return nil, err
+      end
+    end
+  end
+  return true
+end
+
 return M
