@@ -367,7 +367,7 @@ local function run()
     end,
   }
   identify_direct_host.dial = function()
-    return nil, nil, "identify should reuse the connection from peer_connected"
+    return nil, nil, "identify should reuse the connection from peer:connected"
   end
   local direct_identify_result, direct_identify_err = identify_direct_host:_request_identify("peer-direct", {
     connection = direct_identify_conn,
@@ -1055,7 +1055,7 @@ local function run()
   if not protocol_cb then
     return nil, protocol_cb_err
   end
-  local protocol_handlers = h._event_handlers.peer_protocols_updated
+  local protocol_handlers = h._event_handlers["peer:protocols_updated"]
   if type(protocol_handlers) ~= "table" or type(protocol_handlers[1]) ~= "function" then
     return nil, "expected protocol update handler"
   end

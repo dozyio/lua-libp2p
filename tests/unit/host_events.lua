@@ -10,12 +10,12 @@ local function run()
     identity = keypair,
     runtime = "luv",
     on = {
-      peer_connected = function(payload)
+      ["peer:connected"] = function(payload)
         if payload and payload.peer_id == "peer-a" then
           connected_count = connected_count + 1
         end
       end,
-      peer_disconnected = function(payload)
+      ["peer:disconnected"] = function(payload)
         if payload and payload.peer_id == "peer-a" then
           disconnected_count = disconnected_count + 1
         end
@@ -30,8 +30,8 @@ local function run()
   if not bus_all then
     return nil, bus_all_err
   end
-  local bus_disconnected = assert(host:subscribe("peer_disconnected"))
-  local bus_self = assert(host:subscribe("self_peer_update"))
+  local bus_disconnected = assert(host:subscribe("peer:disconnected"))
+  local bus_self = assert(host:subscribe("self:peer_updated"))
 
   local conn = {
     closed = false,
@@ -48,16 +48,16 @@ local function run()
     return nil, register_err
   end
   if connected_count ~= 1 then
-    return nil, "expected peer_connected callback to fire"
+    return nil, "expected peer:connected callback to fire"
   end
 
   local ev1 = host:next_event(bus_all)
-  if not ev1 or ev1.name ~= "peer_connected" then
-    return nil, "expected peer_connected from event bus subscription"
+  if not ev1 or ev1.name ~= "peer:connected" then
+    return nil, "expected peer:connected from event bus subscription"
   end
   local ev1b = host:next_event(bus_all)
-  if not ev1b or ev1b.name ~= "connection_opened" then
-    return nil, "expected connection_opened from event bus subscription"
+  if not ev1b or ev1b.name ~= "connection:opened" then
+    return nil, "expected connection:opened from event bus subscription"
   end
 
   local closed, close_err = host:close()
@@ -68,25 +68,25 @@ local function run()
     return nil, "expected close() to close tracked connection"
   end
   if disconnected_count ~= 1 then
-    return nil, "expected peer_disconnected callback to fire"
+    return nil, "expected peer:disconnected callback to fire"
   end
 
   local ev2 = host:next_event(bus_all)
-  if not ev2 or ev2.name ~= "peer_disconnected" then
-    return nil, "expected peer_disconnected from event bus subscription"
+  if not ev2 or ev2.name ~= "peer:disconnected" then
+    return nil, "expected peer:disconnected from event bus subscription"
   end
 
   local ev2b = host:next_event(bus_disconnected)
-  if not ev2b or ev2b.name ~= "peer_disconnected" then
-    return nil, "expected filtered subscription to receive peer_disconnected"
+  if not ev2b or ev2b.name ~= "peer:disconnected" then
+    return nil, "expected filtered subscription to receive peer:disconnected"
   end
 
   local called = 0
   local handler = function()
     called = called + 1
   end
-  assert(host:on("peer_connected", handler))
-  if not host:off("peer_connected", handler) then
+  assert(host:on("peer:connected", handler))
+  if not host:off("peer:connected", handler) then
     return nil, "expected off() to remove registered handler"
   end
 
@@ -107,7 +107,7 @@ local function run()
     identity = keypair,
     runtime = "luv",
     on = {
-      connection_opened = function()
+      ["connection:opened"] = function()
         error("forced event failure")
       end,
     },
@@ -139,15 +139,15 @@ local function run()
     return nil, self_update_err
   end
   local self_update = host:next_event(bus_self)
-  if not self_update or self_update.name ~= "self_peer_update" then
-    return nil, "expected self_peer_update event"
+  if not self_update or self_update.name ~= "self:peer_updated" then
+    return nil, "expected self:peer_updated event"
   end
   local no_update_ok, no_update_err = host:_emit_self_peer_update_if_changed()
   if not no_update_ok then
     return nil, no_update_err
   end
   if host:next_event(bus_self) ~= nil then
-    return nil, "self_peer_update should only emit when addrs change"
+    return nil, "self:peer_updated should only emit when addrs change"
   end
   if not host:unsubscribe(bus_self) then
     return nil, "expected unsubscribe to remove self subscription"
@@ -695,6 +695,97 @@ local function run()
   if dial_stats.dialed ~= direct_started then
     return nil, "connection manager stats should track executed dials"
   end
+
+  local panic_dial_host = assert(host_mod.new({
+    identity = keypair,
+    runtime = "luv",
+    dial_queue = {
+      max_parallel_dials = 1,
+    },
+  }))
+  function panic_dial_host:_dial_direct()
+    error("forced dial panic")
+  end
+  local panic_task = assert(panic_dial_host:spawn_task("test.dial_queue_cleanup_panic", function(ctx)
+    local dial_conn, _, dial_err = panic_dial_host:dial({
+      peer_id = peer_a,
+      addrs = { "/ip4/127.0.0.1/tcp/4001/p2p/" .. peer_a },
+    }, { ctx = ctx })
+    if dial_conn ~= nil or not dial_err or dial_err.kind ~= "internal" then
+      return nil, "expected dial panic to surface as internal error"
+    end
+    return true
+  end))
+  for _ = 1, 40 do
+    assert(panic_dial_host:_poll_once(0.01))
+    if panic_task.status == "completed" then
+      break
+    end
+  end
+  if panic_task.status ~= "completed" then
+    return nil, "panic dial task should complete"
+  end
+  local panic_stats = panic_dial_host.connection_manager:stats()
+  if panic_stats.active_dials ~= 0 or panic_stats.pending_dials ~= 0 or panic_stats.queued_dials ~= 0 then
+    return nil, "connection manager should clean up dial bookkeeping after dial panic"
+  end
+  local stale_task = { id = 4242, status = "failed" }
+  panic_dial_host.connection_manager.pending_by_key["peer:stale"] = { task = stale_task, created_at = 0 }
+  panic_dial_host.connection_manager.active_by_key["peer:stale"] = { task = stale_task, started_at = 0 }
+  panic_dial_host.connection_manager.queued_by_key["peer:stale"] = { task = stale_task, token = {}, enqueued_at = 0 }
+  panic_dial_host.connection_manager.queue[#panic_dial_host.connection_manager.queue + 1] =
+    panic_dial_host.connection_manager.queued_by_key["peer:stale"].token
+  panic_dial_host.connection_manager.pending_by_key["peer:orphan"] = { created_at = 0 }
+  panic_dial_host.connection_manager.queue[#panic_dial_host.connection_manager.queue + 1] = {}
+  panic_dial_host.connection_manager.active_dials = 1
+  local reconciled_stats = panic_dial_host.connection_manager:stats()
+  if
+    reconciled_stats.active_dials ~= 0
+    or reconciled_stats.pending_dials ~= 0
+    or reconciled_stats.queued_dials ~= 0
+  then
+    return nil, "connection manager stats should reconcile terminal dial tasks"
+  end
+  local slow_task = { id = 4243, status = "ready" }
+  panic_dial_host.connection_manager.pending_by_key["peer:slow"] = { task = slow_task, created_at = 0 }
+  panic_dial_host.connection_manager.pending_dial_ttl = 0.001
+  local cancelled_task_id = nil
+  function panic_dial_host:cancel_task(task_id)
+    cancelled_task_id = task_id
+    slow_task.status = "cancelled"
+    return true
+  end
+  panic_dial_host.connection_manager:reconcile_dials()
+  if panic_dial_host.connection_manager.pending_by_key["peer:slow"] ~= nil or cancelled_task_id ~= slow_task.id then
+    return nil, "connection manager should cancel stale pending dial tasks"
+  end
+
+  local live_task = { id = 4244, status = "waiting_task" }
+  panic_dial_host.connection_manager.pending_dial_ttl = 999
+  panic_dial_host.connection_manager.pending_by_key["peer:live"] = { task = live_task, created_at = os.time() }
+  local health_stats = panic_dial_host:health_stats()
+  local health = health_stats.health or {}
+  if health.pending_keys ~= 1 or health.pending_dial_statuses ~= "waiting_task=1" then
+    return nil, "host health should derive pending count from pending status summary"
+  end
+  live_task.status = "completed"
+  health_stats = panic_dial_host:health_stats()
+  health = health_stats.health or {}
+  if health.pending_keys ~= 0 or health.pending_dial_statuses ~= "none" then
+    return nil, "host health should not report pending keys when pending statuses are empty"
+  end
+  local saved_pending_summary = panic_dial_host.connection_manager.pending_summary
+  panic_dial_host.connection_manager.pending_summary = false
+  local fallback_task = { id = 4245, status = "waiting_task" }
+  panic_dial_host.connection_manager.pending_by_key["peer:fallback"] = { task = fallback_task, created_at = os.time() }
+  health_stats = panic_dial_host:health_stats()
+  health = health_stats.health or {}
+  panic_dial_host.connection_manager.pending_summary = saved_pending_summary
+  if health.pending_keys ~= 1 or health.pending_dial_statuses ~= "waiting_task=1" then
+    return nil, "host health raw fallback should summarize pending dial statuses"
+  end
+  fallback_task.status = "completed"
+  panic_dial_host.connection_manager:reconcile_dials()
 
   local full_queue_host = assert(host_mod.new({
     identity = keypair,

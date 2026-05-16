@@ -1,4 +1,5 @@
 local tcp_luv = require("lua_libp2p.transport_tcp.luv")
+local error_mod = require("lua_libp2p.error")
 
 local function run()
   if tcp_luv.BACKEND ~= "luv-native" then
@@ -144,6 +145,25 @@ local function run()
   end
   if forced_io_err.kind ~= "io" then
     return nil, "expected io kind for forced native tcp_luv dial io error"
+  end
+
+  uv.new_tcp = function()
+    return nil, "EMFILE"
+  end
+  local _, forced_fd_dial_err = tcp_luv.dial({ host = "127.0.0.1", port = 9999 }, { timeout = 1 })
+  local _, forced_fd_listen_err = tcp_luv.listen({ host = "127.0.0.1", port = 0 })
+  uv.new_tcp = real_new_tcp
+  if not forced_fd_dial_err or forced_fd_dial_err.kind ~= "resource" then
+    return nil, "expected resource kind for forced native tcp_luv dial fd exhaustion"
+  end
+  if not error_mod.is_fd_exhaustion(forced_fd_dial_err) then
+    return nil, "expected forced native tcp_luv dial fd exhaustion to be detectable"
+  end
+  if not forced_fd_listen_err or forced_fd_listen_err.kind ~= "resource" then
+    return nil, "expected resource kind for forced native tcp_luv listen fd exhaustion"
+  end
+  if not error_mod.is_fd_exhaustion(forced_fd_listen_err) then
+    return nil, "expected forced native tcp_luv listen fd exhaustion to be detectable"
   end
 
   uv.new_tcp = function()

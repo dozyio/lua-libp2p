@@ -223,7 +223,7 @@ function M.install(Host)
       local after_protocols = self.peerstore:get_protocols(peer_id)
       local added_protocols = protocol_delta(before_protocols, after_protocols)
       if #added_protocols > 0 then
-        local ok, emit_err = self:emit("peer_protocols_updated", {
+        local ok, emit_err = self:emit("peer:protocols_updated", {
           peer_id = peer_id,
           protocols = after_protocols,
           added_protocols = added_protocols,
@@ -243,7 +243,7 @@ function M.install(Host)
       local observed = identify_listen_addrs({ listenAddrs = { msg.observedAddr } })[1]
       if observed then
         self.address_manager:add_observed_addr(observed)
-        local ok, emit_err = self:emit("observed_addr", {
+        local ok, emit_err = self:emit("self:observed_address_updated", {
           peer_id = peer_id,
           addr = observed,
           source = "identify",
@@ -305,7 +305,7 @@ function M.install(Host)
           known_protocols = join_list(known_protocols),
           inflight = map_count(self._identify_inflight),
         })
-        local ok, emit_err = self:emit("peer_identify_failed", {
+        local ok, emit_err = self:emit("peer:identify_failed", {
           peer_id = pid,
           cause = identify_err,
           attempted_protocols = { identify.ID },
@@ -322,7 +322,7 @@ function M.install(Host)
         inflight = map_count(self._identify_inflight),
       })
 
-      local ok, emit_err = self:emit("peer_identified", {
+      local ok, emit_err = self:emit("peer:identified", {
         peer_id = pid,
         protocol = result.protocol,
         message = result.message,

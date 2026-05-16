@@ -73,7 +73,7 @@ local function fake_host(response_stream)
   local handlers = {}
   return {
     address_manager = address_manager.new({
-      observed_addrs = { "/ip4/203.0.113.10/tcp/4001" },
+      self_observed_addrs = { "/ip4/203.0.113.10/tcp/4001" },
     }),
     _handlers = handlers,
     events = {},

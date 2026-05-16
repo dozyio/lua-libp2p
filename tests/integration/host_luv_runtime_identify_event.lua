@@ -62,7 +62,7 @@ local function run()
     return nil, "expected luv host listener address"
   end
 
-  local sub = assert(host:subscribe("peer_identified"))
+  local sub = assert(host:subscribe("peer:identified"))
 
   local child_script = os.tmpname() .. ".lua"
   local child_out = os.tmpname() .. ".txt"
@@ -160,7 +160,7 @@ write_out("ok")
       if not ev then
         break
       end
-      if ev.name == "peer_identified" then
+      if ev.name == "peer:identified" then
         identified = true
       end
     end
@@ -203,10 +203,10 @@ write_out("ok")
   os.remove(child_log)
 
   if timeout_hit then
-    return nil, "timed out waiting for peer_identified + child completion"
+    return nil, "timed out waiting for peer:identified + child completion"
   end
   if not identified then
-    return nil, "expected peer_identified event under luv runtime"
+    return nil, "expected peer:identified event under luv runtime"
   end
   if child_result ~= "ok" then
     return nil, "child identify client failed: " .. tostring(child_result or child_stderr)

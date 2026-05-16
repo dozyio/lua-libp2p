@@ -256,6 +256,13 @@ function DHT:start()
   return true
 end
 
+function DHT:on_host_started()
+  if not self._running then
+    return true
+  end
+  return self:_start_peerstore_population()
+end
+
 function DHT:_register_handler()
   if self._handler_registered then
     return true
@@ -327,7 +334,7 @@ function DHT:get_mode()
   return self.mode
 end
 
-function DHT:_on_self_peer_update(payload)
+function DHT:_on_self_peer_updated(payload)
   if not self._auto_server_mode then
     return true
   end
@@ -342,10 +349,16 @@ end
 function DHT:stop()
   if self.host and type(self.host.off) == "function" then
     if self._host_on_protocols_updated then
-      self.host:off("peer_protocols_updated", self._host_on_protocols_updated)
+      self.host:off("peer:protocols_updated", self._host_on_protocols_updated)
     end
-    if self._host_on_self_peer_update then
-      self.host:off("self_peer_update", self._host_on_self_peer_update)
+    if self._host_on_peer_identified then
+      self.host:off("peer:identified", self._host_on_peer_identified)
+    end
+    if self._host_on_peer_updated then
+      self.host:off("peer:updated", self._host_on_peer_updated)
+    end
+    if self._host_on_self_peer_updated then
+      self.host:off("self:peer_updated", self._host_on_self_peer_updated)
     end
   end
   self:_unregister_handler()
@@ -650,39 +663,34 @@ end
 function DHT:_populate_routing_table_from_peerstore(opts)
   local options = opts or {}
   local ps = self.host and self.host.peerstore
-  if not (ps and type(ps.all) == "function") then
+  if not (ps and (type(ps.each) == "function" or type(ps.all) == "function")) then
     return { scanned = 0, candidates = 0, added = 0, skipped = 0, failed = 0, errors = {} }
-  end
-
-  local peers, peers_err = ps:all()
-  if not peers then
-    return nil, peers_err
   end
 
   local limit = options.limit or self._populate_from_peerstore_limit or M.DEFAULT_POPULATE_FROM_PEERSTORE_LIMIT
   local report = { scanned = 0, candidates = 0, added = 0, skipped = 0, failed = 0, errors = {} }
   local local_peer_id = self.local_peer_id
-  for _, peer in ipairs(peers) do
+  local function process_peer(peer)
     if report.candidates >= limit then
-      break
+      return false
     end
     report.scanned = report.scanned + 1
 
     local peer_id = peer and peer.peer_id
     if type(peer_id) ~= "string" or peer_id == "" or peer_id == local_peer_id then
       report.skipped = report.skipped + 1
-      goto continue_peer
+      return true
     end
 
     local tags = peer.tags or {}
     if tags[M.KAD_PEER_TAG_NAME] == nil then
       report.skipped = report.skipped + 1
-      goto continue_peer
+      return true
     end
 
     if not list_contains(peer.protocols or {}, self.protocol_id) then
       report.skipped = report.skipped + 1
-      goto continue_peer
+      return true
     end
 
     local addrs = peer.addrs
@@ -694,11 +702,11 @@ function DHT:_populate_routing_table_from_peerstore(opts)
     if not dialable_addrs then
       report.failed = report.failed + 1
       report.errors[#report.errors + 1] = dialable_err
-      goto continue_peer
+      return true
     end
     if #dialable_addrs == 0 then
       report.skipped = report.skipped + 1
-      goto continue_peer
+      return true
     end
 
     report.candidates = report.candidates + 1
@@ -712,7 +720,7 @@ function DHT:_populate_routing_table_from_peerstore(opts)
       self:_untag_kad_peer(peer_id)
       report.failed = report.failed + 1
       report.errors[#report.errors + 1] = support_err
-      goto continue_peer
+      return true
     end
 
     local added, add_err = self:add_peer(peer_id, {
@@ -729,7 +737,24 @@ function DHT:_populate_routing_table_from_peerstore(opts)
       report.skipped = report.skipped + 1
     end
 
-    ::continue_peer::
+    return true
+  end
+
+  if type(ps.each) == "function" then
+    local ok, each_err = ps:each(process_peer)
+    if not ok then
+      return nil, each_err
+    end
+  else
+    local peers, peers_err = ps:all()
+    if not peers then
+      return nil, peers_err
+    end
+    for _, peer in ipairs(peers) do
+      if process_peer(peer) == false then
+        break
+      end
+    end
   end
 
   return report
@@ -750,6 +775,10 @@ function DHT:_start_peerstore_population()
   end
 
   local task, task_err = self.host:spawn_task("kad.peerstore_populate", function(ctx)
+    local ok, checkpoint_err = ctx:checkpoint()
+    if not ok and checkpoint_err then
+      return nil, checkpoint_err
+    end
     local report, report_err = self:_populate_routing_table_from_peerstore({
       ctx = ctx,
       limit = self._populate_from_peerstore_limit,
@@ -2066,6 +2095,38 @@ function DHT:_on_peer_protocols_updated(payload)
   return true
 end
 
+function DHT:_on_peer_identified(payload)
+  local peer_id = payload and payload.peer_id
+  if type(peer_id) ~= "string" or peer_id == "" then
+    return true
+  end
+  local protocols = nil
+  if payload and payload.message and type(payload.message.protocols) == "table" then
+    protocols = payload.message.protocols
+  elseif self.host and self.host.peerstore and type(self.host.peerstore.get_protocols) == "function" then
+    protocols = self.host.peerstore:get_protocols(peer_id)
+  end
+  return self:_on_peer_protocols_updated({
+    peer_id = peer_id,
+    protocols = protocols or {},
+    source = "identify",
+  })
+end
+
+function DHT:_on_peer_updated(payload)
+  local peer = payload and payload.peer
+  local peer_id = payload and payload.peer_id or peer and peer.peer_id
+  if type(peer_id) ~= "string" or peer_id == "" then
+    return true
+  end
+  local protocols = peer and peer.protocols or {}
+  return self:_on_peer_protocols_updated({
+    peer_id = peer_id,
+    protocols = protocols,
+    source = "peer:updated",
+  })
+end
+
 --- Internal peer protocol support probe.
 -- `opts.timeout`, `opts.ctx`, and `opts.stream_opts` tune identify query.
 function DHT:_supports_kad_protocol(peer_or_addr, opts)
@@ -2234,7 +2295,7 @@ function M.new(host, opts)
   populate_from_peerstore_protocol_check_timeout = tonumber(populate_from_peerstore_protocol_check_timeout)
   if not populate_from_peerstore_protocol_check_timeout or populate_from_peerstore_protocol_check_timeout <= 0 then
     return nil,
-      error_mod.new("input", "populate_from_peerstore_protocol_check_timeout must be a positive number")
+        error_mod.new("input", "populate_from_peerstore_protocol_check_timeout must be a positive number")
   end
 
   local local_peer_id = options.local_peer_id
@@ -2334,7 +2395,7 @@ function M.new(host, opts)
     _peer_health = {},
     _dnsaddr_resolver = options.dnsaddr_resolver,
     _host_on_protocols_updated = nil,
-    _host_on_self_peer_update = nil,
+    _host_on_self_peer_updated = nil,
     _auto_server_mode = options.auto_server_mode == true or options.mode == "auto",
     _maintenance_enabled = maintenance_enabled,
     _maintenance_interval_seconds = options.maintenance_interval_seconds or M.DEFAULT_MAINTENANCE_INTERVAL_SECONDS,
@@ -2387,15 +2448,34 @@ function M.new(host, opts)
     self_obj._host_on_protocols_updated = function(payload)
       return self_obj:_on_peer_protocols_updated(payload)
     end
-    local ok, on_err = host:on("peer_protocols_updated", self_obj._host_on_protocols_updated)
+    local ok, on_err = host:on("peer:protocols_updated", self_obj._host_on_protocols_updated)
     if not ok then
       return nil, on_err
     end
+  end
+
+  if host and type(host.on) == "function" then
+    self_obj._host_on_peer_identified = function(payload)
+      return self_obj:_on_peer_identified(payload)
+    end
+    local ok, on_err = host:on("peer:identified", self_obj._host_on_peer_identified)
+    if not ok then
+      return nil, on_err
+    end
+
+    self_obj._host_on_peer_updated = function(payload)
+      return self_obj:_on_peer_updated(payload)
+    end
+    ok, on_err = host:on("peer:updated", self_obj._host_on_peer_updated)
+    if not ok then
+      return nil, on_err
+    end
+
     if self_obj._auto_server_mode then
-      self_obj._host_on_self_peer_update = function(payload)
-        return self_obj:_on_self_peer_update(payload)
+      self_obj._host_on_self_peer_updated = function(payload)
+        return self_obj:_on_self_peer_updated(payload)
       end
-      ok, on_err = host:on("self_peer_update", self_obj._host_on_self_peer_update)
+      ok, on_err = host:on("self:peer_updated", self_obj._host_on_self_peer_updated)
       if not ok then
         return nil, on_err
       end

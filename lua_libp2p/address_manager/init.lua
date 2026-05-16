@@ -13,7 +13,7 @@
 ---@field listen_addrs? string[]
 ---@field announce_addrs? string[]
 ---@field no_announce_addrs? string[]
----@field observed_addrs? string[]
+---@field self_observed_addrs? string[]
 ---@field relay_addrs? string[]
 ---@field public_mapping_addrs? string[]
 ---@field advertise_observed? boolean
@@ -233,13 +233,13 @@ function AddressManager:set_no_announce_addrs(addrs)
 end
 
 function AddressManager:add_observed_addr(addr)
-  add_unique(self._observed_addrs, as_set(self._observed_addrs), addr)
+  add_unique(self._self_observed_addrs, as_set(self._self_observed_addrs), addr)
   self:_classify_private_addr(addr, "observed")
   return true
 end
 
-function AddressManager:get_observed_addrs()
-  return copy_list(self._observed_addrs)
+function AddressManager:get_self_observed_addrs()
+  return copy_list(self._self_observed_addrs)
 end
 
 function AddressManager:add_public_address_mapping(mapping)
@@ -426,7 +426,7 @@ function AddressManager:get_advertise_addrs()
   else
     sources[#sources + 1] = self._transport_addrs
     if self._advertise_observed then
-      sources[#sources + 1] = self._observed_addrs
+      sources[#sources + 1] = self._self_observed_addrs
     end
   end
   sources[#sources + 1] = self._relay_addrs
@@ -449,7 +449,7 @@ end
 
 --- Construct an address manager.
 -- `opts` keys include `listen_addrs`, `announce_addrs`, `no_announce_addrs`,
--- `observed_addrs`, `relay_addrs`, `public_mapping_addrs`, and `advertise_observed`.
+-- `self_observed_addrs`, `relay_addrs`, `public_mapping_addrs`, and `advertise_observed`.
 --- opts? table
 --- table manager
 function M.new(opts)
@@ -459,7 +459,7 @@ function M.new(opts)
     _transport_addrs = expand_listen_addrs(options.listen_addrs),
     _announce_addrs = copy_list(options.announce_addrs),
     _no_announce_addrs = copy_list(options.no_announce_addrs),
-    _observed_addrs = copy_list(options.observed_addrs),
+    _self_observed_addrs = copy_list(options.self_observed_addrs),
     _relay_addrs = copy_list(options.relay_addrs),
     _public_mapping_addrs = copy_list(options.public_mapping_addrs),
     _reachability = {},
@@ -475,7 +475,7 @@ function M.new(opts)
   for _, addr in ipairs(manager._announce_addrs) do
     manager:_classify_private_addr(addr, "announce")
   end
-  for _, addr in ipairs(manager._observed_addrs) do
+  for _, addr in ipairs(manager._self_observed_addrs) do
     manager:_classify_private_addr(addr, "observed")
   end
   return manager

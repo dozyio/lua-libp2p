@@ -355,6 +355,7 @@ function M.install(Host)
       result = nil,
       error = nil,
       cancelled = false,
+      on_finished = options.on_finished,
     }
     local ctx = make_task_context(task)
     task.co = coroutine.create(function()

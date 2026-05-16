@@ -82,7 +82,7 @@ function M.install(Host)
       multiaddrs = table.concat(addrs, ","),
       protocols = table.concat(protocols, ","),
     })
-    return self:emit("self_peer_update", {
+    return self:emit("self:peer_updated", {
       peer_id = self:peer_id().id,
       addrs = list_copy(addrs),
       protocols = protocols,

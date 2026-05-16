@@ -55,7 +55,7 @@ local function fake_host(reserve_log)
     return false
   end
   function host:on_protocol(protocol_id, handler)
-    return self:on("peer_protocols_updated", function(payload, event)
+    return self:on("peer:protocols_updated", function(payload, event)
       for _, p in ipairs(payload.protocols or {}) do
         if p == protocol_id then
           return handler(payload.peer_id, payload, event)
@@ -232,7 +232,7 @@ local function run()
     return nil, "autorelay should emit reservation active event"
   end
 
-  local handlers = host._event_handlers.peer_protocols_updated
+  local handlers = host._event_handlers["peer:protocols_updated"]
   if type(handlers) ~= "table" or type(handlers[1]) ~= "function" then
     return nil, "autorelay should subscribe to relay protocol topology"
   end
@@ -281,7 +281,7 @@ local function run()
     return nil, "autorelay should tag relay peer in connection manager"
   end
 
-  local connection_handlers = host._event_handlers.connection_closed
+  local connection_handlers = host._event_handlers["connection:closed"]
   if type(connection_handlers) ~= "table" or type(connection_handlers[1]) ~= "function" then
     return nil, "autorelay should subscribe to connection close events"
   end
@@ -295,7 +295,7 @@ local function run()
   end
   local saw_connection_closed_removed = false
   for _, event in ipairs(events) do
-    if event.name == "relay:reservation:removed" and event.payload.reason == "connection_closed" then
+    if event.name == "relay:reservation:removed" and event.payload.reason == "connection:closed" then
       saw_connection_closed_removed = true
       break
     end

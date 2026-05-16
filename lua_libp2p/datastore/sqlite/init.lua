@@ -48,6 +48,28 @@ local function prefix_where(prefix)
   return where
 end
 
+local function query_limit_offset_sql(q)
+  local parts = {}
+  if q.limit ~= nil then
+    local limit = tonumber(q.limit)
+    if not limit or limit < 0 then
+      return nil, error_mod.new("input", "query limit must be non-negative")
+    end
+    parts[#parts + 1] = " LIMIT " .. tostring(math.floor(limit))
+  end
+  if q.offset ~= nil then
+    local offset = tonumber(q.offset)
+    if not offset or offset < 0 then
+      return nil, error_mod.new("input", "query offset must be non-negative")
+    end
+    if q.limit == nil then
+      parts[#parts + 1] = " LIMIT -1"
+    end
+    parts[#parts + 1] = " OFFSET " .. tostring(math.floor(offset))
+  end
+  return table.concat(parts)
+end
+
 local function hex_encode(value)
   return (value:gsub(".", function(c)
     return string.format("%02x", c:byte())
@@ -306,6 +328,55 @@ function Store:count(prefix)
   local row = cursor:fetch({}, "a")
   cursor_close(cursor)
   return tonumber(row and row.count) or 0
+end
+
+function Store:query(query)
+  local q = query or {}
+  local prefix = q.prefix or ""
+  if prefix == "" then
+    return nil, error_mod.new("input", "query prefix must be non-empty")
+  end
+  local ok, key_err = datastore.validate_key(prefix)
+  if not ok then
+    return nil, key_err
+  end
+  local limit_sql, limit_err = query_limit_offset_sql(q)
+  if not limit_sql then
+    return nil, limit_err
+  end
+
+  local columns = q.keys_only and "key" or "key, value"
+  local sql = "SELECT "
+    .. columns
+    .. " FROM "
+    .. self._table
+    .. " WHERE "
+    .. prefix_where(prefix)
+    .. " AND (expires_at IS NULL OR expires_at > "
+    .. tostring(os.time())
+    .. ") ORDER BY key"
+    .. limit_sql
+  local cursor, query_err = exec(self._conn, sql)
+  if not cursor then
+    return nil, query_err
+  end
+  return datastore.results_from_next(function()
+    local row = cursor:fetch({}, "a")
+    if not row or row.key == nil then
+      return nil
+    end
+    if q.keys_only then
+      return { key = row.key }
+    end
+    local value, decode_err = decode_from_store(row.value)
+    if decode_err then
+      return nil, decode_err
+    end
+    return { key = row.key, value = value }
+  end, function()
+    cursor_close(cursor)
+    return true
+  end)
 end
 
 function Store:close()

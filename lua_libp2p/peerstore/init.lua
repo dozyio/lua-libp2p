@@ -334,13 +334,45 @@ end
 --- List all peers.
 function Store:all()
   local out = {}
-  for peer_id in pairs(self._peers) do
-    out[#out + 1] = self:get(peer_id)
-  end
+  self:each(function(peer)
+    out[#out + 1] = peer
+    return true
+  end)
   table.sort(out, function(a, b)
     return a.peer_id < b.peer_id
   end)
   return out
+end
+
+function Store:each(fn, opts)
+  if type(fn) ~= "function" then
+    return nil, error_mod.new("input", "peerstore each requires a callback")
+  end
+  local ids = {}
+  for peer_id in pairs(self._peers) do
+    ids[#ids + 1] = peer_id
+  end
+  table.sort(ids)
+  local offset = tonumber(opts and opts.offset) or 0
+  local limit = opts and opts.limit ~= nil and tonumber(opts.limit) or nil
+  local yielded = 0
+  for i = offset + 1, #ids do
+    if limit and yielded >= limit then
+      break
+    end
+    local peer = self:get(ids[i])
+    if peer then
+      yielded = yielded + 1
+      local keep_going, cb_err = fn(peer)
+      if cb_err then
+        return nil, cb_err
+      end
+      if keep_going == false then
+        break
+      end
+    end
+  end
+  return true
 end
 
 function Store:count()

@@ -164,6 +164,34 @@ local function active_tags(peer)
   return out, changed
 end
 
+local function peer_view_from_record(self, peer_id, encoded)
+  local peer, decode_err = peerstore_codec.decode(encoded)
+  if not peer then
+    return nil, decode_err
+  end
+  peer = normalize_peer(peer_id, peer)
+  local addrs, addrs_changed = active_addrs(peer)
+  local tags, tags_changed = active_tags(peer)
+  if addrs_changed or tags_changed then
+    save_peer(self, peer)
+  end
+  local protocols = {}
+  for protocol in pairs(peer.protocols) do
+    protocols[#protocols + 1] = protocol
+  end
+  table.sort(protocols)
+  return {
+    peer_id = peer.peer_id,
+    addrs = addrs,
+    protocols = protocols,
+    tags = tags,
+    public_key = peer.public_key,
+    metadata = clone(peer.metadata),
+    peer_record_envelope = peer.peer_record_envelope,
+    updated_at = peer.updated_at,
+  }
+end
+
 function Store:add_addrs(peer_id, addrs, opts)
   if type(addrs) ~= "table" then
     return nil, error_mod.new("input", "addrs must be a list")
@@ -451,6 +479,18 @@ function Store:delete(peer_id)
 end
 
 function Store:all()
+  if type(self.each) == "function" then
+    local out = {}
+    local ok, each_err = self:each(function(peer)
+      out[#out + 1] = peer
+      return true
+    end)
+    if not ok then
+      return nil, each_err
+    end
+    return out
+  end
+
   local keys, list_err = self._datastore:list(self._prefix)
   if not keys then
     return nil, list_err
@@ -468,6 +508,73 @@ function Store:all()
     return a.peer_id < b.peer_id
   end)
   return out
+end
+
+function Store:each(fn, opts)
+  if type(fn) ~= "function" then
+    return nil, error_mod.new("input", "peerstore each requires a callback")
+  end
+  local options = opts or {}
+  local query_fn = self._datastore and self._datastore.query
+  if type(query_fn) ~= "function" then
+    local keys, list_err = self._datastore:list(self._prefix)
+    if not keys then
+      return nil, list_err
+    end
+    local prefix_len = #self._prefix + 2
+    for _, key in ipairs(keys) do
+      local peer = self:get(key:sub(prefix_len))
+      if peer then
+        local keep_going, cb_err = fn(peer)
+        if cb_err then
+          return nil, cb_err
+        end
+        if keep_going == false then
+          break
+        end
+      end
+    end
+    return true
+  end
+
+  local results, query_err = self._datastore:query({
+    prefix = self._prefix,
+    keys_only = false,
+    limit = options.limit,
+    offset = options.offset,
+  })
+  if not results then
+    return nil, query_err
+  end
+  local prefix_len = #self._prefix + 2
+  while true do
+    local entry, entry_err = results:next()
+    if entry_err then
+      results:close()
+      return nil, entry_err
+    end
+    if not entry then
+      break
+    end
+    local peer_id = entry.key:sub(prefix_len)
+    local peer, peer_err = peer_view_from_record(self, peer_id, entry.value)
+    if peer_err then
+      results:close()
+      return nil, peer_err
+    end
+    if peer then
+      local keep_going, cb_err = fn(peer)
+      if cb_err then
+        results:close()
+        return nil, cb_err
+      end
+      if keep_going == false then
+        break
+      end
+    end
+  end
+  results:close()
+  return true
 end
 
 function Store:count()

@@ -53,9 +53,11 @@ function M.install(Host)
   --- event_name string Event key to subscribe to.
   --- handler function Callback `(payload, event)`.
   -- Common events/payload keys:
-  -- - `connection_opened`: `{ peer_id, connection_id, direction, remote_addr, limited }`
-  -- - `connection_closed`: `{ peer_id, connection_id, cause }`
-  -- - `peer_identified`: `{ peer_id, protocols, observed_addr }`
+  -- - `connection:opened`: `{ peer_id, connection_id, direction, remote_addr, limited }`
+  -- - `connection:closed`: `{ peer_id, connection_id, cause }`
+  -- - `peer:updated`: `{ peer_id, peer, previous, changed, operation }`
+  -- - `peer:identified`: `{ peer_id, protocol, message, connection, state }`
+  -- - `self:peer_updated`: `{ peer_id, addrs, protocols, multiaddrs }`
   -- - `stream:negotiated`: `{ peer_id, connection_id, protocol, limited }`
   -- - `task:started|task:completed|task:failed|task:cancelled`: `{ task_id, name, service }`
   --- true|nil ok

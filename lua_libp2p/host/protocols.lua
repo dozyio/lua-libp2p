@@ -153,13 +153,13 @@ function M.install(Host)
       return true
     end
 
-    local ok, err = self:on("peer_protocols_updated", wrapped)
+    local ok, err = self:on("peer:protocols_updated", wrapped)
     if not ok then
       return nil, err
     end
 
-    if self.peerstore and type(self.peerstore.all) == "function" then
-      for _, peer in ipairs(self.peerstore:all()) do
+    if self.peerstore and (type(self.peerstore.each) == "function" or type(self.peerstore.all) == "function") then
+      local function replay_peer(peer)
         if list_contains(peer.protocols, protocol_id) then
           local call_ok, call_err = pcall(handler, peer.peer_id, {
             peer_id = peer.peer_id,
@@ -169,6 +169,20 @@ function M.install(Host)
           }, nil)
           if not call_ok then
             return nil, error_mod.new("protocol", "protocol handler panicked", { cause = call_err })
+          end
+        end
+        return true
+      end
+      if type(self.peerstore.each) == "function" then
+        local each_ok, each_err = self.peerstore:each(replay_peer)
+        if not each_ok then
+          return nil, each_err
+        end
+      else
+        for _, peer in ipairs(self.peerstore:all()) do
+          local replay_ok, replay_err = replay_peer(peer)
+          if not replay_ok then
+            return nil, replay_err
           end
         end
       end

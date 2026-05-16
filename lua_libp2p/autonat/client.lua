@@ -119,9 +119,9 @@ local function candidate_addrs(host, opts)
     source == nil
     and host
     and host.address_manager
-    and type(host.address_manager.get_observed_addrs) == "function"
+    and type(host.address_manager.get_self_observed_addrs) == "function"
   then
-    source = host.address_manager:get_observed_addrs()
+    source = host.address_manager:get_self_observed_addrs()
   end
   if source == nil and host and type(host.get_multiaddrs_raw) == "function" then
     source = host:get_multiaddrs_raw()

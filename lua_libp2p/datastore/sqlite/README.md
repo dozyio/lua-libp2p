@@ -15,6 +15,7 @@ Libp2pSqliteDatastore
 - `get`: `fun(self: Libp2pDatastore, key: string):any, table|nil`
 - `list`: `fun(self: Libp2pDatastore, prefix: string):string[]|nil, table|nil`
 - `put`: `fun(self: Libp2pDatastore, key: string, value: any, opts?: Libp2pDatastorePutOptions):true|nil, table|nil`
+- `query`: `fun(self: Libp2pDatastore, query: Libp2pDatastoreQuery):Libp2pDatastoreResults|nil, table|nil`
 
 ### Libp2pSqliteDatastoreConfig
 

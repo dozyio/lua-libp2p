@@ -63,7 +63,7 @@ local function run()
     end
     return true
   end))
-  assert(h:emit("peer_protocols_updated", {
+  assert(h:emit("peer:protocols_updated", {
     peer_id = "peer-b",
     added_protocols = { "/tests/dynamic/1.0.0" },
   }))

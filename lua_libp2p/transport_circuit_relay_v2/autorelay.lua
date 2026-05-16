@@ -583,14 +583,14 @@ function AutoRelay:start()
   end
 
   if self.host and type(self.host.on) == "function" then
-    local token, err = self.host:on("connection_closed", function(payload)
+    local token, err = self.host:on("connection:closed", function(payload)
       local connection_id = payload and payload.connection_id
       if not connection_id then
         return true
       end
       for key, reservation in pairs(self._reserved) do
         if reservation.connection_id == connection_id then
-          self:_remove_reservation(key, { reason = "connection_closed" })
+          self:_remove_reservation(key, { reason = "connection:closed" })
           break
         end
       end
@@ -638,10 +638,10 @@ function AutoRelay:stop()
     self.host:cancel_task(self._tick_task.id)
   end
   if self._protocol_subscription and self.host and type(self.host.off) == "function" then
-    self.host:off("peer_protocols_updated", self._protocol_subscription)
+    self.host:off("peer:protocols_updated", self._protocol_subscription)
   end
   if self._connection_closed_subscription and self.host and type(self.host.off) == "function" then
-    self.host:off("connection_closed", self._connection_closed_subscription)
+    self.host:off("connection:closed", self._connection_closed_subscription)
   end
   self._tick_task = nil
   self._protocol_subscription = nil

@@ -83,7 +83,7 @@ end
 local function usage()
   io.stderr:write("usage:\n")
   io.stderr:write(
-    "  lua examples/kad_dht_bootstrap_demo.lua server [--default-bootstrap] [--bootstrap <multiaddr> ...] [--identity-key <path>] [--datastore <sqlite-path>] [--peerstore <sqlite-path>] [listen-multiaddr ...]\n"
+    "  lua examples/kad_dht_bootstrap_demo.lua server [--default-bootstrap] [--bootstrap <multiaddr> ...] [--identity-key <path>] [--datastore <sqlite-path>] [--peerstore <sqlite-path>] [--peerstore-warm-start-limit <n>] [--no-peerstore-warm-start] [listen-multiaddr ...]\n"
   )
   io.stderr:write(
     "  lua examples/kad_dht_bootstrap_demo.lua client </bootstrap-multiaddr-with-p2p> [--datastore <sqlite-path>] [--peerstore <sqlite-path>]\n"
@@ -250,6 +250,8 @@ local function print_server_stats(h)
   end
 
   local stats = h:stats() or {}
+  local health_stats = type(h.health_stats) == "function" and h:health_stats() or {}
+  local health = health_stats.health or {}
   local connection_stats = stats.connections or {}
   local task_stats = stats.tasks or {}
   local resource_stats = stats.resources or {}
@@ -268,9 +270,9 @@ local function print_server_stats(h)
       tonumber(connection_stats.connections) or 0,
       tonumber(connection_stats.inbound_connections) or 0,
       tonumber(connection_stats.outbound_connections) or 0,
-      tonumber(connection_stats.active_dials) or 0,
-      tonumber(connection_stats.pending_dials) or 0,
-      tonumber(connection_stats.queued_dials) or 0,
+      tonumber(health.active_keys) or tonumber(connection_stats.active_dials) or 0,
+      tonumber(health.pending_keys) or tonumber(connection_stats.pending_dials) or 0,
+      tonumber(health.queued_keys) or tonumber(connection_stats.queued_dials) or 0,
       tonumber(task_stats.identify_inflight) or 0,
       tonumber(resource_system.connections_inbound) or 0,
       tonumber(resource_limits.connections_inbound) or 0,
@@ -296,8 +298,15 @@ local function print_internal_health(h)
       pending_relay_inbound = health.pending_relay_inbound,
       listener_pending = health.listener_pending,
       conns = health.conns,
+      upgrade_remote_aborted = health_stats.inbound and health_stats.inbound.upgrade_remote_aborted or 0,
+      upgrade_failed = health_stats.inbound and health_stats.inbound.upgrade_failed or 0,
       dial_queue = health.dial_queue,
       pending_keys = health.pending_keys,
+      active_keys = health.active_keys,
+      queued_keys = health.queued_keys,
+      stale_pending_removed = health.stale_pending_removed,
+      pending_dial_max_age = string.format("%.1f", tonumber(health.pending_dial_max_age) or 0),
+      pending_dial_statuses = health.pending_dial_statuses,
       fd_accept_failed = health.fd_accept_failed,
       mem_kb = string.format("%.1f", tonumber(health.mem_kb) or 0),
     }
@@ -439,6 +448,8 @@ local function run_server()
   local identity_key_path = ".kad_dht_bootstrap_demo.ed25519.key"
   local datastore_path
   local peerstore_path
+  local peerstore_warm_start = true
+  local peerstore_warm_start_limit = kad_dht_service.DEFAULT_POPULATE_FROM_PEERSTORE_LIMIT
 
   local arg_i = 2
   while arg_i <= #arg do
@@ -478,6 +489,18 @@ local function run_server()
         os.exit(2)
       end
       peerstore_path = value
+      arg_i = arg_i + 2
+    elseif name == "--no-peerstore-warm-start" then
+      peerstore_warm_start = false
+      arg_i = arg_i + 1
+    elseif name == "--peerstore-warm-start-limit" then
+      local limit = tonumber(value)
+      if not limit or limit < 0 then
+        io.stderr:write("--peerstore-warm-start-limit requires a non-negative number\n")
+        usage()
+        os.exit(2)
+      end
+      peerstore_warm_start_limit = limit
       arg_i = arg_i + 2
     else
       listen_addrs[#listen_addrs + 1] = name
@@ -545,6 +568,8 @@ local function run_server()
         config = {
           mode = "server",
           datastore = dht_datastore,
+          populate_from_peerstore_on_start = peerstore_warm_start,
+          populate_from_peerstore_limit = peerstore_warm_start_limit,
           max_concurrent_queries = 4,
         },
       },
@@ -560,6 +585,7 @@ local function run_server()
       max_outbound_connections = 32,
       max_parallel_dials = 4,
       max_dial_queue_length = 64,
+      pending_dial_ttl = 15,
       max_peer_addrs_to_dial = 2,
     },
     blocking = false,
@@ -580,6 +606,13 @@ local function run_server()
       if peerstore_path then
         io.stdout:write("peerstore: " .. tostring(peerstore_path) .. "\n")
       end
+      io.stdout:write(
+        "peerstore warm start: "
+          .. tostring(peerstore_warm_start)
+          .. " limit="
+          .. tostring(peerstore_warm_start_limit)
+          .. "\n"
+      )
       io.stdout:flush()
     end,
   })
@@ -594,25 +627,13 @@ local function run_server()
     os.exit(1)
   end
 
-  local started, start_err = host:start()
-  if not started then
-    if dht_datastore and dht_datastore.close then
-      dht_datastore:close()
-    end
-    if ps_datastore and ps_datastore.close then
-      ps_datastore:close()
-    end
-    io.stderr:write("host stopped with error: " .. tostring(start_err) .. "\n")
-    os.exit(1)
-  end
-
   host:enable_perf_stats()
 
-  local self_peer_watch_ok, self_peer_watch_err = host:on("self_peer_update", function(payload)
+  local self_peer_watch_ok, self_peer_watch_err = host:on("self:peer_updated", function(payload)
     local peer_id = payload and payload.peer_id or "unknown"
     local addrs = payload and payload.addrs or {}
     io.stdout:write(
-      string.format("%s [self_peer_update] peer_id=%s addrs=%d\n", now_iso8601(), tostring(peer_id), #addrs)
+      string.format("%s [self:peer_updated] peer_id=%s addrs=%d\n", now_iso8601(), tostring(peer_id), #addrs)
     )
     for _, addr in ipairs(addrs) do
       io.stdout:write("  " .. tostring(addr) .. "\n")
@@ -620,7 +641,7 @@ local function run_server()
     io.stdout:flush()
   end)
   if not self_peer_watch_ok then
-    io.stderr:write("failed to watch self_peer_update events: " .. tostring(self_peer_watch_err) .. "\n")
+    io.stderr:write("failed to watch self:peer_updated events: " .. tostring(self_peer_watch_err) .. "\n")
     os.exit(1)
   end
 
@@ -655,6 +676,21 @@ local function run_server()
   end, { service = "example" })
   if not health_task then
     io.stderr:write("failed to start health task: " .. tostring(health_err) .. "\n")
+    os.exit(1)
+  end
+
+  local started, start_err = host:start()
+  if not started then
+    if signal_toggles and signal_toggles.close then
+      signal_toggles:close()
+    end
+    if dht_datastore and dht_datastore.close then
+      dht_datastore:close()
+    end
+    if ps_datastore and ps_datastore.close then
+      ps_datastore:close()
+    end
+    io.stderr:write("host stopped with error: " .. tostring(start_err) .. "\n")
     os.exit(1)
   end
 

@@ -4,7 +4,6 @@
 -- the built-in collector/JSON output, but emits Markdown next to each public
 -- module so it is easier to browse as project API documentation.
 
-local jsonb = require("json-beautify")
 local util = require("utility")
 
 local function text(value)
@@ -282,21 +281,15 @@ local function render_module_markdown(file, docs)
 end
 
 function export.serializeAndExport(docs, output_dir)
-  local json_path = output_dir .. "/doc.json"
   local index_path = output_dir .. "/README.md"
 
-  local old_sparse = jsonb.supportSparseArray
-  jsonb.supportSparseArray = true
-  local json_ok, json_err = util.saveFile(json_path, jsonb.beautify(docs))
-  jsonb.supportSparseArray = old_sparse
-
   local by_file, files = collect_docs_by_file(docs)
-  local output_paths = { json_path, index_path }
-  local errs = { json_err, nil }
+  local output_paths = { index_path }
+  local errs = { nil }
 
   local index_ok, index_err = util.saveFile(index_path, render_index(files))
-  errs[2] = index_err
-  local all_ok = json_ok and index_ok
+  errs[1] = index_err
+  local all_ok = index_ok
 
   for _, file in ipairs(files) do
     local path = output_path_for_file(file)

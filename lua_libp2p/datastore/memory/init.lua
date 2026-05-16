@@ -91,6 +91,42 @@ function Store:list(prefix)
   return keys
 end
 
+function Store:query(query)
+  local q = query or {}
+  local prefix = q.prefix or ""
+  if prefix == "" then
+    return nil, error_mod.new("input", "query prefix must be non-empty")
+  end
+  local keys, list_err = self:list(prefix)
+  if not keys then
+    return nil, list_err
+  end
+  local offset = tonumber(q.offset) or 0
+  local limit = q.limit ~= nil and tonumber(q.limit) or nil
+  if offset < 0 or (limit ~= nil and limit < 0) then
+    return nil, error_mod.new("input", "query offset and limit must be non-negative")
+  end
+  offset = math.floor(offset)
+  limit = limit and math.floor(limit) or nil
+  local index = offset + 1
+  local returned = 0
+  return datastore.results_from_next(function()
+    if limit and returned >= limit then
+      return nil
+    end
+    local key = keys[index]
+    if not key then
+      return nil
+    end
+    index = index + 1
+    returned = returned + 1
+    if q.keys_only then
+      return { key = key }
+    end
+    return { key = key, value = self:get(key) }
+  end)
+end
+
 function Store:close()
   return true
 end

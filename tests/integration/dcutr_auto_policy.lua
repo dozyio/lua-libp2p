@@ -49,7 +49,7 @@ local function run()
     return task
   end
 
-  local ok, emit_err = host:emit("peer_connected", {
+  local ok, emit_err = host:emit("peer:connected", {
     peer_id = "peer-inbound",
     state = {
       direction = "inbound",
@@ -64,7 +64,7 @@ local function run()
     return nil, emit_err
   end
 
-  ok, emit_err = host:emit("peer_connected", {
+  ok, emit_err = host:emit("peer:connected", {
     peer_id = "peer-outbound",
     state = {
       direction = "outbound",
@@ -75,7 +75,7 @@ local function run()
     return nil, emit_err
   end
 
-  ok, emit_err = host:emit("peer_connected", {
+  ok, emit_err = host:emit("peer:connected", {
     peer_id = "peer-direct",
     state = {
       direction = "inbound",

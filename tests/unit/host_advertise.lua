@@ -28,10 +28,10 @@ local function run()
     return nil, "get_multiaddrs should not duplicate terminal peer id"
   end
 
-  local sub = assert(h:subscribe("self_peer_update"))
+  local sub = assert(h:subscribe("self:peer_updated"))
   assert(h:_emit_self_peer_update_if_changed())
   local ev = h:next_event(sub)
-  if not ev or ev.name ~= "self_peer_update" then
+  if not ev or ev.name ~= "self:peer_updated" then
     return nil, "self peer update should emit first snapshot"
   end
   assert(h:_emit_self_peer_update_if_changed())
@@ -43,7 +43,7 @@ local function run()
     return true
   end))
   local changed = h:next_event(sub)
-  if not changed or changed.name ~= "self_peer_update" then
+  if not changed or changed.name ~= "self:peer_updated" then
     return nil, "protocol changes should emit self peer update"
   end
 

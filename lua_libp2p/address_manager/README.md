@@ -24,9 +24,9 @@ Libp2pAddressManagerConfig
 - `announce_addrs`: `string[]?`
 - `listen_addrs`: `string[]?`
 - `no_announce_addrs`: `string[]?`
-- `observed_addrs`: `string[]?`
 - `public_mapping_addrs`: `string[]?`
 - `relay_addrs`: `string[]?`
+- `self_observed_addrs`: `string[]?`
 
 ### Libp2pAddressManagerInstance
 

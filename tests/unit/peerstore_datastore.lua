@@ -115,6 +115,17 @@ local function run()
   if #peers ~= 2 or peers[1].peer_id ~= "peer-a" or peers[2].peer_id ~= "peer-b" then
     return nil, "all should list datastore peers sorted by peer id"
   end
+  local iterated = {}
+  local each_ok, each_err = reloaded:each(function(iter_peer)
+    iterated[#iterated + 1] = iter_peer.peer_id
+    return #iterated < 1
+  end)
+  if not each_ok then
+    return nil, each_err
+  end
+  if #iterated ~= 1 or iterated[1] ~= "peer-a" then
+    return nil, "each should stream datastore peers in key order and allow early stop"
+  end
 
   local deleted, delete_err = reloaded:delete("peer-a")
   if not deleted then
