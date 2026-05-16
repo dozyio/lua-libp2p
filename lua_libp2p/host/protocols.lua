@@ -10,14 +10,6 @@ local multistream = require("lua_libp2p.multistream_select.protocol")
 
 local M = {}
 
-local function now_seconds()
-  local ok_socket, socket = pcall(require, "socket")
-  if ok_socket and type(socket.gettime) == "function" then
-    return socket.gettime()
-  end
-  return os.time()
-end
-
 local function normalize_protocol_list(protocols)
   if type(protocols) == "string" then
     return { protocols }
@@ -167,12 +159,8 @@ function M.install(Host)
     end
 
     if self.peerstore and (type(self.peerstore.each) == "function" or type(self.peerstore.all) == "function") then
-      local replay_started_at = now_seconds()
-      log.debug("host protocol peerstore replay start", { protocol = protocol_id })
-      local replayed = 0
       local function replay_peer(peer)
         if list_contains(peer.protocols, protocol_id) then
-          replayed = replayed + 1
           local call_ok, call_err = pcall(handler, peer.peer_id, {
             peer_id = peer.peer_id,
             protocols = peer.protocols,
@@ -198,11 +186,6 @@ function M.install(Host)
           end
         end
       end
-      log.debug("host protocol peerstore replay done", {
-        protocol = protocol_id,
-        replayed = replayed,
-        elapsed_ms = string.format("%.1f", (now_seconds() - replay_started_at) * 1000),
-      })
     end
 
     return wrapped

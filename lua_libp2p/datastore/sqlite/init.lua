@@ -8,32 +8,12 @@
 
 local datastore = require("lua_libp2p.datastore")
 local error_mod = require("lua_libp2p.error")
-local log = require("lua_libp2p.log").subsystem("datastore")
 local varint = require("lua_libp2p.multiformats.varint")
 
 local M = {}
 
 local Store = {}
 Store.__index = Store
-
-local SLOW_OPERATION_SECONDS = 0.1
-
-local function now_seconds()
-  local ok_socket, socket = pcall(require, "socket")
-  if ok_socket and type(socket.gettime) == "function" then
-    return socket.gettime()
-  end
-  return os.time()
-end
-
-local function log_operation(name, fields, started_at, force)
-  local elapsed = now_seconds() - started_at
-  if force or elapsed >= SLOW_OPERATION_SECONDS then
-    fields = fields or {}
-    fields.elapsed_ms = string.format("%.1f", elapsed * 1000)
-    log.debug("sqlite " .. name, fields)
-  end
-end
 
 local function sql_ident(name)
   if type(name) ~= "string" or not name:match("^[A-Za-z_][A-Za-z0-9_]*$") then
@@ -214,7 +194,6 @@ local function decode_from_store(payload)
 end
 
 function Store:get(key)
-  local started_at = now_seconds()
   local ok, key_err = datastore.validate_key(key)
   if not ok then
     return nil, key_err
@@ -229,7 +208,6 @@ function Store:get(key)
   local row = cursor:fetch({}, "a")
   cursor_close(cursor)
   if not row or row.value == nil then
-    log_operation("get", { key = key, hit = false }, started_at)
     return nil
   end
   local expires_at = tonumber(row.expires_at)
@@ -240,9 +218,7 @@ function Store:get(key)
     end
     return nil
   end
-  local value, decode_err = decode_from_store(row.value)
-  log_operation("get", { key = key, hit = value ~= nil, bytes = row.value and #row.value or 0 }, started_at)
-  return value, decode_err
+  return decode_from_store(row.value)
 end
 
 function Store:put(key, value, opts)
@@ -301,12 +277,10 @@ function Store:delete(key)
 end
 
 function Store:list(prefix)
-  local started_at = now_seconds()
   local ok, key_err = datastore.validate_key(prefix)
   if not ok then
     return nil, key_err
   end
-  log.debug("sqlite list start", { prefix = prefix })
   local cursor, query_err = exec(
     self._conn,
     "SELECT key, expires_at FROM " .. self._table .. " WHERE " .. prefix_where(prefix) .. " ORDER BY key"
@@ -329,17 +303,14 @@ function Store:list(prefix)
     end
   end
   cursor_close(cursor)
-  log_operation("list done", { prefix = prefix, keys = #keys }, started_at, true)
   return keys
 end
 
 function Store:count(prefix)
-  local started_at = now_seconds()
   local ok, key_err = datastore.validate_key(prefix)
   if not ok then
     return nil, key_err
   end
-  log.debug("sqlite count start", { prefix = prefix })
   local now = os.time()
   local cursor, query_err = exec(
     self._conn,
@@ -356,9 +327,7 @@ function Store:count(prefix)
   end
   local row = cursor:fetch({}, "a")
   cursor_close(cursor)
-  local count = tonumber(row and row.count) or 0
-  log_operation("count done", { prefix = prefix, count = count }, started_at, true)
-  return count
+  return tonumber(row and row.count) or 0
 end
 
 function Store:query(query)
@@ -376,8 +345,6 @@ function Store:query(query)
     return nil, limit_err
   end
 
-  local started_at = now_seconds()
-  log.debug("sqlite query start", { prefix = prefix, keys_only = q.keys_only == true })
   local columns = q.keys_only and "key" or "key, value"
   local sql = "SELECT "
     .. columns
@@ -393,14 +360,11 @@ function Store:query(query)
   if not cursor then
     return nil, query_err
   end
-  local rows = 0
   return datastore.results_from_next(function()
     local row = cursor:fetch({}, "a")
     if not row or row.key == nil then
-      log_operation("query done", { prefix = prefix, rows = rows, keys_only = q.keys_only == true }, started_at, true)
       return nil
     end
-    rows = rows + 1
     if q.keys_only then
       return { key = row.key }
     end
@@ -432,7 +396,6 @@ end
 ---@return table|nil err
 function M.new(opts)
   local options = opts or {}
-  local started_at = now_seconds()
   local path = options.path or options.filename
   if type(path) ~= "string" or path == "" then
     return nil, error_mod.new("input", "sqlite datastore path is required")
@@ -465,7 +428,6 @@ function M.new(opts)
     env:close()
     return nil, create_err
   end
-  log_operation("open", { path = path, table_name = options.table_name or "kv" }, started_at, true)
   return setmetatable({ _env = env, _conn = conn, _table = table_name }, Store)
 end
 
