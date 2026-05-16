@@ -10,6 +10,14 @@ local multistream = require("lua_libp2p.multistream_select.protocol")
 
 local M = {}
 
+local function now_seconds()
+  local ok_socket, socket = pcall(require, "socket")
+  if ok_socket and type(socket.gettime) == "function" then
+    return socket.gettime()
+  end
+  return os.time()
+end
+
 local function normalize_protocol_list(protocols)
   if type(protocols) == "string" then
     return { protocols }
@@ -153,14 +161,18 @@ function M.install(Host)
       return true
     end
 
-    local ok, err = self:on("peer_protocols_updated", wrapped)
+    local ok, err = self:on("peer:protocols_updated", wrapped)
     if not ok then
       return nil, err
     end
 
-    if self.peerstore and type(self.peerstore.all) == "function" then
-      for _, peer in ipairs(self.peerstore:all()) do
+    if self.peerstore and (type(self.peerstore.each) == "function" or type(self.peerstore.all) == "function") then
+      local replay_started_at = now_seconds()
+      log.debug("host protocol peerstore replay start", { protocol = protocol_id })
+      local replayed = 0
+      local function replay_peer(peer)
         if list_contains(peer.protocols, protocol_id) then
+          replayed = replayed + 1
           local call_ok, call_err = pcall(handler, peer.peer_id, {
             peer_id = peer.peer_id,
             protocols = peer.protocols,
@@ -171,7 +183,26 @@ function M.install(Host)
             return nil, error_mod.new("protocol", "protocol handler panicked", { cause = call_err })
           end
         end
+        return true
       end
+      if type(self.peerstore.each) == "function" then
+        local each_ok, each_err = self.peerstore:each(replay_peer)
+        if not each_ok then
+          return nil, each_err
+        end
+      else
+        for _, peer in ipairs(self.peerstore:all()) do
+          local replay_ok, replay_err = replay_peer(peer)
+          if not replay_ok then
+            return nil, replay_err
+          end
+        end
+      end
+      log.debug("host protocol peerstore replay done", {
+        protocol = protocol_id,
+        replayed = replayed,
+        elapsed_ms = string.format("%.1f", (now_seconds() - replay_started_at) * 1000),
+      })
     end
 
     return wrapped

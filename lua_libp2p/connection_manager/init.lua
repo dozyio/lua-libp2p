@@ -6,6 +6,7 @@
 ---@field max_dial_addrs? integer Alias for `max_peer_addrs_to_dial`.
 ---@field address_dial_timeout? number
 ---@field dial_timeout? number
+---@field pending_dial_ttl? number
 ---@field max_connections? integer
 ---@field max_inbound_connections? integer
 ---@field max_outbound_connections? integer
@@ -30,6 +31,7 @@ local DEFAULT_MAX_PARALLEL_DIALS = 100
 local DEFAULT_MAX_DIAL_QUEUE_LENGTH = 500
 local DEFAULT_MAX_PEER_ADDRS_TO_DIAL = 3
 local DEFAULT_ADDRESS_DIAL_TIMEOUT = 6
+local DEFAULT_PENDING_DIAL_TTL = 30
 local DEFAULT_HIGH_WATER = 192
 local DEFAULT_LOW_WATER = 160
 local DEFAULT_GRACE_PERIOD = 60
@@ -127,6 +129,7 @@ function M.new(host, opts)
     max_peer_addrs_to_dial = options.max_peer_addrs_to_dial or options.max_dial_addrs or DEFAULT_MAX_PEER_ADDRS_TO_DIAL,
     address_dial_timeout = options.address_dial_timeout or DEFAULT_ADDRESS_DIAL_TIMEOUT,
     dial_timeout = options.dial_timeout,
+    pending_dial_ttl = options.pending_dial_ttl or DEFAULT_PENDING_DIAL_TTL,
     max_connections = options.max_connections,
     max_inbound_connections = options.max_inbound_connections,
     max_outbound_connections = options.max_outbound_connections,
@@ -139,6 +142,8 @@ function M.new(host, opts)
     active_dials = 0,
     queue = {},
     pending_by_key = {},
+    active_by_key = {},
+    queued_by_key = {},
     connections_by_id = {},
     connections_by_peer = {},
     connections_by_direction = {
@@ -152,18 +157,21 @@ function M.new(host, opts)
     joined = 0,
     failed = 0,
     pruned = 0,
+    stale_pending_removed = 0,
   }, ConnectionManager)
 end
 
 function ConnectionManager:stats()
+  self:reconcile_dials()
   return {
-    active_dials = self.active_dials,
+    active_dials = self:active_count(),
     queued_dials = #self.queue,
     pending_dials = self:pending_count(),
     dialed = self.dialed,
     joined = self.joined,
     failed = self.failed,
     pruned = self.pruned,
+    stale_pending_removed = self.stale_pending_removed,
     connections = self:connection_count(),
     max_parallel_dials = self.max_parallel_dials,
     max_dial_queue_length = self.max_dial_queue_length,
@@ -180,6 +188,148 @@ function ConnectionManager:stats()
     grace_period = self.grace_period,
     silence_period = self.silence_period,
   }
+end
+
+function ConnectionManager:active_count()
+  local count = 0
+  for _ in pairs(self.active_by_key or {}) do
+    count = count + 1
+  end
+  return count
+end
+
+local function task_done(task)
+  return not task or task.status == "completed" or task.status == "failed" or task.status == "cancelled"
+end
+
+function ConnectionManager:reconcile_dials()
+  local now = now_seconds()
+  local pending_ttl = tonumber(self.pending_dial_ttl) or DEFAULT_PENDING_DIAL_TTL
+  for key, pending in pairs(self.pending_by_key or {}) do
+    local queued = self.queued_by_key and self.queued_by_key[key]
+    local active = self.active_by_key and self.active_by_key[key]
+    local age = now - (tonumber(pending.created_at) or now)
+    if pending.task == nil or task_done(pending.task) then
+      self.pending_by_key[key] = nil
+    elseif not queued and not active and pending_ttl >= 0 and age > pending_ttl then
+      if self.host and type(self.host.cancel_task) == "function" then
+        self.host:cancel_task(pending.task.id)
+      end
+      self.pending_by_key[key] = nil
+      self.stale_pending_removed = (self.stale_pending_removed or 0) + 1
+    end
+  end
+  local live_queue_tokens = {}
+  for key, queued in pairs(self.queued_by_key or {}) do
+    if queued.task == nil or task_done(queued.task) then
+      self.queued_by_key[key] = nil
+      if queued.token then
+        self:_remove_token(queued.token)
+      end
+    elseif queued.token then
+      live_queue_tokens[queued.token] = true
+    end
+  end
+  for i = #(self.queue or {}), 1, -1 do
+    if not live_queue_tokens[self.queue[i]] then
+      table.remove(self.queue, i)
+    end
+  end
+  local active_count = 0
+  for key, active in pairs(self.active_by_key or {}) do
+    if active.task == nil or task_done(active.task) then
+      self.active_by_key[key] = nil
+    else
+      active_count = active_count + 1
+    end
+  end
+  self.active_dials = active_count
+  self.active_dials = self:active_count()
+  if self.active_dials == 0 then
+    self.queue = self.queue or {}
+  end
+  self._last_dial_reconcile_at = now
+  return true
+end
+
+function ConnectionManager:dial_details(limit)
+  self:reconcile_dials()
+  local out = {}
+  local max = limit or 16
+  local now = now_seconds()
+  for key, active in pairs(self.active_by_key or {}) do
+    if #out >= max then
+      break
+    end
+    out[#out + 1] = {
+      key = key,
+      state = "active",
+      age = now - (active.started_at or now),
+      task_id = active.task and active.task.id or nil,
+      task_status = active.task and active.task.status or nil,
+    }
+  end
+  for key, pending in pairs(self.pending_by_key or {}) do
+    if #out >= max then
+      break
+    end
+    local queued = self.queued_by_key and self.queued_by_key[key]
+    if queued then
+      out[#out + 1] = {
+        key = key,
+        state = "queued",
+        age = now - (queued.enqueued_at or pending.created_at or now),
+        task_id = queued.task and queued.task.id or pending.task and pending.task.id or nil,
+        task_status = queued.task and queued.task.status or pending.task and pending.task.status or nil,
+      }
+    elseif not (self.active_by_key and self.active_by_key[key]) then
+      out[#out + 1] = {
+        key = key,
+        state = "pending",
+        age = now - (pending.created_at or now),
+        task_id = pending.task and pending.task.id or nil,
+        task_status = pending.task and pending.task.status or nil,
+      }
+    end
+  end
+  return out
+end
+
+function ConnectionManager:pending_summary(limit)
+  self:reconcile_dials()
+  local now = now_seconds()
+  local summary = {
+    total = 0,
+    max_age = 0,
+    by_status = {},
+    samples = {},
+  }
+  local max = limit or 8
+  for key, pending in pairs(self.pending_by_key or {}) do
+    local age = now - (tonumber(pending.created_at) or now)
+    if age > summary.max_age then
+      summary.max_age = age
+    end
+    local status = pending.task and pending.task.status or "missing"
+    summary.by_status[status] = (summary.by_status[status] or 0) + 1
+    summary.total = summary.total + 1
+    if #summary.samples < max then
+      summary.samples[#summary.samples + 1] = {
+        key = key,
+        age = age,
+        task_id = pending.task and pending.task.id or nil,
+        task_status = status,
+        queued = self.queued_by_key and self.queued_by_key[key] ~= nil or false,
+        active = self.active_by_key and self.active_by_key[key] ~= nil or false,
+      }
+    end
+  end
+  local status_total = 0
+  for _, count in pairs(summary.by_status) do
+    status_total = status_total + (tonumber(count) or 0)
+  end
+  summary.total = status_total
+  return summary
 end
 
 function ConnectionManager:connection_count(direction)
@@ -211,11 +361,7 @@ function ConnectionManager:peer_connection_count(peer_id)
 end
 
 function ConnectionManager:pending_count()
-  local count = 0
-  for _ in pairs(self.pending_by_key) do
-    count = count + 1
-  end
-  return count
+  return self:pending_summary(0).total
 end
 
 function ConnectionManager:_remove_token(token)
@@ -297,29 +443,62 @@ end
 -- `opts.timeout` / `opts.address_dial_timeout` / `opts.dial_timeout` affect dial timing.
 function ConnectionManager:_run_dial(target, opts, key, ctx)
   local token = {}
+  local task = self.host and type(ctx.id) == "function" and self.host:get_task(ctx:id()) or nil
+  local active = false
+  local function cleanup()
+    self:_remove_token(token)
+    self.queued_by_key[key] = nil
+    if active then
+      self.active_by_key[key] = nil
+      self.active_dials = math.max(0, (self.active_dials or 0) - 1)
+      active = false
+    end
+    self.pending_by_key[key] = nil
+  end
+
   self.queue[#self.queue + 1] = token
+  self.queued_by_key[key] = {
+    key = key,
+    task = task,
+    token = token,
+    enqueued_at = now_seconds(),
+  }
   while self.queue[1] ~= token or self.active_dials >= self.max_parallel_dials do
     if ctx:cancelled() then
-      self:_remove_token(token)
+      cleanup()
       return nil, error_mod.new("cancelled", "dial task cancelled")
     end
     local slept, sleep_err = ctx:sleep(0.01)
     if slept == nil and sleep_err then
-      self:_remove_token(token)
+      cleanup()
       return nil, sleep_err
     end
   end
 
   table.remove(self.queue, 1)
+  self.queued_by_key[key] = nil
   self.active_dials = self.active_dials + 1
+  active = true
+  self.active_by_key[key] = {
+    key = key,
+    task = task,
+    started_at = now_seconds(),
+  }
   self.dialed = self.dialed + 1
 
   local dial_opts = self:prepare_dial_options(opts)
   dial_opts.ctx = ctx
 
-  local conn, state, dial_err = self.host:_dial_direct(target, dial_opts)
-  self.active_dials = self.active_dials - 1
-  self.pending_by_key[key] = nil
+  local ok, conn, state, dial_err = pcall(self.host._dial_direct, self.host, target, dial_opts)
+  cleanup()
+  if not ok then
+    self.failed = self.failed + 1
+    return nil,
+      error_mod.new("internal", "dial task failed", {
+        cause = conn,
+        key = key,
+      })
+  end
   if not conn then
     self.failed = self.failed + 1
     return nil, dial_err
@@ -349,6 +528,7 @@ function ConnectionManager:open_connection(target, opts)
   if not key then
     return nil, nil, error_mod.new("input", "dial target must include peer id or address")
   end
+  self:reconcile_dials()
 
   local pending = self.pending_by_key[key]
   if pending then
@@ -369,11 +549,20 @@ function ConnectionManager:open_connection(target, opts)
   end
 
   local pending_entry = {}
+  pending_entry.created_at = now_seconds()
   self.pending_by_key[key] = pending_entry
   local task, task_err = self.host:spawn_task("connection_manager.dial", function(task_ctx)
     return self:_run_dial(target, options, key, task_ctx)
   end, {
     service = "connection_manager",
+    on_finished = function()
+      self.pending_by_key[key] = nil
+      if self.active_by_key[key] then
+        self.active_by_key[key] = nil
+        self.active_dials = math.max(0, (self.active_dials or 0) - 1)
+      end
+      return true
+    end,
   })
   if not task then
     self.pending_by_key[key] = nil

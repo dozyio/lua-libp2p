@@ -45,7 +45,7 @@ local function run()
     return nil, "expected luv host listener address"
   end
 
-  local identify_sub = assert(host:subscribe("peer_identified"))
+  local identify_sub = assert(host:subscribe("peer:identified"))
   local child_count = 3
   local script_path = os.tmpname() .. ".lua"
   local files = { script_path }
@@ -83,7 +83,7 @@ local function run()
       if not ev then
         break
       end
-      if ev.name == "peer_identified" then
+      if ev.name == "peer:identified" then
         identified_count = identified_count + 1
       end
     end

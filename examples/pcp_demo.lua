@@ -361,7 +361,7 @@ h:on("autonat:monitor:verified", function(payload)
   return true
 end)
 
-h:on("peer_identify_failed", function(payload)
+h:on("peer:identify_failed", function(payload)
   print(
     "peer identify failed: "
       .. tostring(payload.peer_id)
@@ -371,7 +371,7 @@ h:on("peer_identify_failed", function(payload)
   return true
 end)
 
-h:on("connection_closed", function(payload)
+h:on("connection:closed", function(payload)
   if not opts.debug then
     return true
   end

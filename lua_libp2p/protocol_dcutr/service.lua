@@ -364,12 +364,12 @@ function M.new(host, opts)
       peer_id = peer_id,
       remote_candidate_addrs = #candidates,
       remote_supports_dcutr = supports == true,
-      local_observed_addrs = #obs_precheck,
+      local_self_observed_addrs = #obs_precheck,
     })
     if #obs_precheck == 0 then
       log.debug("dcutr pending start skipped", {
         peer_id = peer_id,
-        reason = "no_local_observed_addrs",
+        reason = "no_local_self_observed_addrs",
         remote_candidate_addrs = #candidates,
       })
       return true
@@ -734,7 +734,7 @@ function M.new(host, opts)
     end
 
     if options.auto_on_relay_connection ~= false and type(host.on) == "function" then
-      local token, on_err = host:on("peer_connected", function(payload)
+      local token, on_err = host:on("peer:connected", function(payload)
         local state = payload and payload.state or {}
         local relay_state = state and state.relay or nil
         local peer_id = payload and payload.peer_id or state.remote_peer_id
@@ -781,7 +781,7 @@ function M.new(host, opts)
       end
       svc._peer_connected_token = token
 
-      local protocols_token, protocols_err = host:on("peer_protocols_updated", function(payload)
+      local protocols_token, protocols_err = host:on("peer:protocols_updated", function(payload)
         local peer_id = payload and payload.peer_id
         if type(peer_id) ~= "string" or peer_id == "" then
           return true
@@ -793,7 +793,7 @@ function M.new(host, opts)
       end
       svc._peer_protocols_updated_token = protocols_token
 
-      local observed_token, observed_err = host:on("observed_addr", function()
+      local observed_token, observed_err = host:on("self:observed_address_updated", function()
         for peer_id in pairs(svc._pending_auto) do
           svc:_schedule_pending_start(peer_id)
         end

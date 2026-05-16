@@ -42,6 +42,37 @@ function M.run_store(store, label)
     return nil, label .. " datastore list should return sorted keys for prefix"
   end
 
+  local results, query_err = store:query({ prefix = "peerstore/peer-a", keys_only = true })
+  if not results then
+    return nil, query_err
+  end
+  local first, first_err = results:next()
+  local second, second_err = results:next()
+  local third, third_err = results:next()
+  results:close()
+  if first_err or second_err or third_err then
+    return nil, first_err or second_err or third_err
+  end
+  if not first or first.key ~= "peerstore/peer-a/addrs" or first.value ~= nil then
+    return nil, label .. " datastore query should stream first key-only result"
+  end
+  if not second or second.key ~= "peerstore/peer-a/protocols" or third ~= nil then
+    return nil, label .. " datastore query should stream sorted key-only results"
+  end
+
+  results, query_err = store:query({ prefix = "peerstore", limit = 1, offset = 1 })
+  if not results then
+    return nil, query_err
+  end
+  local limited, limited_err = results:rest()
+  results:close()
+  if not limited then
+    return nil, limited_err
+  end
+  if #limited ~= 1 or limited[1].key ~= "peerstore/peer-a/protocols" or limited[1].value[1] ~= "/ipfs/id/1.0.0" then
+    return nil, label .. " datastore query should support value results with limit and offset"
+  end
+
   local deleted, delete_err = store:delete(key)
   if not deleted then
     return nil, delete_err or label .. " delete should report existing key removal"

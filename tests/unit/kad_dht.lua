@@ -300,7 +300,7 @@ local function run()
     return true
   end
   function auto_host:on(event, cb)
-    if event == "self_peer_update" then
+    if event == "self:peer_updated" then
       auto_self_callback = cb
     end
     return true
@@ -312,7 +312,7 @@ local function run()
     return true
   end
   function auto_host:off(event, cb)
-    if event == "self_peer_update" and auto_self_callback == cb then
+    if event == "self:peer_updated" and auto_self_callback == cb then
       auto_self_callback = nil
     end
     return true
@@ -367,12 +367,18 @@ local function run()
   end
 
   local protocol_callback = nil
+  local identified_callback = nil
+  local updated_callback = nil
   local event_host = {
     _peer = { id = "local" },
     peerstore = {
       get_addrs = function(_, peer_id)
         if peer_id == "peer-a" then
           return { "/ip4/127.0.0.1/tcp/4001" }
+        elseif peer_id == "peer-b" then
+          return { "/ip4/127.0.0.1/tcp/4002" }
+        elseif peer_id == "peer-c" then
+          return { "/ip4/127.0.0.1/tcp/4003" }
         end
         return {}
       end,
@@ -382,14 +388,22 @@ local function run()
     return self._peer
   end
   function event_host:on(event, cb)
-    if event == "peer_protocols_updated" then
+    if event == "peer:protocols_updated" then
       protocol_callback = cb
+    elseif event == "peer:identified" then
+      identified_callback = cb
+    elseif event == "peer:updated" then
+      updated_callback = cb
     end
     return true
   end
   function event_host:off(event, cb)
-    if event == "peer_protocols_updated" and protocol_callback == cb then
+    if event == "peer:protocols_updated" and protocol_callback == cb then
       protocol_callback = nil
+    elseif event == "peer:identified" and identified_callback == cb then
+      identified_callback = nil
+    elseif event == "peer:updated" and updated_callback == cb then
+      updated_callback = nil
     end
     return true
   end
@@ -399,6 +413,12 @@ local function run()
   }))
   if not protocol_callback then
     return nil, "dht should subscribe to peer protocol updates"
+  end
+  if not identified_callback then
+    return nil, "dht should subscribe to peer identify updates"
+  end
+  if not updated_callback then
+    return nil, "dht should subscribe to peer update events"
   end
   local event_ok, event_err = protocol_callback({
     peer_id = "peer-a",
@@ -410,9 +430,30 @@ local function run()
   if not event_dht:get_local_peer("peer-a") then
     return nil, "dht should add KAD-capable peers from protocol update events"
   end
+  local identified_ok, identified_err = identified_callback({
+    peer_id = "peer-b",
+    message = { protocols = { kad_dht.PROTOCOL_ID } },
+  })
+  if not identified_ok then
+    return nil, identified_err
+  end
+  if not event_dht:get_local_peer("peer-b") then
+    return nil, "dht should retry KAD-capable peers when identify updates addresses"
+  end
+  local updated_ok, updated_err = updated_callback({
+    peer_id = "peer-c",
+    peer = { peer_id = "peer-c", protocols = { kad_dht.PROTOCOL_ID } },
+    changed = { addrs = true },
+  })
+  if not updated_ok then
+    return nil, updated_err
+  end
+  if not event_dht:get_local_peer("peer-c") then
+    return nil, "dht should retry KAD-capable peers when peerstore addresses update"
+  end
   event_dht:stop()
-  if protocol_callback ~= nil then
-    return nil, "dht stop should unsubscribe from protocol update events"
+  if protocol_callback ~= nil or identified_callback ~= nil or updated_callback ~= nil then
+    return nil, "dht stop should unsubscribe from host update events"
   end
 
   local invalid_dht, invalid_filter_err = kad_dht.new(host, {

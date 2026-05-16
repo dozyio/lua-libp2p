@@ -239,6 +239,126 @@ local function connection_manager_from_config(host, cfg)
   return connection_manager.new(host, cfg.dial_queue or {})
 end
 
+local function sorted_list(values)
+  local out = {}
+  for _, value in ipairs(values or {}) do
+    out[#out + 1] = tostring(value)
+  end
+  table.sort(out)
+  return out
+end
+
+local function lists_equal(left, right)
+  local a = sorted_list(left)
+  local b = sorted_list(right)
+  if #a ~= #b then
+    return false
+  end
+  for i = 1, #a do
+    if a[i] ~= b[i] then
+      return false
+    end
+  end
+  return true
+end
+
+local function tags_equal(left, right)
+  local names = {}
+  for name in pairs(left or {}) do
+    names[name] = true
+  end
+  for name in pairs(right or {}) do
+    names[name] = true
+  end
+  for name in pairs(names) do
+    local a = left and left[name] or nil
+    local b = right and right[name] or nil
+    if not a or not b or a.value ~= b.value or a.expires_at ~= b.expires_at then
+      return false
+    end
+  end
+  return true
+end
+
+local function metadata_equal(left, right)
+  local keys_seen = {}
+  for key in pairs(left or {}) do
+    keys_seen[key] = true
+  end
+  for key in pairs(right or {}) do
+    keys_seen[key] = true
+  end
+  for key in pairs(keys_seen) do
+    if (left and left[key] or nil) ~= (right and right[key] or nil) then
+      return false
+    end
+  end
+  return true
+end
+
+local function peer_changes(previous, peer)
+  if not previous and not peer then
+    return nil
+  end
+  local changed = {}
+  if not lists_equal(previous and previous.addrs or {}, peer and peer.addrs or {}) then
+    changed.addrs = true
+  end
+  if not lists_equal(previous and previous.protocols or {}, peer and peer.protocols or {}) then
+    changed.protocols = true
+  end
+  if not tags_equal(previous and previous.tags or {}, peer and peer.tags or {}) then
+    changed.tags = true
+  end
+  if not metadata_equal(previous and previous.metadata or {}, peer and peer.metadata or {}) then
+    changed.metadata = true
+  end
+  if (previous and previous.public_key or nil) ~= (peer and peer.public_key or nil) then
+    changed.public_key = true
+  end
+  if (previous and previous.peer_record_envelope or nil) ~= (peer and peer.peer_record_envelope or nil) then
+    changed.peer_record_envelope = true
+  end
+  return next(changed) and changed or nil
+end
+
+local function install_peerstore_update_events(host)
+  local ps = host.peerstore
+  if type(ps) ~= "table" or type(ps.get) ~= "function" or ps._host_peer_update_events_installed then
+    return true
+  end
+  ps._host_peer_update_events_installed = true
+  local mutators = { "add_addrs", "add_protocols", "tag", "untag", "merge", "patch", "delete" }
+  for _, method_name in ipairs(mutators) do
+    local original = ps[method_name]
+    if type(original) == "function" then
+      ps[method_name] = function(self, peer_id, ...)
+        local previous = type(peer_id) == "string" and self:get(peer_id) or nil
+        local result, err = original(self, peer_id, ...)
+        if result ~= nil and type(peer_id) == "string" and peer_id ~= host:peer_id().id then
+          local current = self:get(peer_id)
+          local changed = peer_changes(previous, current)
+          if changed then
+            local emit_ok, emit_err = host:emit("peer:updated", {
+              peer_id = peer_id,
+              peer = current,
+              previous = previous,
+              changed = changed,
+              operation = method_name,
+              source = "peerstore",
+            })
+            if not emit_ok then
+              return nil, emit_err
+            end
+          end
+        end
+        return result, err
+      end
+    end
+  end
+  return true
+end
+
 function Host:new(config)
   local cfg = config or {}
   local runtime_name = cfg.runtime or "auto"
@@ -280,7 +400,7 @@ function Host:new(config)
       listen_addrs = cfg.listen_addrs or {},
       announce_addrs = cfg.announce_addrs or {},
       no_announce_addrs = cfg.no_announce_addrs or {},
-      observed_addrs = cfg.observed_addrs or {},
+      self_observed_addrs = cfg.self_observed_addrs or {},
       relay_addrs = cfg.relay_addrs or {},
       advertise_observed = cfg.advertise_observed,
     }),
@@ -344,6 +464,10 @@ function Host:new(config)
   end
   host_connections.init(self_obj)
   host_events.init(self_obj, cfg)
+  local peerstore_events_ok, peerstore_events_err = install_peerstore_update_events(self_obj)
+  if not peerstore_events_ok then
+    return nil, peerstore_events_err
+  end
   host_identify.init(self_obj)
   host_listeners.init(self_obj)
   host_protocols.init(self_obj)
@@ -694,7 +818,7 @@ function Host:_register_connection(conn, state)
     end
   end
 
-  local ok, emit_err = emit_event(self, "peer_connected", {
+  local ok, emit_err = emit_event(self, "peer:connected", {
     connection = entry.conn,
     connection_id = connection_id,
     state = entry.state,
@@ -705,13 +829,13 @@ function Host:_register_connection(conn, state)
     log.debug("host connection event failed", {
       connection_id = connection_id,
       peer_id = peer_id,
-      event = "peer_connected",
+      event = "peer:connected",
       cause = tostring(emit_err),
     })
     return nil, emit_err
   end
 
-  local opened_ok, opened_err = emit_event(self, "connection_opened", {
+  local opened_ok, opened_err = emit_event(self, "connection:opened", {
     connection = entry.conn,
     connection_id = connection_id,
     state = entry.state,
@@ -722,7 +846,7 @@ function Host:_register_connection(conn, state)
     log.debug("host connection event failed", {
       connection_id = connection_id,
       peer_id = peer_id,
-      event = "connection_opened",
+      event = "connection:opened",
       cause = tostring(opened_err),
     })
     return nil, opened_err
@@ -790,7 +914,7 @@ function Host:_unregister_connection(index, entry, cause)
     self.connection_manager:on_connection_closed(entry)
   end
   self:_close_connection_resource(entry.state and entry.state.resource_scope)
-  local peer_ok, peer_err = emit_event(self, "peer_disconnected", {
+  local peer_ok, peer_err = emit_event(self, "peer:disconnected", {
     connection = entry.conn,
     connection_id = entry.id,
     state = entry.state,
@@ -800,7 +924,7 @@ function Host:_unregister_connection(index, entry, cause)
   if not peer_ok then
     return nil, peer_err
   end
-  local ok, emit_err = emit_event(self, "connection_closed", {
+  local ok, emit_err = emit_event(self, "connection:closed", {
     connection = entry.conn,
     connection_id = entry.id,
     state = entry.state,
@@ -864,16 +988,74 @@ local function top_count_string(map, limit)
   return table.concat(parts, ",")
 end
 
+local function sum_count_map(map)
+  local total = 0
+  for _, value in pairs(map or {}) do
+    total = total + (tonumber(value) or 0)
+  end
+  return total
+end
+
+local function pending_dial_summary_from_raw(connmgr, limit)
+  local summary = {
+    total = 0,
+    max_age = 0,
+    by_status = {},
+    samples = {},
+  }
+  if not connmgr then
+    return summary
+  end
+  local max = limit or 8
+  local now = os.time()
+  for key, pending in pairs(connmgr.pending_by_key or {}) do
+    local created_at = tonumber(pending.created_at) or now
+    local age = math.max(0, now - created_at)
+    if age > summary.max_age then
+      summary.max_age = age
+    end
+    local status = pending.task and pending.task.status or "missing"
+    summary.by_status[status] = (summary.by_status[status] or 0) + 1
+    if #summary.samples < max then
+      summary.samples[#summary.samples + 1] = {
+        key = key,
+        age = age,
+        task_id = pending.task and pending.task.id or nil,
+        task_status = status,
+        queued = connmgr.queued_by_key and connmgr.queued_by_key[key] ~= nil or false,
+        active = connmgr.active_by_key and connmgr.active_by_key[key] ~= nil or false,
+      }
+    end
+  end
+  summary.total = sum_count_map(summary.by_status)
+  return summary
+end
+
 --- Return a reusable host diagnostic snapshot.
 -- This intentionally exposes aggregate counters rather than private tables so
 -- examples and operators can log health without reaching into host internals.
 function Host:health_stats()
   local connmgr = self.connection_manager
-  local dial_queue = 0
+  local active_keys = 0
+  local queued_keys = 0
   local pending_by_key = 0
+  local dial_details = {}
+  local pending_summary = nil
   if connmgr then
-    dial_queue = #(connmgr.queue or {})
-    pending_by_key = count_map(connmgr.pending_by_key)
+    if type(connmgr.reconcile_dials) == "function" then
+      connmgr:reconcile_dials()
+    end
+    if type(connmgr.dial_details) == "function" then
+      dial_details = connmgr:dial_details(8)
+    end
+    if type(connmgr.pending_summary) == "function" then
+      pending_summary = connmgr:pending_summary(8)
+    else
+      pending_summary = pending_dial_summary_from_raw(connmgr, 8)
+    end
+    active_keys = count_map(connmgr.active_by_key)
+    queued_keys = count_map(connmgr.queued_by_key)
+    pending_by_key = sum_count_map(pending_summary.by_status)
   end
 
   local listener_pending = 0
@@ -914,10 +1096,17 @@ function Host:health_stats()
       pending_relay_inbound = #(self._pending_relay_inbound or {}),
       listener_pending = listener_pending,
       conns = #(self._connections or {}),
-      dial_queue = dial_queue,
+      dial_queue = queued_keys,
       pending_keys = pending_by_key,
+      active_keys = active_keys,
+      queued_keys = queued_keys,
+      stale_pending_removed = connmgr and tonumber(connmgr.stale_pending_removed) or 0,
+      pending_dial_max_age = pending_summary and pending_summary.max_age or 0,
+      pending_dial_statuses = pending_summary and top_count_string(pending_summary.by_status, 4) or "none",
+      pending_dial_samples = pending_summary and pending_summary.samples or {},
       mem_kb = collectgarbage("count"),
       fd_accept_failed = listener_accept_resource_failed,
+      dial_details = dial_details,
     },
     listener = {
       callbacks = listener_callbacks,
@@ -932,6 +1121,7 @@ function Host:health_stats()
       upgrade_started = tonumber(counters.inbound_upgrade_started) or 0,
       upgrade_completed = tonumber(counters.inbound_upgrade_completed) or 0,
       upgrade_failed = tonumber(counters.inbound_upgrade_failed) or 0,
+      upgrade_remote_aborted = tonumber(counters.inbound_upgrade_remote_aborted) or 0,
       upgrade_task_ended = tonumber(counters.inbound_upgrade_task_ended) or 0,
       resource_reject = tonumber(counters.inbound_resource_reject) or 0,
       registration_failed = tonumber(counters.inbound_registration_failed) or 0,
@@ -1618,7 +1808,7 @@ end
 ---@field listen_addrs? string[]
 ---@field announce_addrs? string[]
 ---@field no_announce_addrs? string[]
----@field observed_addrs? string[]
+---@field self_observed_addrs? string[]
 ---@field relay_addrs? string[]
 ---@field advertise_observed? boolean
 ---@field transports? Libp2pTransportName[]

@@ -89,6 +89,21 @@ local function error_cause_text(err)
   return trim_value(err, 120)
 end
 
+local function is_remote_aborted_upgrade(err)
+  if not error_mod.is_error(err) then
+    return false
+  end
+  if err.kind == "closed" then
+    return true
+  end
+  local cause = string.upper(tostring(err.context and err.context.cause or err))
+  return cause:find("ECONNRESET", 1, true) ~= nil
+    or cause:find("ENOTCONN", 1, true) ~= nil
+    or cause:find("CONNECTION CLOSED", 1, true) ~= nil
+    or cause:find("YAMUX SESSION CLOSED", 1, true) ~= nil
+    or cause:find("YAMUX STREAM IS RESET", 1, true) ~= nil
+end
+
 local function record_inbound_upgrade_failure(host, err)
   if type(host) ~= "table" then
     return
@@ -103,6 +118,17 @@ local function record_inbound_upgrade_failure(host, err)
 
   bump_map(debug_maps.inbound_upgrade_failed_by_kind, error_kind(err))
   bump_map(debug_maps.inbound_upgrade_failed_by_cause, error_cause_text(err))
+end
+
+local function record_inbound_upgrade_result(host, err)
+  if is_remote_aborted_upgrade(err) then
+    if type(host._bump_debug_counter) == "function" then
+      host:_bump_debug_counter("inbound_upgrade_remote_aborted")
+    end
+  elseif type(host._bump_debug_counter) == "function" then
+    host:_bump_debug_counter("inbound_upgrade_failed")
+  end
+  record_inbound_upgrade_failure(host, err)
 end
 
 function M.resume_inbound_upgrade(host, pending_entry, is_nonfatal_stream_error)
@@ -133,11 +159,8 @@ function M.resume_inbound_upgrade(host, pending_entry, is_nonfatal_stream_error)
           raw_conn:set_context(nil)
         end
         if not upgrade_result[1] then
-          if type(host._bump_debug_counter) == "function" then
-            host:_bump_debug_counter("inbound_upgrade_failed")
-          end
           local err = error_mod.new("protocol", "inbound upgrade task failed", { cause = upgrade_result[2] })
-          record_inbound_upgrade_failure(host, err)
+          record_inbound_upgrade_result(host, err)
           local fields = raw_conn_fields(raw_conn)
           fields.cause = tostring(err)
           fields.cause_kind = err.kind
@@ -146,10 +169,7 @@ function M.resume_inbound_upgrade(host, pending_entry, is_nonfatal_stream_error)
         end
         local conn, state, up_err = upgrade_result[2], upgrade_result[3], upgrade_result[4]
         if not conn then
-          if type(host._bump_debug_counter) == "function" then
-            host:_bump_debug_counter("inbound_upgrade_failed")
-          end
-          record_inbound_upgrade_failure(host, up_err)
+          record_inbound_upgrade_result(host, up_err)
           local fields = raw_conn_fields(raw_conn)
           fields.cause = tostring(up_err)
           fields.cause_kind = error_mod.is_error(up_err) and up_err.kind or nil

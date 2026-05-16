@@ -29,7 +29,7 @@ local function run()
       return true
     end,
     _emit_self_peer_update_if_changed = function(self)
-      return self:emit("self_peer_update", {})
+      return self:emit("self:peer_updated", {})
     end,
     _tasks = {},
     spawn_task = function(self, name, fn)

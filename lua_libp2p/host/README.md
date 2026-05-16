@@ -43,7 +43,6 @@ Libp2pHostConfig
 - `listen_addrs`: `string[]?`
 - `muxers`: `Libp2pMuxerConfig?` -  Stream muxer registry.
 - `no_announce_addrs`: `string[]?`
-- `observed_addrs`: `string[]?`
 - `on`: `table<string, fun(event: table):any>?`
 - `on_started`: `fun(host: Libp2pHost)?`
 - `peer_discovery`: `table<string, table|Libp2pServiceSpec>?`
@@ -55,6 +54,7 @@ Libp2pHostConfig
 - `resource_manager_options`: `Libp2pResourceManagerConfig?`
 - `runtime`: `('auto'|'luv')?`
 - `security_transports`: `Libp2pSecurityTransportConfig?` -  Security transport registry.
+- `self_observed_addrs`: `string[]?`
 - `services`: `table<string, table|Libp2pServiceSpec>?`
 - `task_prune_interval`: `number?`
 - `task_resume_budget`: `integer?`

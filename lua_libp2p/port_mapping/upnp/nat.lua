@@ -344,7 +344,7 @@ function Service:start()
     self._event_handler = function()
       return self:map_ip_addresses()
     end
-    self.host:on("self_peer_update", self._event_handler)
+    self.host:on("self:peer_updated", self._event_handler)
   end
   local mapped, err = self:map_ip_addresses()
   if not mapped and self.fail_on_start_error then
@@ -367,7 +367,7 @@ function Service:stop()
     end)(),
   })
   if self.host and self._event_handler and type(self.host.off) == "function" then
-    self.host:off("self_peer_update", self._event_handler)
+    self.host:off("self:peer_updated", self._event_handler)
   end
   for _, mapping in pairs(self.mappings) do
     if self.host and self.host.address_manager then

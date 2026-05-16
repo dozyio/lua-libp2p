@@ -198,7 +198,7 @@ if not host then
 end
 
 if opts.debug_connections then
-  host:on("connection_opened", function(payload)
+  host:on("connection:opened", function(payload)
     local state = payload and payload.state or {}
     local relay = state.relay or {}
     io.stdout:write(
@@ -217,7 +217,7 @@ if opts.debug_connections then
     return true
   end)
 
-  host:on("connection_closed", function(payload)
+  host:on("connection:closed", function(payload)
     local state = payload and payload.state or {}
     local relay = state.relay or {}
     io.stdout:write(
@@ -338,7 +338,7 @@ host:on("dcutr:attempt:precheck", function(payload)
       .. " remote_supports_dcutr="
       .. tostring(payload and payload.remote_supports_dcutr)
       .. " local_obs="
-      .. tostring(payload and payload.local_observed_addrs)
+      .. tostring(payload and payload.local_self_observed_addrs)
       .. "\n"
   )
   return true

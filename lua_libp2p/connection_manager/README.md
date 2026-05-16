@@ -23,6 +23,7 @@ Libp2pConnectionManagerConfig
 - `max_outbound_connections`: `integer?`
 - `max_parallel_dials`: `integer?`
 - `max_peer_addrs_to_dial`: `integer?`
+- `pending_dial_ttl`: `number?`
 - `silence_period`: `number?`
 
 ### Libp2pConnectionManagerInstance

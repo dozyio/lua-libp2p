@@ -26,12 +26,30 @@ local function run()
     return nil, "new datastore peerstore should start empty"
   end
 
+  local peer_updated = nil
+  local update_ok, update_err = h:on("peer:updated", function(payload)
+    peer_updated = payload
+    return true
+  end)
+  if not update_ok then
+    return nil, update_err
+  end
+
   local merged, merge_err = h.peerstore:merge("peer-a", {
     addrs = { "/ip4/127.0.0.1/tcp/4001" },
     protocols = { "/tests/proto/1.0.0" },
   })
   if not merged then
     return nil, merge_err
+  end
+  if
+    not peer_updated
+    or peer_updated.peer_id ~= "peer-a"
+    or not peer_updated.changed.addrs
+    or not peer_updated.changed.protocols
+    or peer_updated.operation ~= "merge"
+  then
+    return nil, "host should emit peer:updated for peerstore mutations"
   end
 
   local observed = false

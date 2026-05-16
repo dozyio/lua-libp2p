@@ -57,6 +57,9 @@ Libp2pKadDhtConfig
 - `peer_diversity_max_peers_per_ip_group`: `(integer|false)?`
 - `peer_diversity_max_peers_per_ip_group_per_bucket`: `(integer|false)?`
 - `peer_id_bytes_cache_size`: `integer?`
+- `populate_from_peerstore_limit`: `integer?` - Default: 1000.
+- `populate_from_peerstore_on_start`: `boolean?` - Default: true.
+- `populate_from_peerstore_protocol_check_timeout`: `number?`
 - `protocol_id`: `string?` - DHT protocol ID override.
 - `provider_addr_ttl_seconds`: `number?` - Provider address TTL.
 - `provider_datastore`: `table?` - Provider datastore override.

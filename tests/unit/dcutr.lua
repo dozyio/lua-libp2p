@@ -174,12 +174,12 @@ local function run()
   if handler_protocol ~= dcutr.ID or type(handler_fn) ~= "function" then
     return nil, "dcutr handler registration failed"
   end
-  if type(event_handlers["peer_connected"]) ~= "function" then
-    return nil, "expected dcutr auto hook on peer_connected"
+  if type(event_handlers["peer:connected"]) ~= "function" then
+    return nil, "expected dcutr auto hook on peer:connected"
   end
 
   local before_auto = #spawned_task_names
-  event_handlers["peer_connected"]({
+  event_handlers["peer:connected"]({
     peer_id = "peer-auto-inbound",
     state = {
       direction = "inbound",
@@ -196,7 +196,7 @@ local function run()
   end
 
   local before_outbound = #spawned_task_names
-  event_handlers["peer_connected"]({
+  event_handlers["peer:connected"]({
     peer_id = "peer-auto-outbound",
     state = {
       direction = "outbound",
@@ -211,7 +211,7 @@ local function run()
     return {}
   end
   local before_fallback = #spawned_task_names
-  event_handlers["peer_connected"]({
+  event_handlers["peer:connected"]({
     peer_id = "peer-auto-fallback",
     state = {
       direction = "inbound",

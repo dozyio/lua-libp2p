@@ -467,7 +467,7 @@ function M.enable_run_on_connection_open(host, opts)
     })
   end
 
-  return host:on("peer_connected", host._identify_on_connect_handler)
+  return host:on("peer:connected", host._identify_on_connect_handler)
 end
 
 return M

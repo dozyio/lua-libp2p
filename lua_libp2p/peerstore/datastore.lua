@@ -5,6 +5,7 @@
 -- adapter rather than this implementation.
 local datastore = require("lua_libp2p.datastore")
 local error_mod = require("lua_libp2p.error")
+local log = require("lua_libp2p.log").subsystem("peerstore")
 local peerstore_codec = require("lua_libp2p.peerstore.codec")
 
 local M = {}
@@ -13,6 +14,14 @@ local Store = {}
 Store.__index = Store
 
 local DEFAULT_PREFIX = "peerstore/peers"
+
+local function now_seconds()
+  local ok_socket, socket = pcall(require, "socket")
+  if ok_socket and type(socket.gettime) == "function" then
+    return socket.gettime()
+  end
+  return os.time()
+end
 
 local function clone(value)
   if type(value) ~= "table" then
@@ -162,6 +171,34 @@ local function active_tags(peer)
     end
   end
   return out, changed
+end
+
+local function peer_view_from_record(self, peer_id, encoded)
+  local peer, decode_err = peerstore_codec.decode(encoded)
+  if not peer then
+    return nil, decode_err
+  end
+  peer = normalize_peer(peer_id, peer)
+  local addrs, addrs_changed = active_addrs(peer)
+  local tags, tags_changed = active_tags(peer)
+  if addrs_changed or tags_changed then
+    save_peer(self, peer)
+  end
+  local protocols = {}
+  for protocol in pairs(peer.protocols) do
+    protocols[#protocols + 1] = protocol
+  end
+  table.sort(protocols)
+  return {
+    peer_id = peer.peer_id,
+    addrs = addrs,
+    protocols = protocols,
+    tags = tags,
+    public_key = peer.public_key,
+    metadata = clone(peer.metadata),
+    peer_record_envelope = peer.peer_record_envelope,
+    updated_at = peer.updated_at,
+  }
 end
 
 function Store:add_addrs(peer_id, addrs, opts)
@@ -451,10 +488,34 @@ function Store:delete(peer_id)
 end
 
 function Store:all()
+  local started_at = now_seconds()
+  log.debug("peerstore all start", { prefix = self._prefix })
+  if type(self.each) == "function" then
+    local out = {}
+    local ok, each_err = self:each(function(peer)
+      out[#out + 1] = peer
+      return true
+    end)
+    if not ok then
+      return nil, each_err
+    end
+    log.debug("peerstore all done", {
+      prefix = self._prefix,
+      peers = #out,
+      elapsed_ms = string.format("%.1f", (now_seconds() - started_at) * 1000),
+    })
+    return out
+  end
+
   local keys, list_err = self._datastore:list(self._prefix)
   if not keys then
     return nil, list_err
   end
+  log.debug("peerstore all keys loaded", {
+    prefix = self._prefix,
+    keys = #keys,
+    elapsed_ms = string.format("%.1f", (now_seconds() - started_at) * 1000),
+  })
   local out = {}
   local prefix_len = #self._prefix + 2
   for _, key in ipairs(keys) do
@@ -467,17 +528,114 @@ function Store:all()
   table.sort(out, function(a, b)
     return a.peer_id < b.peer_id
   end)
+  log.debug("peerstore all done", {
+    prefix = self._prefix,
+    keys = #keys,
+    peers = #out,
+    elapsed_ms = string.format("%.1f", (now_seconds() - started_at) * 1000),
+  })
   return out
 end
 
+function Store:each(fn, opts)
+  if type(fn) ~= "function" then
+    return nil, error_mod.new("input", "peerstore each requires a callback")
+  end
+  local options = opts or {}
+  local started_at = now_seconds()
+  log.debug("peerstore each start", { prefix = self._prefix, limit = options.limit })
+  local query_fn = self._datastore and self._datastore.query
+  if type(query_fn) ~= "function" then
+    local keys, list_err = self._datastore:list(self._prefix)
+    if not keys then
+      return nil, list_err
+    end
+    local prefix_len = #self._prefix + 2
+    for _, key in ipairs(keys) do
+      local peer = self:get(key:sub(prefix_len))
+      if peer then
+        local keep_going, cb_err = fn(peer)
+        if cb_err then
+          return nil, cb_err
+        end
+        if keep_going == false then
+          break
+        end
+      end
+    end
+    return true
+  end
+
+  local results, query_err = self._datastore:query({
+    prefix = self._prefix,
+    keys_only = false,
+    limit = options.limit,
+    offset = options.offset,
+  })
+  if not results then
+    return nil, query_err
+  end
+  local prefix_len = #self._prefix + 2
+  local scanned = 0
+  local yielded = 0
+  while true do
+    local entry, entry_err = results:next()
+    if entry_err then
+      results:close()
+      return nil, entry_err
+    end
+    if not entry then
+      break
+    end
+    scanned = scanned + 1
+    local peer_id = entry.key:sub(prefix_len)
+    local peer, peer_err = peer_view_from_record(self, peer_id, entry.value)
+    if peer_err then
+      results:close()
+      return nil, peer_err
+    end
+    if peer then
+      yielded = yielded + 1
+      local keep_going, cb_err = fn(peer)
+      if cb_err then
+        results:close()
+        return nil, cb_err
+      end
+      if keep_going == false then
+        break
+      end
+    end
+  end
+  results:close()
+  log.debug("peerstore each done", {
+    prefix = self._prefix,
+    scanned = scanned,
+    yielded = yielded,
+    elapsed_ms = string.format("%.1f", (now_seconds() - started_at) * 1000),
+  })
+  return true
+end
+
 function Store:count()
+  local started_at = now_seconds()
   if type(self._datastore.count) == "function" then
-    return self._datastore:count(self._prefix)
+    local count, count_err = self._datastore:count(self._prefix)
+    log.debug("peerstore count done", {
+      prefix = self._prefix,
+      count = count or 0,
+      elapsed_ms = string.format("%.1f", (now_seconds() - started_at) * 1000),
+    })
+    return count, count_err
   end
   local keys, list_err = self._datastore:list(self._prefix)
   if not keys then
     return nil, list_err
   end
+  log.debug("peerstore count done", {
+    prefix = self._prefix,
+    count = #keys,
+    elapsed_ms = string.format("%.1f", (now_seconds() - started_at) * 1000),
+  })
   return #keys
 end
 

@@ -76,7 +76,7 @@ local function run()
       { remote_peer_id = "peer-a" }
   end
 
-  local sub = assert(host:subscribe("peer_identified"))
+  local sub = assert(host:subscribe("peer:identified"))
   local entry, register_err = host:_register_connection({
     close = function()
       return true
@@ -102,14 +102,14 @@ local function run()
   if ev_err then
     return nil, ev_err
   end
-  if not ev or ev.name ~= "peer_identified" then
-    return nil, "expected peer_identified event after connection"
+  if not ev or ev.name ~= "peer:identified" then
+    return nil, "expected peer:identified event after connection"
   end
   if not ev.payload or ev.payload.peer_id ~= "peer-a" then
-    return nil, "expected peer_identified payload to include peer id"
+    return nil, "expected peer:identified payload to include peer id"
   end
   if type(ev.payload.message) ~= "table" then
-    return nil, "expected peer_identified payload to include identify message"
+    return nil, "expected peer:identified payload to include identify message"
   end
 
   return true

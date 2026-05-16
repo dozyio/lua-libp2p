@@ -81,7 +81,7 @@ host:on("dcutr:attempt:precheck", function(payload)
   last_precheck = payload
   return true
 end)
-host:on("connection_opened", function(payload)
+host:on("connection:opened", function(payload)
   local state = payload and payload.state or {}
   if payload and payload.peer_id == peer_id and not host:_connection_is_limited(state) then
     direct_connection_id = payload.connection_id
@@ -89,7 +89,7 @@ host:on("connection_opened", function(payload)
   return true
 end)
 
-assert(host:emit("peer_connected", {
+assert(host:emit("peer:connected", {
   peer_id = peer_id,
   state = {
     connection_id = 999999,
@@ -119,7 +119,7 @@ if not migrated then
       .. " supports="
       .. tostring(last_precheck and last_precheck.remote_supports_dcutr)
       .. " local_obs="
-      .. tostring(last_precheck and last_precheck.local_observed_addrs)
+      .. tostring(last_precheck and last_precheck.local_self_observed_addrs)
       .. "\n"
   )
   os.exit(1)

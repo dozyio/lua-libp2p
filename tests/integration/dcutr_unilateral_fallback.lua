@@ -64,7 +64,7 @@ local function run()
     return nil, nil, "forced dial failure"
   end
 
-  local ok, emit_err = host:emit("peer_connected", {
+  local ok, emit_err = host:emit("peer:connected", {
     peer_id = "peer-unilateral",
     state = {
       direction = "inbound",
@@ -81,7 +81,7 @@ local function run()
     return nil, emit_err
   end
 
-  ok, emit_err = host:emit("peer_connected", {
+  ok, emit_err = host:emit("peer:connected", {
     peer_id = "peer-fallback",
     state = {
       direction = "inbound",
