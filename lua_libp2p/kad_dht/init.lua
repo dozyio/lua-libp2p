@@ -238,6 +238,11 @@ function DHT:start()
 
   self._running = true
 
+  local peerstore_ok, peerstore_err = self:_start_peerstore_population()
+  if not peerstore_ok then
+    return nil, peerstore_err
+  end
+
   local maintenance_ok, maintenance_err = maintenance.start(self)
   if not maintenance_ok then
     return nil, maintenance_err
